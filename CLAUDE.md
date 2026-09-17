@@ -85,6 +85,13 @@ change meant to move it, and the commit says why. Look at every picture.
   itself, for the gates.
 - Content (the floor, the hole, the balls) lives in `arena.ts`. The save
   lives in `progress.ts`. Chance comes from `random.ts`, handed in.
+- `src/track.ts` works a run of pieces out into the track a marble rides: the
+  lattice, the kinds of piece, the segments with their frames, and what may
+  be wrong with a run. It takes no chance and knows nothing of the renderer,
+  so the same run is drawn, raced and measured from one working out.
+  `src/runs.ts` is the runs that come with the game — content, and a run the
+  player designs is the same shape. Neither is wired into the game yet; the
+  race will be.
 - `src/physics.ts` is the game's side of artshape-physics, and nothing else
   imports the package directly. A change a package needs goes in that repo,
   with a version bump here.
@@ -104,8 +111,13 @@ What to copy the shape of, when building something new:
   the game's. The ball is a body kind in `arena.ts`, drawn by `scene.ts`,
   banked by `game.ts`, counted by `invariants.ts`, read by `debug.ts`, and
   pictured in `smoke/look.spec.ts`: one kind of thing, six places, and that
-  is the shape worth copying until the game has its own. The first feature
-  to land replaces this entry with what it built.
+  is the shape worth copying until the game has its own. The race will
+  replace this entry with what it builds.
+- **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
+  it hands a marble on, and the curve it follows — and every path over the
+  kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
+  a switch anyone can forget to add to. Copy that shape for anything the game
+  has several of.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the pace gate
   (`scripts/pace.ts`). Each has unit tests of its own working parts.
 - **Test helpers:** `newGame(seed)` in `test/helpers.ts`, and `memoryStore`
