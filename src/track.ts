@@ -70,6 +70,8 @@ export interface Segment {
   arc: Float32Array;
   /** How long the segment is. */
   length: number;
+  /** How far along the whole run the segment begins: what orders one marble against another. */
+  start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
   next: number;
 }
@@ -142,6 +144,21 @@ function turnCurve(side: number, t: number, out: number[]): void {
 }
 
 /**
+ * The start gate's own slope: steep from the top and easing to level at the
+ * exit. Nothing joins a start piece above, so its top end is free to be
+ * steep — and it has to be, because a marble parked on a piece that is flat
+ * where it stands feels no pull at all and never sets off.
+ */
+function launchCurve(t: number, out: number[]): void {
+  out[0] = CELL * t;
+  out[1] = 0;
+  out[2] = -LEVEL * Math.sin((Math.PI * t) / 2);
+  out[3] = CELL;
+  out[4] = 0;
+  out[5] = (-LEVEL * Math.PI * Math.cos((Math.PI * t) / 2)) / 2;
+}
+
+/**
  * A level down, eased in and out, so the ends are flat and join a level piece
  * without a kink in them. A kink is a marble catching on a seam, so the ease
  * is not a nicety.
@@ -157,7 +174,11 @@ function rampCurve(t: number, out: number[]): void {
 
 /** Every kind of piece there is. A new kind is a line here, and every path over the kinds gets it for nothing. */
 const SHAPES: Record<Kind, Shape> = {
-  start: { exit: { x: 1, y: 0, z: 0, turn: 0 }, rough: CELL, curve: straightCurve },
+  start: {
+    exit: { x: 1, y: 0, z: -1, turn: 0 },
+    rough: Math.hypot(CELL, LEVEL) * 1.1,
+    curve: launchCurve,
+  },
   straight: { exit: { x: 1, y: 0, z: 0, turn: 0 }, rough: CELL, curve: straightCurve },
   ramp: {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
@@ -269,7 +290,7 @@ function sample(piece: Placed, index: number): Segment {
         arc[i - 1] +
         Math.hypot(points[o] - points[o - 3], points[o + 1] - points[o - 2], points[o + 2] - points[o - 1]);
   }
-  return { piece: index, points, tangents, ups, arc, length: arc[n - 1], next: -1 };
+  return { piece: index, points, tangents, ups, arc, length: arc[n - 1], start: 0, next: -1 };
 }
 
 /**
@@ -291,6 +312,7 @@ export function compile(run: Run): Track {
   while (index >= 0 && !seen.has(index) && track.segments.length < MAX_PIECES) {
     seen.add(index);
     const segment = sample(run.pieces[index], index);
+    segment.start = track.length;
     if (track.segments.length > 0) track.segments[track.segments.length - 1].next = track.segments.length;
     track.segments.push(segment);
     track.length += segment.length;
@@ -425,6 +447,9 @@ export function checkTrack(track: Track): string[] {
     if (seg.next !== -1 && (seg.next < 0 || seg.next >= track.segments.length))
       problems.push(`segment ${i} goes on to ${seg.next}, which is not a segment`);
     if (!(seg.length > 0)) problems.push(`segment ${i} is ${seg.length} long`);
+    const before = i === 0 ? 0 : track.segments[i - 1].start + track.segments[i - 1].length;
+    if (Math.abs(seg.start - before) > 1e-4)
+      problems.push(`segment ${i} begins ${seg.start} along, and the one before ends ${before}`);
     if (seg.arc[0] !== 0) problems.push(`segment ${i} starts ${seg.arc[0]} along itself`);
     for (let k = 1; k < seg.arc.length; k++) {
       if (!(seg.arc[k] > seg.arc[k - 1])) {

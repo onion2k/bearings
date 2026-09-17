@@ -8,22 +8,22 @@ import type { Run } from './track';
 
 /**
  * The first run: down the straight, left at the bottom, back across and down
- * again to the cup. Five levels, two turns left and one right, which is
+ * again to the cup. Six levels, two turns left and one right, which is
  * enough to meet every kind of piece there is.
  */
 export const FIRST: Run = {
   name: 'First Drop',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
-    { kind: 'ramp', x: 1, y: 0, z: 0, facing: 0 },
-    { kind: 'ramp', x: 2, y: 0, z: -1, facing: 0 },
-    { kind: 'curveLeft', x: 3, y: 0, z: -2, facing: 0 },
-    { kind: 'ramp', x: 4, y: 1, z: -2, facing: 1 },
-    { kind: 'curveLeft', x: 4, y: 2, z: -3, facing: 1 },
-    { kind: 'ramp', x: 3, y: 3, z: -3, facing: 2 },
-    { kind: 'curveRight', x: 2, y: 3, z: -4, facing: 2 },
-    { kind: 'ramp', x: 1, y: 4, z: -4, facing: 1 },
-    { kind: 'finish', x: 1, y: 5, z: -5, facing: 1 },
+    { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'ramp', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'curveLeft', x: 3, y: 0, z: -3, facing: 0 },
+    { kind: 'ramp', x: 4, y: 1, z: -3, facing: 1 },
+    { kind: 'curveLeft', x: 4, y: 2, z: -4, facing: 1 },
+    { kind: 'ramp', x: 3, y: 3, z: -4, facing: 2 },
+    { kind: 'curveRight', x: 2, y: 3, z: -5, facing: 2 },
+    { kind: 'ramp', x: 1, y: 4, z: -5, facing: 1 },
+    { kind: 'finish', x: 1, y: 5, z: -6, facing: 1 },
   ],
 };
 
