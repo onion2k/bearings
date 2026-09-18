@@ -14,7 +14,7 @@
  */
 import type { Game } from './game';
 import { checkInvariants } from './invariants';
-import { FINISHED, FLYING, LOST, RACING, STALLED, WAITING } from './marbles';
+import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
 import { seeded } from './random';
 import { RUNS } from './runs';
 
@@ -43,6 +43,8 @@ export interface GameState {
   stalled: number;
   flying: number;
   lost: number;
+  /** Going round a funnel's bowl. */
+  swirling: number;
   over: boolean;
   /** Who is leading, or who won; -1 with nothing to say. */
   leader: number;
@@ -62,7 +64,7 @@ export interface Marble {
   speed: number;
   /** How far along the whole run it has got. */
   far: number;
-  state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'flying' | 'lost';
+  state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'flying' | 'lost' | 'swirling';
   place: number;
   took: number;
 }
@@ -142,7 +144,7 @@ export interface DebugHost {
   events: string[];
 }
 
-const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'flying', 'lost'] as const;
+const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'flying', 'lost', 'swirling'] as const;
 
 export function createApi(host: DebugHost): GameApi {
   const { game } = host;
@@ -168,11 +170,13 @@ export function createApi(host: DebugHost): GameApi {
       const { marbles } = game;
       let waiting = 0,
         racing = 0,
-        flying = 0;
+        flying = 0,
+        swirling = 0;
       for (let i = 0; i < marbles.count; i++) {
         if (marbles.state[i] === WAITING) waiting++;
         else if (marbles.state[i] === RACING) racing++;
         else if (marbles.state[i] === FLYING) flying++;
+        else if (marbles.state[i] === SWIRLING) swirling++;
       }
       const standing = game.standing();
       return {
@@ -190,6 +194,7 @@ export function createApi(host: DebugHost): GameApi {
         stalled: marbles.stalled,
         flying,
         lost: marbles.lost,
+        swirling,
         over: game.over,
         leader: standing.length > 0 ? standing[0] : -1,
       };

@@ -226,6 +226,11 @@ async function main() {
   function upload() {
     const n = scene.write(game.marbles);
     renderer.move(0, scene.marbles, n);
+    // the sweepers, gates and wheels, placed at the race's own time, so what is drawn is what the marbles meet
+    const [sweepers, gates, wheels] = scene.moving(game.marbles);
+    renderer.move(1, scene.sweepers, sweepers);
+    renderer.move(2, scene.gates, gates);
+    renderer.move(3, scene.wheels, wheels);
   }
 
   /** What a frame of the scene as it stands costs, drawn to a texture of our own rather than the canvas, so no wait to be shown is counted. */

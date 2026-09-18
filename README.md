@@ -22,15 +22,22 @@ times once they are home.
 
 ## Where it is
 
-Five runs, each its own kind of race: **First Drop**, six levels and three
-turns; **The Chute**, over in three seconds and anybody's; **The Tower**,
-three turns of a spiral where whoever leads in leads out; **The Leap**, two
-jumps with the field in the air over each gap; and **Switchback**, ten
-seconds of drops and turns, long enough for form to tell. The game remembers
-which you last played and your best on each. Still to come, a feature at a
-time through `/feature`: backing a marble, building a run of your own, and
-patterns on the marbles. `CLAUDE.md` says how the code is made and what is
-open.
+Five runs, each its own kind of race, and on every one something that
+breaks a field up, since a chute alone is single file and finishes in the
+order the grid set: **peg boards** that knock a marble off its line;
+**sweepers** that swing across a board; **gates** that hold a pen and slide
+open from one wall, then the other; a **paddle wheel** that holds back
+whatever catches a paddle up; and a **funnel**, where the field circles a bowl
+until each marble is slow enough to drop through the hole. The runs:
+**First Drop**, a peg board and a gate between long drops; **The Chute**, a
+sweeper and a gate and over in five seconds; **The Tower**, a gate, three
+turns of a spiral and a funnel at its foot; **The Leap**, two jumps, the
+first on to a peg board; and **Switchback**, twenty pieces of drops, turns,
+pegs and a wheel. Where a marble starts on the grid tells little of where it
+finishes. The game remembers which run you last played and your best on
+each. Still to come, a feature at a time through `/feature`: backing a
+marble, building a run of your own, and patterns on the marbles. `CLAUDE.md`
+says how the code is made and what is open.
 
 ## What is here
 

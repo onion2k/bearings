@@ -59,7 +59,7 @@ headless boot and a GPU frame, and say so in the file.
 
     npm run dev            the game at http://localhost:5198
     npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~10 s)
-    npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~20 s)
+    npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~30 s)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
@@ -81,15 +81,22 @@ change meant to move it, and the commit says why. Look at every picture.
   `GameEvents`, and knows nothing of the renderer or the page.
 - `src/marbles.ts` is the race itself: every marble as how far along its
   segment it is and how far across the channel, with gravity taken along the
-  track. `src/track.ts` works a run of pieces out into that track — the
-  lattice, the kinds of piece, the segments with their frames, and what may
-  be wrong with a run. Neither takes anything from the renderer, so the same
-  run is drawn, raced and measured from one working out.
+  track; what stands in the way on a piece, pegs and moving parts, as
+  capsules in the piece's own plane; and a funnel's bowl as a plane of its
+  own, where a marble circles until it is slow enough to drop. `src/track.ts`
+  works a run of pieces out into that track — the lattice, the kinds of
+  piece, the segments with their frames, how wide each is at every sample,
+  what stands on it and how it moves (`pose`), and what may be wrong with a
+  run. Neither takes anything from the renderer, so the same run is drawn,
+  raced and measured from one working out.
 - `src/main.ts` is the page. It turns events into words on the board, puts
   a run on from the arrows either side of its name, frames each run to fit
   the screen whatever its shape, and draws the frame. There is no game logic
-  here. `src/scene.ts` sweeps the channel along the track's own samples and
-  places the marbles.
+  here. `src/scene.ts` sweeps the channel along the track's own samples, as
+  wide as the track says at each; turns each funnel's bowl from the height
+  the marbles roll on; stands the pegs; and places the marbles and, every
+  frame, the sweepers, gates and wheels from the same `pose` the solver
+  meets them in, so what is drawn is what a marble hits.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
@@ -121,15 +128,23 @@ What to copy the shape of, when building something new:
   it hands a marble on, and the curve it follows — and every path over the
   kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
   a switch anyone can forget to add to. A jump is the same plus `flies`: it
-  ends in the air, and the solver takes a marble off its lip. Copy that shape
-  for anything the game has several of.
+  ends in the air, and the solver takes a marble off its lip. A board is the
+  same plus `width`; pegs and moving parts are `obstacles`, each with a
+  `Motion` that `pose` turns into where it is at a moment, from a phase the
+  race draws from its seed; a funnel is `bowl`. Copy that shape for anything
+  the game has several of.
 - **A run:** a list of placements with an id, in `src/runs.ts`. Every run is
-  held by `test/runs.test.ts` — sound, and raced on 24 seeds with every
-  marble home, none lost, none stopped, and none fast enough to step through
-  another in a frame — and paced on its own by `pace:check`. A new run is a
-  new entry and nothing else, and then the gates hold it. Lay one out with
-  `exitOf` and race it before shipping it: The Leap lost a third of its field
-  in the first gap until its approach was made a drop.
+  held by `test/runs.test.ts` — sound; raced on 24 seeds with every marble
+  home, none lost, none stopped, and none fast enough to step through another
+  in a frame; and a race, not a procession, over 60 races: the grid tells
+  little of who wins (Kendall's tau of grid against finish within ±0.4), and
+  the back half of the grid wins between a fifth and four fifths of them —
+  and paced on its own by `pace:check`. A new run is a new entry and nothing
+  else, and then the gates hold it. Lay one out with `exitOf` and race it
+  before shipping it: The Leap lost three marbles in five hundred races off a
+  jump on to a chute, and none once it landed on a peg board. A run rebuilt
+  enough to change its races gets a new id, so a best set on the old one is
+  not held against the new; the game drops bests for ids it no longer has.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the pace gate
   (`scripts/pace.ts`). Each has unit tests of its own working parts, and the
   fuzzer's reload is tried against a save that forgets, in
@@ -144,17 +159,27 @@ through `/feature`: the bet, the designer, and patterns on the marbles, which
 want a change to artshape-render since it has no textures. Open, and
 belonging with those:
 
-- **Pole depends on the run.** Over sixty races each, the front of the grid
-  wins 27% on The Chute, 45% on Switchback, 62% on First Drop, 63% on The
-  Leap and 85% on The Tower, where a spiral holds the field single file on
-  its outer wall. Only the leader ever has clean air, and a wider channel
-  makes it worse: traffic is what shuffles a field. The bet prices this with
-  odds, run by run, or wants a design change; not more tuning.
+- **Where on the grid still counts for something.** Over sixty races each,
+  pole wins 7% on The Tower, 12% on First Drop, 13% on Switchback, 15% on
+  The Chute and 22% on The Leap, down from 27% to 85% before the pegs, pens
+  and funnel; and the back half of the grid wins 70% on The Tower, whose
+  gate lets the back of a pen go first as often as the front. The bet prices
+  this with odds, run by run.
 - **Marbles stay on the track over a crest.** Only a jump's lip lets one
   leave it; a fast marble over the top of a drop would, in life, fly.
 - **Overlap is a solver's business.** Two marbles are parted across the
-  channel and then along it for whatever a wall refuses, over several
-  passes. A new piece that pinches the channel meets this first.
+  channel and then along it for whatever a wall refuses, over sixteen
+  passes (`SETTLE`), and a marble a moving part would crush against a wall
+  is let out along the piece instead. A marble cannot drop out of a funnel
+  on to one sat under the hole; it waits in the hole. A new piece that
+  pinches the channel meets all of this first.
+- **Nothing is quite level.** A straight or a curve leans down by a
+  twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
+  always drains; a truly level piece let a crowd come to rest on it.
+- **A wheel is a gate that turns.** A marble that catches a paddle up is
+  held until the paddle lifts out; one that arrives between paddles runs on
+  under it. It holds a marble anything from nothing to two thirds of a
+  second, and that spread is what it is for.
 
 ## Rules for the code
 
@@ -199,11 +224,15 @@ For anything new in the run, check what it does:
 - **a join:** where it meets the piece above and the piece below, both ways
   round; a seam a marble catches on, and a gap it drops through
 - **many marbles:** a train of them nose to tail, a clump of three pressed
-  together, and one pinned on a wall by another; all eight at once
-  (`MARBLES`), and what it costs a frame at that many
+  together, and one pinned on a wall by another; a pile held at a gate; all
+  eight at once (`MARBLES`), and what it costs a frame at that many
+- **in the way of it:** a peg hit dead on, and a marble rolled square on to
+  one's crown; a moving part met at every point of its turn (the phase is
+  the seed's), and one that would crush a marble against a wall; a marble
+  dropping out of a funnel on to one below it
 - **stuck:** a marble that settles on it, wedges against it, or circles it
-  for ever. A run that cannot finish has to be noticed and said, not waited
-  on
+  for ever — a bowl's patience is `BOWL_PATIENCE`, a channel's `PATIENCE`. A
+  run that cannot finish has to be noticed and said, not waited on
 - **off the run:** off a jump's lip, a marble that comes down wide of the
   channel, short of the landing or beyond everything the lip can reach; it is
   lost, told of, given no place, and the race still ends

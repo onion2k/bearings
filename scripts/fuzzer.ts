@@ -84,6 +84,16 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        2,
+        () => {
+          // let go and watched to the end, which is what most players do: the only way a monkey that is forever
+          // setting up again gets as far as the last pieces of a long run, a wheel or a funnel near the cup
+          game.release();
+          busy = Math.floor(between(1500, 2400));
+          did('watch');
+        },
+      ],
+      [
         3,
         () => {
           // set up again, whether or not the race that is on has finished

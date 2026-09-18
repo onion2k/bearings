@@ -26,6 +26,12 @@ describe('the save', () => {
     expect(p.best('the-tower'), 'nothing on a run not yet raced').toBe(0);
   });
 
+  it('keeps a best on a run whose id has a number in it, as a run rebuilt under a new id has', () => {
+    const p = new Progress(memoryStore('{"races":2,"run":"first-drop-2","bests":{"first-drop-2":9.5}}'));
+    expect(p.best('first-drop-2')).toBe(9.5);
+    expect(p.save.run).toBe('first-drop-2');
+  });
+
   it('remembers the run last put on', () => {
     const store = memoryStore();
     const p = new Progress(store);

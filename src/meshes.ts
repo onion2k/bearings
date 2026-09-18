@@ -51,6 +51,8 @@ export function sweep(
   count: number,
   profile: readonly (readonly [number, number])[],
   into = new MeshBuilder(),
+  widths?: Float32Array,
+  base = 0,
 ): MeshBuilder {
   const b = into;
   const at = (i: number, k: number): V3 => {
@@ -65,7 +67,10 @@ export function sweep(
     const bx = ty * uz - tz * uy,
       by = tz * ux - tx * uz,
       bz = tx * uy - ty * ux;
-    const [across, up] = profile[k];
+    // where the channel is wider than `base`, every point of the section moves out by the difference, walls
+    // and skin together, so a board is the same trough as a chute, only wider
+    const [section, up] = profile[k];
+    const across = widths ? Math.sign(section) * (Math.abs(section) - base + widths[i]) : section;
     return [
       points[o] + bx * across + ux * up,
       points[o + 1] + by * across + uy * up,
@@ -97,4 +102,131 @@ export function sphere(radius: number, rings = 16, segments = 24): Mesh {
       b.quad(a, a + row, a + row + 1, a + 1);
     }
   return b.build();
+}
+
+/** An upright post, `radius` round and `height` tall, standing on z = 0: a peg. */
+export function post(radius: number, height: number, sides = 10): Mesh {
+  const b = new MeshBuilder();
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    const p0: V3 = [Math.cos(a0) * radius, Math.sin(a0) * radius, 0],
+      p1: V3 = [Math.cos(a1) * radius, Math.sin(a1) * radius, 0];
+    face(b, p0, p1, [p1[0], p1[1], height], [p0[0], p0[1], height]);
+    face(b, [0, 0, height], [p0[0], p0[1], height], [p1[0], p1[1], height], [0, 0, height]);
+  }
+  return b.build();
+}
+
+/** A bar `length` along x, `thick` along y and `height` up z, centred along and across and standing on z = 0. */
+export function bar(length: number, thick: number, height: number): Mesh {
+  const b = new MeshBuilder();
+  const x = length / 2,
+    y = thick / 2,
+    z = height;
+  face(b, [-x, -y, z], [x, -y, z], [x, y, z], [-x, y, z]);
+  face(b, [-x, -y, 0], [x, -y, 0], [x, -y, z], [-x, -y, z]);
+  face(b, [x, y, 0], [-x, y, 0], [-x, y, z], [x, y, z]);
+  face(b, [x, -y, 0], [x, y, 0], [x, y, z], [x, -y, z]);
+  face(b, [-x, y, 0], [-x, -y, 0], [-x, -y, z], [-x, y, z]);
+  return b.build();
+}
+
+/**
+ * A paddle wheel: a hub along y, the axle, and `paddles` blades round it,
+ * each `arm` long and `wide` across, the first pointing straight down (-z) and
+ * the rest round from it the way the wheel turns.
+ */
+export function wheel(arm: number, wide: number, paddles: number): Mesh {
+  const b = new MeshBuilder();
+  const hub = 0.35,
+    thick = 0.16;
+  for (let k = 0; k < paddles; k++) {
+    const a = (k / paddles) * Math.PI * 2;
+    // straight down turned about y: down, then round toward +x, the way a paddle at the bottom carries marbles on
+    const dx = Math.sin(a),
+      dz = -Math.cos(a);
+    const nx = -dz,
+      nz = dx;
+    const at = (r: number, s: number, side: number): V3 => [dx * r + nx * s, side, dz * r + nz * s];
+    const y = wide / 2;
+    face(b, at(hub, -thick, -y), at(arm, -thick, -y), at(arm, -thick, y), at(hub, -thick, y));
+    face(b, at(hub, thick, y), at(arm, thick, y), at(arm, thick, -y), at(hub, thick, -y));
+    face(b, at(arm, -thick, -y), at(arm, thick, -y), at(arm, thick, y), at(arm, -thick, y));
+    face(b, at(hub, -thick, -y), at(hub, thick, -y), at(arm, thick, -y), at(arm, -thick, -y));
+    face(b, at(hub, -thick, y), at(arm, -thick, y), at(arm, thick, y), at(hub, thick, y));
+  }
+  const y = wide / 2 + 0.1,
+    sides = 12;
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    face(
+      b,
+      [Math.cos(a0) * hub, -y, Math.sin(a0) * hub],
+      [Math.cos(a1) * hub, -y, Math.sin(a1) * hub],
+      [Math.cos(a1) * hub, y, Math.sin(a1) * hub],
+      [Math.cos(a0) * hub, y, Math.sin(a0) * hub],
+    );
+  }
+  return b.build();
+}
+
+/**
+ * A funnel's bowl, turned round its middle at `centre`: the floor from the
+ * hole out to the rim at the height `height(r)` gives, smooth, and a rim wall
+ * standing `wall` above it, with a thickness to it. The wall leaves a gap
+ * between the angles `gap` gives, where a chute comes in over the rim.
+ */
+export function bowl(
+  hole: number,
+  rim: number,
+  height: (r: number) => number,
+  wall: number,
+  into = new MeshBuilder(),
+  centre: V3 = [0, 0, 0],
+  gap: readonly [number, number] | null = null,
+): MeshBuilder {
+  const b = into;
+  const [cx, cy, cz] = centre;
+  const rings = 18,
+    sides = 48;
+  const at = (k: number) => hole + ((rim - hole) * k) / rings;
+  const base = b.vertexCount;
+  for (let k = 0; k <= rings; k++) {
+    const r = at(k);
+    // the floor's slope there, for a normal that leans the way the floor does
+    const e = 1e-3;
+    const s =
+      (height(Math.min(rim, r + e)) - height(Math.max(hole, r - e))) / (Math.min(rim, r + e) - Math.max(hole, r - e));
+    const l = Math.hypot(s, 1);
+    for (let j = 0; j <= sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const c = Math.cos(a),
+        sn = Math.sin(a);
+      b.vertex(cx + c * r, cy + sn * r, cz + height(r), (-c * s) / l, (-sn * s) / l, 1 / l, j / sides, k / rings);
+    }
+  }
+  const row = sides + 1;
+  for (let k = 0; k < rings; k++)
+    for (let j = 0; j < sides; j++) {
+      const a = base + k * row + j;
+      b.quad(a, a + 1, a + row + 1, a + row);
+    }
+  // the rim wall, round the top edge: its inside, its top and its outside, and open where the chute comes in
+  const z = cz + height(rim),
+    out = rim + 0.18;
+  const round = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const open = (a: number) => gap !== null && round(a - gap[0]) < round(gap[1] - gap[0]);
+  const fine = sides * 2;
+  for (let j = 0; j < fine; j++) {
+    const a0 = (j / fine) * Math.PI * 2,
+      a1 = ((j + 1) / fine) * Math.PI * 2;
+    if (open((a0 + a1) / 2)) continue;
+    const p = (a: number, r: number, h: number): V3 => [cx + Math.cos(a) * r, cy + Math.sin(a) * r, h];
+    face(b, p(a1, rim, z), p(a0, rim, z), p(a0, rim, z + wall), p(a1, rim, z + wall));
+    face(b, p(a1, rim, z + wall), p(a0, rim, z + wall), p(a0, out, z + wall), p(a1, out, z + wall));
+    face(b, p(a0, out, z - 0.18), p(a1, out, z - 0.18), p(a1, out, z + wall), p(a0, out, z + wall));
+  }
+  return b;
 }

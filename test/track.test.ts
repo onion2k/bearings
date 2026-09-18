@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { FIRST } from '../src/runs';
 import {
+  HALF_WIDTH,
   MAX_SAMPLES,
+  MOVING_MOST,
   type Facing,
   type Placed,
   type Run,
@@ -10,6 +12,8 @@ import {
   checkTrack,
   compile,
   exitOf,
+  pose,
+  bowlHeight,
   spot,
 } from '../src/track';
 
@@ -152,6 +156,13 @@ describe('the track', () => {
       expect(check(chain(['start', 'straight'])).join('\n')).toMatch(/no finish/);
     });
 
+    it('more moving parts of a kind than the scene has room to draw', () => {
+      const run = chain(['start', ...Array<'gate'>(MOVING_MOST + 1).fill('gate'), 'finish']);
+      expect(check(run).join('\n')).toMatch(new RegExp(`may have ${MOVING_MOST} gates`));
+      const fits = chain(['start', ...Array<'gate'>(MOVING_MOST).fill('gate'), 'finish']);
+      expect(check(fits)).toEqual([]);
+    });
+
     it('a run that never ends', () => {
       const run = chain(['start', 'curveLeft', 'curveLeft', 'curveLeft', 'curveLeft']);
       expect(check(run).join('\n')).toMatch(/never ends/);
@@ -278,6 +289,123 @@ describe('the track', () => {
     it('throws a marble up off the lip of a jump', () => {
       const seg = compile(run).segments[4];
       expect(seg.tangents[seg.tangents.length - 1], 'the last of it rises').toBeGreaterThan(0.2);
+    });
+  });
+
+  describe('the pieces that break a field up', () => {
+    const run = chain(['start', 'pegs', 'sweeper', 'gate', 'wheel', 'funnel', 'straight', 'finish']);
+    const track = compile(run);
+    const MARBLE = 0.9;
+
+    it('hands a marble on where the lattice says', () => {
+      for (const kind of ['pegs', 'sweeper'] as const)
+        expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 0 }), kind).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
+      for (const kind of ['gate', 'wheel'] as const)
+        expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 1 }), kind).toEqual({ x: 0, y: 1, z: -1, facing: 1 });
+      // a funnel lets them out of its middle, a level down and under the bowl, going the way they came in
+      expect(exitOf({ kind: 'funnel', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 0, y: 1, z: -1, facing: 0 });
+    });
+
+    it("works out clean, with the chute's own width wherever it meets another piece", () => {
+      expect(check(run)).toEqual([]);
+      expect(checkTrack(track)).toEqual([]);
+      for (const seg of track.segments) {
+        expect(seg.width[0], `piece ${seg.piece} going in`).toBeCloseTo(HALF_WIDTH, 6);
+        if (!seg.funnel)
+          expect(seg.width[seg.width.length - 1], `piece ${seg.piece} going out`).toBeCloseTo(HALF_WIDTH, 6);
+      }
+    });
+
+    it('widens a peg board and a sweeper into a board, and keeps a chute a chute', () => {
+      const widest = (s: number) => Math.max(...track.segments[s].width);
+      expect(widest(1), 'the peg board').toBeGreaterThan(HALF_WIDTH * 2.5);
+      expect(widest(2), 'the sweeper').toBeGreaterThan(HALF_WIDTH * 2);
+      expect(widest(0), 'the start').toBeCloseTo(HALF_WIDTH, 6);
+    });
+
+    it('puts every peg on the board, clear of its walls, with room between them for a marble', () => {
+      const seg = track.segments[1];
+      const pegs = seg.obstacles;
+      expect(pegs.length).toBeGreaterThan(10);
+      const at = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      for (const peg of pegs) {
+        expect(peg.motion.kind).toBe('fixed');
+        pose(peg, 0, 0, at);
+        const k = Math.round((peg.along / seg.length) * (seg.width.length - 1));
+        expect(Math.abs(at.across) + peg.radius + MARBLE, 'room between a peg and the wall').toBeLessThanOrEqual(
+          seg.width[k],
+        );
+      }
+      for (let a = 0; a < pegs.length; a++)
+        for (let b = a + 1; b < pegs.length; b++) {
+          const gap =
+            Math.hypot(pegs[a].along - pegs[b].along, pegs[a].across - pegs[b].across) -
+            pegs[a].radius -
+            pegs[b].radius;
+          expect(gap, 'room between two pegs').toBeGreaterThan(MARBLE);
+        }
+    });
+
+    it('moves a sweeper across and back, a gate open and shut, and a wheel round, with time', () => {
+      const out = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      const sweeper = track.segments[2].obstacles.find((o) => o.motion.kind === 'sweep')!;
+      const across = [0, 0.25, 0.5, 0.75].map(
+        (f) => pose(sweeper, f * (sweeper.motion as { period: number }).period, 0, out).across,
+      );
+      expect(Math.max(...across) - Math.min(...across), 'it sweeps a good way across').toBeGreaterThan(3);
+      const gate = track.segments[3].obstacles.find((o) => o.motion.kind === 'gate')!;
+      const period = (gate.motion as { period: number }).period;
+      const there = Array.from({ length: 80 }, (_, k) => pose(gate, (k / 40) * period, 0, out).present);
+      expect(there.includes(true) && there.includes(false), 'shut some of the time and open the rest').toBe(true);
+      // open aside toward one wall on one turn, and the other on the next
+      // half way through the time it stands open, when it is right out of the pen
+      const shut = (gate.motion as { shut: number }).shut;
+      const aside = (turn: number) => pose(gate, turn * period + (shut + period) / 2, 0, { ...out }).across;
+      expect(Math.sign(aside(0))).toBe(-Math.sign(aside(1)));
+      expect(Math.abs(aside(0)), 'right out of the way').toBeGreaterThan(gate.half * 1.9);
+      const paddles = track.segments[4].obstacles.filter((o) => o.motion.kind === 'paddle');
+      expect(paddles.length).toBeGreaterThanOrEqual(3);
+      // at any moment at least one paddle is down in the chute, moving on the way the marbles go
+      for (let k = 0; k < 20; k++) {
+        const t = k * 0.13;
+        const down = paddles.map((o) => pose(o, t, 0, { ...out })).filter((p) => p.present);
+        expect(down.length, `at ${t.toFixed(2)} s`).toBeGreaterThan(0);
+        for (const p of down) expect(p.va).toBeGreaterThan(0);
+      }
+    });
+
+    it('keeps time for each moving piece apart, so a race can start them anywhere in their turn', () => {
+      const out = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      const sweeper = track.segments[2].obstacles.find((o) => o.motion.kind === 'sweep')!;
+      expect(sweeper.slot).toBeGreaterThanOrEqual(0);
+      expect(pose(sweeper, 0, 0, out).across).not.toBeCloseTo(pose(sweeper, 0, 0.25, { ...out }).across, 2);
+      const pegs = track.segments[1].obstacles;
+      for (const peg of pegs) expect(peg.slot, 'a peg keeps no time').toBe(-1);
+      const paddles = track.segments[4].obstacles.filter((o) => o.motion.kind === 'paddle');
+      expect(new Set(paddles.map((o) => o.slot)).size, 'a wheel turns as one').toBe(1);
+      expect(track.slots).toBeGreaterThanOrEqual(3);
+    });
+
+    it('gives a funnel a bowl, with the entry on its rim and the way out below its middle', () => {
+      const seg = track.segments[5];
+      const bowl = seg.funnel!;
+      expect(bowl).toBeTruthy();
+      expect(bowl.hole).toBeGreaterThan(MARBLE / 2);
+      expect(bowl.rim).toBeGreaterThan(bowl.hole * 3);
+      expect(Math.hypot(seg.points[0] - bowl.x, seg.points[1] - bowl.y), 'the entry is on the rim').toBeCloseTo(
+        bowl.rim,
+        4,
+      );
+      const out = track.segments[seg.next];
+      expect(Math.hypot(out.points[0] - bowl.x, out.points[1] - bowl.y), 'the way out is under the hole').toBeLessThan(
+        bowl.hole,
+      );
+      expect(out.points[2], 'and below it').toBeLessThan(bowl.z - bowl.depth);
+      // how far down the bowl is at its rim and at its hole, and that it only ever goes down toward the middle
+      expect(bowlHeight(bowl, bowl.rim)).toBeCloseTo(0, 6);
+      expect(bowlHeight(bowl, bowl.hole)).toBeCloseTo(-bowl.depth, 6);
+      for (let r = bowl.hole; r < bowl.rim; r += 0.25)
+        expect(bowlHeight(bowl, r + 0.25)).toBeGreaterThan(bowlHeight(bowl, r));
     });
   });
 

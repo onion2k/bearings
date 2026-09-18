@@ -22,8 +22,10 @@ describe('the pace gate', () => {
       expect(one.minutes, run.name).toBeGreaterThan(0);
     }
     // a longer run takes longer to see two races through than a short one
-    const short = RUNS.findIndex((r) => r.id === 'the-chute'),
-      long = RUNS.findIndex((r) => r.id === 'switchback');
+    const short = RUNS.findIndex((r) => r.name === 'The Chute'),
+      long = RUNS.findIndex((r) => r.name === 'Switchback');
+    expect(short).toBeGreaterThanOrEqual(0);
+    expect(long).toBeGreaterThanOrEqual(0);
     expect(paceRun(1, 2, 3, long).minutes).toBeGreaterThan(paceRun(1, 2, 3, short).minutes);
   });
 

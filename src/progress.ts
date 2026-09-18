@@ -16,8 +16,12 @@ export interface Save {
   bests: Record<string, number>;
 }
 
-/** What a run's id looks like, so a save cannot bring in a key the game would never write, or one that means something to JavaScript. */
-const ID = /^[a-z]+(-[a-z]+)*$/;
+/**
+ * What a run's id looks like — lower-case words and numbers joined by
+ * hyphens, like `first-drop-2` — so a save cannot bring in a key the game
+ * would never write, or one that means something to JavaScript.
+ */
+const ID = /^[a-z]+(-[a-z0-9]+)*$/;
 
 /** Where the save is kept. */
 export interface SaveStore {

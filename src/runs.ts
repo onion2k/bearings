@@ -3,127 +3,141 @@
  * pieces on the lattice, and nothing here knows how one is worked out or
  * drawn. A run the player designs is this same shape, so the two go down one
  * path and there is never a run the game can build but not save.
+ *
+ * Every run has something on it that breaks a field up — pegs, a sweeper, a
+ * gate, a wheel or a funnel — because a chute alone is single file, and a
+ * field let go down one finishes in the order the grid put it in: over three
+ * hundred races on the chutes alone, no marble won from the back half of the
+ * grid. Each run here was raced sixty times as it was laid out, and held to
+ * the finishing order following the grid order by no more than 0.4 and the
+ * back half of the grid winning at least one race in five.
  */
 import type { Run } from './track';
 
 /**
- * The first run: down the straight, left at the bottom, back across and down
- * again to the cup. Six levels, two turns left and one right, which is
- * enough to meet every kind of piece there is.
+ * Down a peg board, round two bends and through a gate, and down again to
+ * the cup: a long race where the pegs and the gate between them leave the
+ * grid order counting for little.
  */
 export const FIRST: Run = {
-  id: 'first-drop',
+  id: 'first-drop-2',
   name: 'First Drop',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'ramp', x: 2, y: 0, z: -2, facing: 0 },
-    { kind: 'curveLeft', x: 3, y: 0, z: -3, facing: 0 },
-    { kind: 'ramp', x: 4, y: 1, z: -3, facing: 1 },
-    { kind: 'curveLeft', x: 4, y: 2, z: -4, facing: 1 },
-    { kind: 'ramp', x: 3, y: 3, z: -4, facing: 2 },
-    { kind: 'curveRight', x: 2, y: 3, z: -5, facing: 2 },
-    { kind: 'ramp', x: 1, y: 4, z: -5, facing: 1 },
-    { kind: 'finish', x: 1, y: 5, z: -6, facing: 1 },
+    { kind: 'pegs', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'curveLeft', x: 4, y: 0, z: -3, facing: 0 },
+    { kind: 'ramp', x: 5, y: 1, z: -3, facing: 1 },
+    { kind: 'curveLeft', x: 5, y: 2, z: -4, facing: 1 },
+    { kind: 'gate', x: 4, y: 3, z: -4, facing: 2 },
+    { kind: 'curveRight', x: 3, y: 3, z: -5, facing: 2 },
+    { kind: 'ramp', x: 2, y: 4, z: -5, facing: 1 },
+    { kind: 'finish', x: 2, y: 5, z: -6, facing: 1 },
   ],
 };
 
-/**
- * The short one: straight down the hill with a single turn in it, for a race
- * that is over in a handful of seconds.
- */
+/** The short one: a sweeper and a gate straight off the start, and down to the cup. */
 export const SHORT: Run = {
-  id: 'the-chute',
+  id: 'the-chute-2',
   name: 'The Chute',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
-    { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'curveRight', x: 2, y: 0, z: -2, facing: 0 },
-    { kind: 'ramp', x: 3, y: -1, z: -2, facing: 3 },
-    { kind: 'finish', x: 3, y: -2, z: -3, facing: 3 },
+    { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'gate', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'curveRight', x: 4, y: 0, z: -3, facing: 0 },
+    { kind: 'ramp', x: 5, y: -1, z: -3, facing: 3 },
+    { kind: 'finish', x: 5, y: -2, z: -4, facing: 3 },
   ],
 };
 
 /**
- * Three turns of a spiral stacked into a tower. Round a spiral the whole
- * field is thrown against its outer wall and held there, single file, so
- * whoever leads into the tower all but always leads out of it: the run for
- * backing the front of the grid.
+ * Held at a gate, then three turns of a spiral stacked into a tower, and
+ * into a funnel at its foot. The tower files the field on its outer wall in
+ * the order the gate let it go, and the funnel keeps the fastest going round
+ * longest, so the back of the field is as likely to come out first as the
+ * front.
  */
 export const TOWER: Run = {
-  id: 'the-tower',
+  id: 'the-tower-2',
   name: 'The Tower',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'spiralLeft', x: 2, y: 0, z: -2, facing: 0 },
-    { kind: 'spiralLeft', x: 2, y: 0, z: -4, facing: 0 },
-    { kind: 'spiralLeft', x: 2, y: 0, z: -6, facing: 0 },
-    { kind: 'straight', x: 2, y: 0, z: -8, facing: 0 },
-    { kind: 'finish', x: 3, y: 0, z: -8, facing: 0 },
+    { kind: 'gate', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'spiralLeft', x: 3, y: 0, z: -3, facing: 0 },
+    { kind: 'spiralLeft', x: 3, y: 0, z: -5, facing: 0 },
+    { kind: 'spiralLeft', x: 3, y: 0, z: -7, facing: 0 },
+    { kind: 'funnel', x: 3, y: 0, z: -9, facing: 0 },
+    { kind: 'straight', x: 3, y: 1, z: -10, facing: 0 },
+    { kind: 'finish', x: 4, y: 1, z: -10, facing: 0 },
   ],
 };
 
 /**
- * Two jumps, each off a drop so that even the slowest marble has the speed
- * to clear the gap, and each onto two straights so that the fastest comes
- * down on track and not beyond it. Raced on forty seeds, no marble has missed
- * a landing; a slower approach loses the back of the field in the first gap.
+ * A sweeper off the start, then two jumps, each off a drop so the slowest
+ * marble still clears the gap. The first comes down on a peg board: marbles
+ * still jostling from the sweeper leave its lip with some way across, and
+ * one landing on a chute came down beside it three times in five hundred
+ * races; a board is wide enough to catch them. The second lands on three
+ * straights, for the fastest, and there is a gate before the cup.
  */
 export const LEAP: Run = {
-  id: 'the-leap',
+  id: 'the-leap-2',
   name: 'The Leap',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
-    { kind: 'drop', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'jump', x: 2, y: 0, z: -3, facing: 0 },
-    { kind: 'straight', x: 4, y: 0, z: -4, facing: 0 },
-    { kind: 'straight', x: 5, y: 0, z: -4, facing: 0 },
-    { kind: 'curveLeft', x: 6, y: 0, z: -4, facing: 0 },
-    { kind: 'drop', x: 7, y: 1, z: -4, facing: 1 },
-    { kind: 'jump', x: 7, y: 2, z: -6, facing: 1 },
-    { kind: 'straight', x: 7, y: 4, z: -7, facing: 1 },
-    { kind: 'straight', x: 7, y: 5, z: -7, facing: 1 },
-    { kind: 'ramp', x: 7, y: 6, z: -7, facing: 1 },
-    { kind: 'finish', x: 7, y: 7, z: -8, facing: 1 },
+    { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'drop', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'jump', x: 4, y: 0, z: -4, facing: 0 },
+    { kind: 'pegs', x: 6, y: 0, z: -5, facing: 0 },
+    { kind: 'curveLeft', x: 8, y: 0, z: -6, facing: 0 },
+    { kind: 'drop', x: 9, y: 1, z: -6, facing: 1 },
+    { kind: 'jump', x: 9, y: 2, z: -8, facing: 1 },
+    { kind: 'straight', x: 9, y: 4, z: -9, facing: 1 },
+    { kind: 'straight', x: 9, y: 5, z: -9, facing: 1 },
+    { kind: 'straight', x: 9, y: 6, z: -9, facing: 1 },
+    { kind: 'gate', x: 9, y: 7, z: -9, facing: 1 },
+    { kind: 'finish', x: 9, y: 8, z: -10, facing: 1 },
   ],
 };
 
 /**
  * The long one: down the hill in drops and ramps, turning back on itself
- * again and again, with a spiral two thirds of the way down. Long enough for
- * form to tell over the grid, so it is the most open of them.
+ * again and again, over two peg boards, under a wheel, and round a spiral.
  */
 export const SWITCHBACK: Run = {
-  id: 'switchback',
+  id: 'switchback-2',
   name: 'Switchback',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'drop', x: 2, y: 0, z: -2, facing: 0 },
-    { kind: 'curveRight', x: 3, y: 0, z: -4, facing: 0 },
-    { kind: 'ramp', x: 4, y: -1, z: -4, facing: 3 },
-    { kind: 'curveRight', x: 4, y: -2, z: -5, facing: 3 },
-    { kind: 'drop', x: 3, y: -3, z: -5, facing: 2 },
-    { kind: 'curveLeft', x: 2, y: -3, z: -7, facing: 2 },
-    { kind: 'ramp', x: 1, y: -4, z: -7, facing: 3 },
-    { kind: 'curveLeft', x: 1, y: -5, z: -8, facing: 3 },
-    { kind: 'drop', x: 2, y: -6, z: -8, facing: 0 },
-    { kind: 'curveRight', x: 3, y: -6, z: -10, facing: 0 },
-    { kind: 'ramp', x: 4, y: -7, z: -10, facing: 3 },
-    { kind: 'spiralRight', x: 4, y: -8, z: -11, facing: 3 },
-    { kind: 'curveRight', x: 4, y: -8, z: -13, facing: 3 },
-    { kind: 'drop', x: 3, y: -9, z: -13, facing: 2 },
-    { kind: 'curveLeft', x: 2, y: -9, z: -15, facing: 2 },
-    { kind: 'ramp', x: 1, y: -10, z: -15, facing: 3 },
-    { kind: 'straight', x: 1, y: -11, z: -16, facing: 3 },
-    { kind: 'finish', x: 1, y: -12, z: -16, facing: 3 },
+    { kind: 'pegs', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'curveRight', x: 4, y: 0, z: -3, facing: 0 },
+    { kind: 'ramp', x: 5, y: -1, z: -3, facing: 3 },
+    { kind: 'curveRight', x: 5, y: -2, z: -4, facing: 3 },
+    { kind: 'drop', x: 4, y: -3, z: -4, facing: 2 },
+    { kind: 'curveLeft', x: 3, y: -3, z: -6, facing: 2 },
+    { kind: 'wheel', x: 2, y: -4, z: -6, facing: 3 },
+    { kind: 'curveLeft', x: 2, y: -5, z: -7, facing: 3 },
+    { kind: 'drop', x: 3, y: -6, z: -7, facing: 0 },
+    { kind: 'curveRight', x: 4, y: -6, z: -9, facing: 0 },
+    { kind: 'ramp', x: 5, y: -7, z: -9, facing: 3 },
+    { kind: 'spiralRight', x: 5, y: -8, z: -10, facing: 3 },
+    { kind: 'curveRight', x: 5, y: -8, z: -12, facing: 3 },
+    { kind: 'pegs', x: 4, y: -9, z: -12, facing: 2 },
+    { kind: 'curveLeft', x: 2, y: -9, z: -13, facing: 2 },
+    { kind: 'ramp', x: 1, y: -10, z: -13, facing: 3 },
+    { kind: 'straight', x: 1, y: -11, z: -14, facing: 3 },
+    { kind: 'finish', x: 1, y: -12, z: -14, facing: 3 },
   ],
 };
 
 /**
  * Every run that comes with the game, in the order they are offered. The
- * first is the one a new player starts on. A run's id is what a save keeps,
- * so it never changes once a run has shipped; its place in this list may.
+ * first is the one a new player starts on. A run's id is what a save keeps
+ * its best under, so it never changes once a run has shipped; a run whose
+ * layout changes is a new run with a new id, since a best set on the old
+ * layout means nothing on the new one. Each of these was rebuilt once, and
+ * carries its second id.
  */
 export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK];

@@ -11,6 +11,7 @@ import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+import { RUNS } from '../src/runs';
 
 const DIR = new URL('saves/', import.meta.url);
 const files = readdirSync(DIR)
@@ -47,14 +48,15 @@ describe('saves from every shape the game has written', () => {
         expect(checkInvariants(game)).toEqual([]);
       });
 
-      it('comes back as it went, written again in the shape of today', () => {
+      it('comes back as it went, written again in the shape of today, less any best for a run that is gone', () => {
         const store = memoryStore(read(file));
         const before = new Progress(store).save;
         expect(store.json, 'loading alone must not write').toBe(read(file));
         const game = new Game(new Progress(store));
         game.persist();
         const after = new Progress(memoryStore(store.json)).save;
-        expect(after).toEqual(before);
+        const kept = Object.fromEntries(Object.entries(before.bests).filter(([id]) => RUNS.some((r) => r.id === id)));
+        expect(after).toEqual({ ...before, bests: kept, run: RUNS.some((r) => r.id === before.run) ? before.run : '' });
       });
     });
   }

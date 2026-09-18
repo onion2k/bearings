@@ -77,3 +77,45 @@ export function spin(
   out[o + 14] = z;
   out[o + 15] = 1;
 }
+
+/**
+ * A placement from three directions, the thing's own x, y and z, each of unit
+ * length and square to the others, and somewhere to put it: for a thing that
+ * lies along a piece of track, stands up off it, or turns about the way
+ * across it, whichever way the piece itself goes.
+ */
+export function basis(
+  out: Float32Array,
+  i: number,
+  x: number,
+  y: number,
+  z: number,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  cx: number,
+  cy: number,
+  cz: number,
+  scale = 1,
+) {
+  const o = i * 16;
+  out[o] = ax * scale;
+  out[o + 1] = ay * scale;
+  out[o + 2] = az * scale;
+  out[o + 3] = 0;
+  out[o + 4] = bx * scale;
+  out[o + 5] = by * scale;
+  out[o + 6] = bz * scale;
+  out[o + 7] = 0;
+  out[o + 8] = cx * scale;
+  out[o + 9] = cy * scale;
+  out[o + 10] = cz * scale;
+  out[o + 11] = 0;
+  out[o + 12] = x;
+  out[o + 13] = y;
+  out[o + 14] = z;
+  out[o + 15] = 1;
+}

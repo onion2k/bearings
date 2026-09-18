@@ -117,6 +117,38 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
     expect(raced[0].finished, `every marble home on ${content.runs[i]}`).toBe(content.marbles);
   }
 
+  // ---- the pieces that break a field up, watched at work ----
+  // the rules checked every few frames on the way down, and not only once the race is over: the tower's funnel
+  // takes the field round its bowl and out through the hole, the leap throws it into the air, and the chute's
+  // sweeper and gate stand in its way
+  for (const [name, what] of [
+    ['The Tower', 'swirling'],
+    ['The Leap', 'flying'],
+    ['The Chute', 'racing'],
+  ] as const) {
+    const i = content.runs.indexOf(name);
+    expect(i, `${name} is a run`).toBeGreaterThanOrEqual(0);
+    const seen = await page.evaluate(
+      ([i, what]) => {
+        const g = window.game!;
+        g.pick(i);
+        g.release();
+        let most = 0;
+        for (let f = 0; f < 120 * 60 && !g.state().over; f += 5) {
+          g.step(5);
+          most = Math.max(most, g.state()[what]);
+          const broken = g.invariants();
+          if (broken.length) return { most, broken, frame: f, state: g.state() };
+        }
+        return { most, broken: [] as string[], frame: -1, state: g.state() };
+      },
+      [i, what] as const,
+    );
+    expect(seen.broken, `invariants on ${name}, frame ${seen.frame}`).toEqual([]);
+    expect(seen.most, `${name}: several ${what} at once`).toBeGreaterThan(2);
+    expect(seen.state.finished, `${name}: every marble home`).toBe(content.marbles);
+  }
+
   await info.attach('the board', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);
 });

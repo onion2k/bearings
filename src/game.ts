@@ -60,6 +60,10 @@ export class Game {
     // game cannot put on is only forgotten in memory until the next thing that is written
     const saved = RUNS.findIndex((r) => r.id === progress.save.run);
     if (saved < 0) progress.save.run = '';
+    // a best kept for a run the game no longer has — one since rebuilt under a new id — is dropped, so a
+    // save does not gather records for runs that are gone, rebuild after rebuild
+    for (const id of Object.keys(progress.save.bests))
+      if (!RUNS.some((r) => r.id === id)) Reflect.deleteProperty(progress.save.bests, id);
     this.putOn(Math.max(saved, 0));
   }
 

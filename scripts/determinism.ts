@@ -78,6 +78,9 @@ export function hashGame(game: Game): string {
     eat(marbles.place[i]);
     eat(marbles.form[i]);
   }
+  // where each moving piece began its turn, which is chance as much as a marble's form is
+  for (const phase of marbles.phase) eat(phase);
+  eat(marbles.t);
   eat(marbles.finishers);
   eat(marbles.stalled);
   eat(marbles.lost);
