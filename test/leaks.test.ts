@@ -13,12 +13,12 @@ describe('what must stay bounded', () => {
   it('reads the sizes off a game, and has a ceiling for every one', () => {
     const { game } = newGame();
     const now = sizes(game);
-    for (const key of ['bodies', 'slots', 'save bytes', 'heap MB']) {
+    for (const key of ['marbles', 'segments', 'samples', 'events kept', 'save bytes', 'heap MB']) {
       expect(Object.keys(now), `${key} measured`).toContain(key);
       expect(Number.isFinite(now[key])).toBe(true);
       expect(Object.keys(WATCH), `a ceiling for ${key}`).toContain(key);
     }
-    game.progress.deposit(1000);
+    game.progress.ran(12.3456789);
     expect(sizes(game)['save bytes']).toBeGreaterThan(now['save bytes']);
   });
 
@@ -31,10 +31,10 @@ describe('what must stay bounded', () => {
   });
 
   it('reports a size over its ceiling, and a steady one still climbing', () => {
-    expect(trouble({ bodies: [10, 10, 10] })).toEqual([]);
-    expect(trouble({ bodies: [10, 10_000, 10] }).join('\n')).toMatch(/bodies went to 10000/);
+    expect(trouble({ marbles: [4, 4, 4] })).toEqual([]);
+    expect(trouble({ marbles: [4, 10_000, 4] }).join('\n')).toMatch(/marbles went to 10000/);
     expect(trouble({ 'heap MB': [10, 40, 70, 100, 130, 160, 190, 220, 250] }).join('\n')).toMatch(/grew all the way/);
     // a size that only ever climbs is held by its ceiling alone
-    expect(trouble({ slots: [1, 2, 3, 4, 5, 6, 7, 8, 9] })).toEqual([]);
+    expect(trouble({ segments: [1, 2, 3, 4, 5, 6, 7, 8, 9] })).toEqual([]);
   });
 });

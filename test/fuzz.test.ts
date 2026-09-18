@@ -6,9 +6,13 @@ describe('the fuzzer', () => {
   it('plays a seed through without breaking a rule, and does everything a player can', () => {
     const r = fuzz(1, 1500);
     expect(r.failure, JSON.stringify(r.failure)).toBe(null);
-    expect(r.happened.banked, 'the monkey banks something').toBeGreaterThan(0);
-    for (const action of ['drive', 'stop', 'teleport', 'aim', 'reload'])
-      expect(r.done[action], action).toBeGreaterThan(0);
+    expect(r.happened.finished, 'the monkey gets marbles home').toBeGreaterThan(0);
+    for (const action of ['release', 'reset', 'pick', 'reload']) expect(r.done[action], action).toBeGreaterThan(0);
+  });
+
+  it('plays seed 24 through clean, where two marbles once ended up inside each other', () => {
+    const r = fuzz(24, 4000);
+    expect(r.failure, JSON.stringify(r.failure)).toBe(null);
   });
 
   it('plays the same way twice from a seed', () => {

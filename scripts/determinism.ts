@@ -43,12 +43,12 @@ export interface TwiceResult {
 
 /**
  * Everything the game is at this moment, as one number in hex: where every
- * body is and how fast it is going, what kind it is and whether it is asleep,
- * where the sled is, and the save. Two games with the same hash are the same
- * game, down to the last bit of every float.
+ * marble is on the run and how fast it is going, what it is doing and what
+ * place it took, which run is on, and the save. Two games with the same hash
+ * are the same game, down to the last bit of every float.
  */
 export function hashGame(game: Game): string {
-  const { world, sled } = game;
+  const { marbles } = game;
   // FNV-1a over the bits, which is enough to catch a ball a thousandth out of place
   let h = 0x811c9dc5;
   const bits = new DataView(new ArrayBuffer(8));
@@ -59,24 +59,24 @@ export function hashGame(game: Game): string {
       h = Math.imul(h, 0x01000193);
     }
   };
-  eat(world.count);
-  for (let i = 0; i < world.count; i++) {
-    eat(world.alive[i]);
-    if (!world.alive[i]) continue;
+  eat(game.run);
+  eat(marbles.count);
+  for (let i = 0; i < marbles.count; i++) {
     eat(i);
-    eat(world.kind[i]);
-    eat(world.x[i]);
-    eat(world.y[i]);
-    eat(world.z[i]);
-    eat(world.vx[i]);
-    eat(world.vy[i]);
-    eat(world.vz[i]);
-    eat(world.asleep[i]);
+    eat(marbles.segment[i]);
+    eat(marbles.along[i]);
+    eat(marbles.across[i]);
+    eat(marbles.speed[i]);
+    eat(marbles.drift[i]);
+    eat(marbles.x[i]);
+    eat(marbles.y[i]);
+    eat(marbles.z[i]);
+    eat(marbles.state[i]);
+    eat(marbles.place[i]);
+    eat(marbles.form[i]);
   }
-  eat(sled.x);
-  eat(sled.y);
-  eat(sled.yaw);
-  eat(sled.speed);
+  eat(marbles.finishers);
+  eat(marbles.stalled);
   eat(game.t);
   for (const c of JSON.stringify(game.progress.save)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
   return (h >>> 0).toString(16).padStart(8, '0');

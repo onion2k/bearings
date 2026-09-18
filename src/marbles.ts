@@ -38,6 +38,12 @@ export const RESIST = 0.6;
 export const BOUNCE = 0.4;
 /** How far apart they sit on the start, waiting. */
 export const SPACING = 1.1;
+/**
+ * The most passes a step takes to settle marbles pressed together. A clump of
+ * three settles in two or three; the ceiling is only so a pathological pile
+ * cannot cost a frame more than a fixed amount.
+ */
+export const SETTLE = 6;
 
 /** What a marble is doing. */
 export const WAITING = 0,
@@ -139,8 +145,19 @@ export class Marbles {
     this.order = new Int32Array(n);
     this.crawling = new Float32Array(n);
     for (let i = 0; i < n; i++) this.form[i] = 0.82 + random() * 0.36;
-    // the grid is drawn rather than handed out in order, so the same marble is not on pole every race
     this.grid = new Int32Array(n);
+    this.draw(random);
+    this.reset();
+  }
+
+  /**
+   * The grid drawn again. It is drawn rather than handed out in order,
+   * because the same marble on pole every race would be no race at all; and
+   * it is drawn afresh for each one, while a marble keeps the form it was
+   * born with.
+   */
+  draw(random: Random) {
+    const n = this.count;
     for (let i = 0; i < n; i++) this.grid[i] = i;
     for (let i = n - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
@@ -148,7 +165,6 @@ export class Marbles {
       this.grid[i] = this.grid[j];
       this.grid[j] = swap;
     }
-    this.reset();
   }
 
   /** Everything back on the start, waiting, with the race not yet run. */
@@ -315,28 +331,21 @@ export class Marbles {
   private touching() {
     let n = 0;
     for (let i = 0; i < this.count; i++) if (this.state[i] === RACING) this.order[n++] = i;
-    const runs = this.order.subarray(0, n);
+    const runs = this.order;
     const touch = RADIUS * 2;
-    const wall = HALF_WIDTH - RADIUS;
-    for (let k = 0; k < n; k++) {
+    // first the speed: what two marbles closing on each other give each other, once for each touch
+    for (let k = 0; k < n; k++)
       for (let j = k + 1; j < n; j++) {
         const a = runs[k],
           b = runs[j];
-        const da = this.far(b) - this.far(a);
-        if (Math.abs(da) >= touch) continue;
-        const dc = this.across[b] - this.across[a];
+        const da = this.far(b) - this.far(a),
+          dc = this.across[b] - this.across[a];
         const d2 = da * da + dc * dc;
         if (d2 >= touch * touch) continue;
-        // two marbles exactly on top of one another have no way to part: send them across the channel
+        // two marbles exactly on top of one another have no line between them: part them across the channel
         const d = Math.sqrt(d2);
         const nx = d > 1e-6 ? da / d : 0,
           ny = d > 1e-6 ? dc / d : 1;
-        const overlap = (touch - d) / 2;
-        this.shove(a, -nx * overlap);
-        this.shove(b, nx * overlap);
-        this.across[a] = Math.min(wall, Math.max(-wall, this.across[a] - ny * overlap));
-        this.across[b] = Math.min(wall, Math.max(-wall, this.across[b] + ny * overlap));
-        // and exchange the speed they were closing on each other with, along the line between them
         const closing = (this.speed[b] - this.speed[a]) * nx + (this.drift[b] - this.drift[a]) * ny;
         if (closing >= 0) continue;
         const give = (-(1 + BOUNCE) * closing) / 2;
@@ -345,7 +354,47 @@ export class Marbles {
         this.speed[b] += give * nx;
         this.drift[b] += give * ny;
       }
+    // then where they are, over as many passes as it takes a clump to settle: parting one pair can push
+    // one of them into a third, and a single pass leaves that third inside it
+    for (let pass = 0; pass < SETTLE; pass++) {
+      let parted = false;
+      for (let k = 0; k < n; k++) for (let j = k + 1; j < n; j++) parted = this.part(runs[k], runs[j]) || parted;
+      if (!parted) break;
     }
+  }
+
+  /**
+   * Two marbles set apart so they are touching and no closer: across the
+   * channel as far as the walls allow, and along the run for whatever the
+   * walls would not take. Pushed across alone, a marble pinned on a wall
+   * takes none of the push, and the pair are left inside each other.
+   * Whether they had to be moved at all.
+   */
+  private part(a: number, b: number): boolean {
+    const touch = RADIUS * 2;
+    const wall = HALF_WIDTH - RADIUS;
+    const da = this.far(b) - this.far(a),
+      dc = this.across[b] - this.across[a];
+    const d2 = da * da + dc * dc;
+    if (d2 >= touch * touch - 1e-9) return false;
+    const d = Math.sqrt(d2);
+    const nx = d > 1e-6 ? da / d : 0,
+      ny = d > 1e-6 ? dc / d : 1;
+    const half = (touch - d) / 2;
+    this.across[a] = Math.min(wall, Math.max(-wall, this.across[a] - ny * half));
+    this.across[b] = Math.min(wall, Math.max(-wall, this.across[b] + ny * half));
+    // along the run, exactly as far again as leaves them touching with the gap across that the walls allowed
+    const across = this.across[b] - this.across[a];
+    const need = Math.sqrt(Math.max(0, touch * touch - across * across));
+    const along = this.far(b) - this.far(a);
+    if (Math.abs(along) < need) {
+      // level with each other along the run, the one later in the field goes back, so the answer is the same every time
+      const ahead = along > 0 || (along === 0 && nx >= 0) ? 1 : -1;
+      const more = (need - Math.abs(along)) / 2;
+      this.shove(a, -ahead * more);
+      this.shove(b, ahead * more);
+    }
+    return true;
   }
 
   /** A marble moved along the run by a little, over a join if it has to go. */
@@ -389,6 +438,24 @@ export class Marbles {
   /** How far along the whole run a marble is: what places it against the others. */
   far(i: number): number {
     return this.track.segments[this.segment[i]].start + this.along[i];
+  }
+
+  /**
+   * The marble still racing that is furthest on, or -1 with none racing. The
+   * camera asks every frame, so this makes nothing, unlike `running`.
+   */
+  leader(): number {
+    let best = -1,
+      far = -Infinity;
+    for (let i = 0; i < this.count; i++) {
+      if (this.state[i] !== RACING) continue;
+      const d = this.far(i);
+      if (d > far) {
+        far = d;
+        best = i;
+      }
+    }
+    return best;
   }
 
   /** Who is winning: the marbles still racing, the one furthest on first. */

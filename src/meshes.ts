@@ -1,9 +1,12 @@
 /**
- * The few shapes the arena is made of, built flat-shaded on purpose: a box,
- * a low-poly ball, a square, a disc. Cartoon geometry wants hard edges, so
- * faces do not share vertices and every normal is a face's.
+ * The shapes the run is drawn with: the channel, swept along the track's own
+ * samples, and the marbles. Everything is in world units and Z is up, as the
+ * renderer has it.
  *
- * Everything is in world units and Z is up, as the renderer has it.
+ * The channel is flat-shaded, faces not sharing vertices, so its walls and
+ * floor keep hard edges. The marble is the one smooth thing: light has to run
+ * round it as round glass or steel, or a near-mirror marble and a chalky one
+ * look alike, and telling eight apart at a glance is the point of them.
  */
 import { MeshBuilder, type Mesh } from 'artshape-render/mesh/types';
 
@@ -31,79 +34,67 @@ function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
   b.quad(a, a + 1, a + 2, a + 3);
 }
 
-function tri(b: MeshBuilder, p0: V3, p1: V3, p2: V3) {
-  const ux = p1[0] - p0[0],
-    uy = p1[1] - p0[1],
-    uz = p1[2] - p0[2];
-  const vx = p2[0] - p0[0],
-    vy = p2[1] - p0[1],
-    vz = p2[2] - p0[2];
-  let nx = uy * vz - uz * vy,
-    ny = uz * vx - ux * vz,
-    nz = ux * vy - uy * vx;
-  const l = Math.hypot(nx, ny, nz) || 1;
-  nx /= l;
-  ny /= l;
-  nz /= l;
-  const a = b.vertex(p0[0], p0[1], p0[2], nx, ny, nz, 0, 0);
-  b.vertex(p1[0], p1[1], p1[2], nx, ny, nz, 1, 0);
-  b.vertex(p2[0], p2[1], p2[2], nx, ny, nz, 0.5, 1);
-  b.triangle(a, a + 1, a + 2);
-}
-
-/** A box `w` along X, `d` along Y and `h` up Z, centred in X and Y and standing on z = 0, or centred in Z too. */
-export function box(w: number, d: number, h: number, centred = false): Mesh {
-  const b = new MeshBuilder();
-  const x = w / 2,
-    y = d / 2,
-    z0 = centred ? -h / 2 : 0,
-    z1 = z0 + h;
-  face(b, [-x, -y, z1], [x, -y, z1], [x, y, z1], [-x, y, z1]);
-  face(b, [-x, y, z0], [x, y, z0], [x, -y, z0], [-x, -y, z0]);
-  face(b, [-x, -y, z0], [x, -y, z0], [x, -y, z1], [-x, -y, z1]);
-  face(b, [x, y, z0], [-x, y, z0], [-x, y, z1], [x, y, z1]);
-  face(b, [x, -y, z0], [x, y, z0], [x, y, z1], [x, -y, z1]);
-  face(b, [-x, y, z0], [-x, -y, z0], [-x, -y, z1], [-x, y, z1]);
-  return b.build();
-}
-
-/** A low-poly ball, centred. */
-export function ball(radius: number, rings = 6, segments = 10): Mesh {
-  const b = new MeshBuilder();
-  const at = (i: number, j: number): V3 => {
-    const phi = (i / rings) * Math.PI,
-      th = (j / segments) * Math.PI * 2;
-    return [Math.sin(phi) * Math.cos(th) * radius, Math.sin(phi) * Math.sin(th) * radius, Math.cos(phi) * radius];
+/**
+ * A cross-section carried along a line: the channel a marble runs in, built
+ * from the samples the track already worked out, so the shape drawn and the
+ * shape raced are the same arithmetic and cannot drift apart.
+ *
+ * The profile is the section in the channel's own terms — how far across and
+ * how far up — read in order, and joined into a strip between each pair of
+ * samples. The renderer draws both sides of a triangle, so a chute seen from
+ * inside needs nothing special done to it.
+ */
+export function sweep(
+  points: Float32Array,
+  tangents: Float32Array,
+  ups: Float32Array,
+  count: number,
+  profile: readonly (readonly [number, number])[],
+  into = new MeshBuilder(),
+): MeshBuilder {
+  const b = into;
+  const at = (i: number, k: number): V3 => {
+    const o = i * 3;
+    const tx = tangents[o],
+      ty = tangents[o + 1],
+      tz = tangents[o + 2];
+    const ux = ups[o],
+      uy = ups[o + 1],
+      uz = ups[o + 2];
+    // across the channel: square to both the way it goes and the way up
+    const bx = ty * uz - tz * uy,
+      by = tz * ux - tx * uz,
+      bz = tx * uy - ty * ux;
+    const [across, up] = profile[k];
+    return [
+      points[o] + bx * across + ux * up,
+      points[o + 1] + by * across + uy * up,
+      points[o + 2] + bz * across + uz * up,
+    ];
   };
-  for (let i = 0; i < rings; i++) {
-    for (let j = 0; j < segments; j++) {
-      if (i === 0) tri(b, at(0, 0), at(1, j), at(1, j + 1));
-      else if (i === rings - 1) tri(b, at(rings, 0), at(i, j + 1), at(i, j));
-      else face(b, at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+  for (let i = 0; i + 1 < count; i++)
+    for (let k = 0; k + 1 < profile.length; k++) face(b, at(i, k), at(i, k + 1), at(i + 1, k + 1), at(i + 1, k));
+  return b;
+}
+
+/** A smooth ball, centred: its vertices shared and every normal pointing straight out from the middle. */
+export function sphere(radius: number, rings = 16, segments = 24): Mesh {
+  const b = new MeshBuilder();
+  for (let i = 0; i <= rings; i++) {
+    const phi = (i / rings) * Math.PI;
+    for (let j = 0; j <= segments; j++) {
+      const th = (j / segments) * Math.PI * 2;
+      const nx = Math.sin(phi) * Math.cos(th),
+        ny = Math.sin(phi) * Math.sin(th),
+        nz = Math.cos(phi);
+      b.vertex(nx * radius, ny * radius, nz * radius, nx, ny, nz, j / segments, i / rings);
     }
   }
-  return b.build();
-}
-
-/** A flat unit square at z = 0, facing up, centred: stretched to size where it is placed. */
-export function square(): Mesh {
-  const b = new MeshBuilder();
-  face(b, [-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0]);
-  return b.build();
-}
-
-/** A flat disc at z = 0, facing up. */
-export function disc(radius: number, segments = 24): Mesh {
-  const b = new MeshBuilder();
-  for (let i = 0; i < segments; i++) {
-    const a0 = (i / segments) * Math.PI * 2,
-      a1 = ((i + 1) / segments) * Math.PI * 2;
-    tri(
-      b,
-      [0, 0, 0],
-      [Math.cos(a0) * radius, Math.sin(a0) * radius, 0],
-      [Math.cos(a1) * radius, Math.sin(a1) * radius, 0],
-    );
-  }
+  const row = segments + 1;
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < segments; j++) {
+      const a = i * row + j;
+      b.quad(a, a + row, a + row + 1, a + 1);
+    }
   return b.build();
 }

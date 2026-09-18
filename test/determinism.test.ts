@@ -15,24 +15,25 @@ describe('the same seed gives the same game', () => {
   });
 
   it('hashes what a game is, so anything moved shows', () => {
-    const drive = { throttle: 1, steer: 0.2 };
     const one = newGame(5).game;
     const two = newGame(5).game;
+    one.release();
+    two.release();
     for (let f = 0; f < 60; f++) {
-      one.step(DT, drive);
-      two.step(DT, drive);
+      one.step(DT);
+      two.step(DT);
     }
     const hash = hashGame(one);
     expect(hashGame(two)).toBe(hash);
-    // a ball nudged by a thousandth, the sled a shade round, a ball banked: all different games
-    one.world.x[0] += 0.001;
+    // a marble a thousandth further on, a shade across the channel, a race counted: all different games
+    one.marbles.along[0] += 0.001;
     expect(hashGame(one)).not.toBe(hash);
-    one.world.x[0] -= 0.001;
+    one.marbles.along[0] -= 0.001;
     expect(hashGame(one)).toBe(hash);
-    one.sled.yaw += 1e-6;
+    one.marbles.across[0] += 1e-6;
     expect(hashGame(one)).not.toBe(hash);
-    one.sled.yaw -= 1e-6;
-    one.progress.deposit(1);
+    one.marbles.across[0] -= 1e-6;
+    one.progress.ran(3);
     expect(hashGame(one)).not.toBe(hash);
   });
 
@@ -44,7 +45,7 @@ describe('the same seed gives the same game', () => {
       every: 100,
       // a second run that nudges a ball part way through: the check must catch it, and say when
       meddle: (game, pass) => {
-        if (pass === 1 && ++frame === 250) game.world.x[0] += 0.01;
+        if (pass === 1 && ++frame === 250) game.marbles.along[0] += 0.01;
       },
     });
     expect(run.diverged).toBe(300);

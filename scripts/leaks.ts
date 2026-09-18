@@ -16,9 +16,10 @@
  * through is not. A new list, map or cache in the game gets a line in
  * `WATCH` and a reading in `sizes`.
  */
-import { BODY_CAPACITY } from '../src/arena';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
+import { MARBLES } from '../src/marbles';
+import { MAX_PIECES, MAX_SAMPLES } from '../src/track';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 
@@ -30,8 +31,10 @@ const DT = 1 / 60;
  * move it and a leak cannot hide under it.
  */
 export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }>> = {
-  bodies: { ceiling: BODY_CAPACITY },
-  slots: { ceiling: BODY_CAPACITY },
+  marbles: { ceiling: MARBLES },
+  segments: { ceiling: MAX_PIECES },
+  samples: { ceiling: MAX_SAMPLES },
+  'events kept': { ceiling: 4 },
   'save bytes': { ceiling: 2_000 },
   // the catch-all for what is leaking and has no name here; noisy, so it is given a lot of room
   'heap MB': { ceiling: 300, steady: true },
@@ -39,10 +42,13 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
 
 /** Every size worth watching, read off a game as it stands. */
 export function sizes(game: Game): Record<string, number> {
-  const { world, progress } = game;
+  const { marbles, track, progress } = game;
   return {
-    bodies: world.live,
-    slots: world.count,
+    marbles: marbles.count,
+    segments: track.segments.length,
+    samples: track.samples,
+    // the save holds two numbers and must go on holding two, however many races are run
+    'events kept': Object.keys(progress.save).length,
     'save bytes': JSON.stringify(progress.save).length,
     'heap MB': Math.round(process.memoryUsage().heapUsed / 1e5) / 10,
   };

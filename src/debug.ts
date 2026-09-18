@@ -7,15 +7,16 @@
  * Time is the test's to keep: `pause` stops the game where it is, and
  * `step` plays it on a frame at a time, exactly, drawing the last. `seed`
  * makes chance repeat. Anything that changes the game goes through here,
- * and `state`, `bodies`, `events` and `invariants` read it back.
+ * and `state`, `marbles`, `content`, `events` and `invariants` read it back.
  *
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import { BALLS, FLOOR, HOLE, KIND_NAME } from './arena';
 import type { Game } from './game';
 import { checkInvariants } from './invariants';
+import { FINISHED, RACING, STALLED, WAITING } from './marbles';
 import { seeded } from './random';
+import { RUNS } from './runs';
 
 declare global {
   interface Window {
@@ -28,28 +29,48 @@ export interface GameState {
   t: number;
   frame: number;
   paused: boolean;
-  bank: number;
-  banked: number;
-  /** How many bodies are on the floor. */
-  live: number;
-  sled: { x: number; y: number; yaw: number; speed: number };
+  /** How many races have been run, and the best winning time seen. */
+  races: number;
+  best: number;
+  /** Which run is on, and what it is called. */
+  run: number;
+  runName: string;
+  /** How the race that is on stands. */
+  waiting: number;
+  racing: number;
+  finished: number;
+  stalled: number;
+  over: boolean;
+  /** Who is leading, or who won; -1 with nothing to say. */
+  leader: number;
 }
 
-/** A body on the floor. */
-export interface Body {
-  slot: number;
-  kind: string;
+/** A marble, as a test sees it. */
+export interface Marble {
+  /** Which marble it is. */
+  index: number;
   x: number;
   y: number;
   z: number;
-  asleep: boolean;
+  /** Which piece of the run it is on, how far along it, and how far across the channel. */
+  segment: number;
+  along: number;
+  across: number;
+  speed: number;
+  /** How far along the whole run it has got. */
+  far: number;
+  state: 'waiting' | 'racing' | 'finished' | 'stalled';
+  place: number;
+  took: number;
 }
 
-/** Where things are, for setting a scene without importing the game's source. */
+/** What the run is, for setting a scene without importing the game's source. */
 export interface Content {
-  hole: { x: number; y: number; radius: number };
-  floor: { minX: number; minY: number; maxX: number; maxY: number };
-  balls: number;
+  runs: string[];
+  /** How long the run that is on is, and how many pieces it has. */
+  length: number;
+  pieces: number;
+  marbles: number;
 }
 
 export interface GameApi {
@@ -67,31 +88,39 @@ export interface GameApi {
   seed(n: number): void;
 
   state(): GameState;
-  bodies(kind?: string): Body[];
+  marbles(): Marble[];
   content(): Content;
-  /** What has happened since this was last asked, a line each: "banked 12.0,4.0". */
+  /** What has happened since this was last asked, a line each: "finished 3 1 5.21". */
   events(): string[];
   /** The rules that must always hold, broken; empty when all is well. */
   invariants(): string[];
 
-  /** Drive as if the controls were held so, until `release`. */
-  drive(throttle: number, steer: number): void;
+  /** Put a run on, by its number. */
+  pick(run: number): void;
+  /** Let them go. */
   release(): void;
-  /** The sled put at a point facing `yaw`, stopped. */
-  teleport(x: number, y: number, yaw?: number): void;
-  /** A body moved to a point, still, and woken. */
-  place(slot: number, x: number, y: number, z?: number): void;
-  deposit(value: number): void;
+  /** The field back on the start gate, drawn again. */
+  reset(): void;
+  /** A marble put where a test wants it, still: how far along which piece, and how far across. */
+  place(marble: number, segment: number, along: number, across?: number): void;
+  /** Play until the race is over or `seconds` of game time have gone by; how long it took. */
+  settle(seconds?: number): number;
   /** The save written now, and what it is. */
   save(): string;
 
-  /** The camera looking at a point, from `azimuth` round and `polar` down, `radius` away, at once. */
-  look(x: number, y: number, view?: { azimuth?: number; polar?: number; radius?: number }): void;
+  /**
+   * The camera looking at a point, from `azimuth` round and `polar` down,
+   * `radius` away, at once, and following nothing after. A run descends, so
+   * where to look has a height to it as well.
+   */
+  look(x: number, y: number, z: number, view?: { azimuth?: number; polar?: number; radius?: number }): void;
   /** What drawing a frame of the scene as it stands costs, in milliseconds. */
   measureFrame(): Promise<number>;
+  /** Whether the camera follows the leader, which a test wants off so a picture is the same every run. */
+  follow(on: boolean): void;
 }
 
-/** What the page gives the API that is not the game's: time, the controls, the camera and the renderer. */
+/** What the page gives the API that is not the game's: time, the camera and the renderer. */
 export interface DebugHost {
   game: Game;
   ready(): boolean;
@@ -102,15 +131,18 @@ export interface DebugHost {
   simulate(dt: number): void;
   draw(dt: number): void;
   frame(): number;
-  setDrive(drive: { throttle: number; steer: number } | null): void;
-  look(x: number, y: number, view: { azimuth?: number; polar?: number; radius?: number }): void;
+  /** The run changed underneath the page, so whatever draws it has to be built again. */
+  rebuild(): void;
+  look(x: number, y: number, z: number, view: { azimuth?: number; polar?: number; radius?: number }): void;
+  setFollow(on: boolean): void;
   measureFrame(): Promise<number>;
   events: string[];
 }
 
+const NAMES = ['waiting', 'racing', 'finished', 'stalled'] as const;
+
 export function createApi(host: DebugHost): GameApi {
   const { game } = host;
-  const { world, progress, sled } = game;
   return {
     version: 1,
     get ready() {
@@ -130,53 +162,93 @@ export function createApi(host: DebugHost): GameApi {
     },
 
     state() {
+      const { marbles } = game;
+      let waiting = 0,
+        racing = 0;
+      for (let i = 0; i < marbles.count; i++) {
+        if (marbles.state[i] === WAITING) waiting++;
+        else if (marbles.state[i] === RACING) racing++;
+      }
+      const standing = game.standing();
       return {
         t: game.t,
         frame: host.frame(),
         paused: host.paused(),
-        bank: progress.save.bank,
-        banked: progress.save.banked,
-        live: world.live,
-        sled: { x: sled.x, y: sled.y, yaw: sled.yaw, speed: sled.speed },
+        races: game.progress.save.races,
+        best: game.progress.save.best,
+        run: game.run,
+        runName: game.track.name,
+        waiting,
+        racing,
+        finished: marbles.finishers,
+        stalled: marbles.stalled,
+        over: game.over,
+        leader: standing.length > 0 ? standing[0] : -1,
       };
     },
-    bodies(kind) {
-      const out: Body[] = [];
-      for (let i = 0; i < world.count; i++) {
-        if (!world.alive[i]) continue;
-        const name = KIND_NAME[world.kind[i]];
-        if (kind !== undefined && name !== kind) continue;
-        out.push({ slot: i, kind: name, x: world.x[i], y: world.y[i], z: world.z[i], asleep: !!world.asleep[i] });
-      }
+    marbles() {
+      const { marbles } = game;
+      const out: Marble[] = [];
+      for (let i = 0; i < marbles.count; i++)
+        out.push({
+          index: i,
+          x: marbles.x[i],
+          y: marbles.y[i],
+          z: marbles.z[i],
+          segment: marbles.segment[i],
+          along: marbles.along[i],
+          across: marbles.across[i],
+          speed: marbles.speed[i],
+          far: marbles.far(i),
+          state: NAMES[marbles.state[i]] ?? 'waiting',
+          place: marbles.place[i],
+          took: marbles.took[i],
+        });
       return out;
     },
-    content: () => ({ hole: { x: HOLE.x, y: HOLE.y, radius: HOLE.radius }, floor: { ...FLOOR }, balls: BALLS }),
+    content: () => ({
+      runs: RUNS.map((r) => r.name),
+      length: game.track.length,
+      pieces: game.track.segments.length,
+      marbles: game.marbles.count,
+    }),
     events() {
       return host.events.splice(0);
     },
     invariants: () => checkInvariants(game),
 
-    drive: (throttle, steer) => host.setDrive({ throttle, steer }),
-    release: () => host.setDrive(null),
-    teleport(x, y, yaw) {
-      Object.assign(sled, { x, y, speed: 0, yawRate: 0 });
-      if (yaw !== undefined) sled.yaw = yaw;
+    pick(run) {
+      game.pick(run);
+      host.rebuild();
     },
-    place(slot, x, y, z) {
-      if (!world.alive[slot]) return;
-      world.x[slot] = x;
-      world.y[slot] = y;
-      if (z !== undefined) world.z[slot] = z;
-      world.vx[slot] = world.vy[slot] = world.vz[slot] = 0;
-      world.wake(slot);
+    release: () => game.release(),
+    reset: () => game.reset(),
+    place(marble, segment, along, across = 0) {
+      const { marbles } = game;
+      if (marble < 0 || marble >= marbles.count) return;
+      marbles.segment[marble] = Math.min(Math.max(segment, 0), game.track.segments.length - 1);
+      marbles.along[marble] = along;
+      marbles.across[marble] = across;
+      marbles.speed[marble] = 0;
+      marbles.drift[marble] = 0;
+      if (marbles.state[marble] === WAITING) marbles.state[marble] = RACING;
     },
-    deposit: (value) => progress.deposit(value),
+    settle(seconds = 60) {
+      const frames = Math.ceil(seconds * 60);
+      const was = game.t;
+      for (let f = 0; f < frames && !game.over; f++) host.simulate(1 / 60);
+      host.draw(1 / 60);
+      return game.t - was;
+    },
     save() {
       game.persist();
-      return JSON.stringify(progress.save);
+      return JSON.stringify(game.progress.save);
     },
 
-    look: (x, y, view = {}) => host.look(x, y, view),
+    look: (x, y, z, view = {}) => host.look(x, y, z, view),
     measureFrame: () => host.measureFrame(),
+    follow: (on) => host.setFollow(on),
   };
 }
+
+export { FINISHED, RACING, STALLED, WAITING };

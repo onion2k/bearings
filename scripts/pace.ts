@@ -1,6 +1,6 @@
 /**
  * How the game paces, played by the autopilot: how many game minutes it
- * takes to bank a number of balls, over a few seeds, held to a baseline
+ * takes to see a number of races through, over a few seeds, held to a baseline
  * both ways. Quicker is as much a change as slower: a ball that banks
  * itself is a bug the same as one that will not go in.
  *
@@ -19,25 +19,25 @@ import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 
 const DT = 1 / 60;
-export const CHECK = { seeds: [1, 2, 3, 4], balls: 10, capMinutes: 6 };
+export const CHECK = { seeds: [1, 2, 3, 4], races: 10, capMinutes: 6 };
 /** How far the figure may move from the baseline, as a share of it, before the check fails. */
 export const TOLERANCE = 0.2;
 
 export interface PaceRun {
   seed: number;
-  /** Game minutes to bank the balls, or the cap if it never did. */
+  /** Game minutes to see the races through, or the cap if it never did. */
   minutes: number;
   finished: boolean;
 }
 
-/** One game from a seed, played until the balls are banked or the time is up. */
-export function paceRun(seed: number, balls = CHECK.balls, capMinutes = CHECK.capMinutes): PaceRun {
+/** One game from a seed, played until the races are run or the time is up. */
+export function paceRun(seed: number, races = CHECK.races, capMinutes = CHECK.capMinutes): PaceRun {
   const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
   const pilot = new Autopilot(game);
   const frames = capMinutes * 3600;
   for (let f = 0; f < frames; f++) {
     pilot.step(DT);
-    if (game.progress.save.banked >= balls) return { seed, minutes: round(game.t / 60), finished: true };
+    if (game.progress.save.races >= races) return { seed, minutes: round(game.t / 60), finished: true };
   }
   return { seed, minutes: capMinutes, finished: false };
 }

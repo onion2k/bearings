@@ -4,7 +4,6 @@ import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 
 export const DT = 1 / 60;
-export const still = { throttle: 0, steer: 0 };
 
 export function newGame(seed = 1, json: string | null = null) {
   const store = memoryStore(json);
@@ -22,7 +21,14 @@ export function newGame(seed = 1, json: string | null = null) {
   return { game, store, told };
 }
 
-/** Play `frames` frames still. */
+/** Play `frames` frames. */
 export function settle(game: Game, frames = 120) {
-  for (let f = 0; f < frames; f++) game.step(DT, still);
+  for (let f = 0; f < frames; f++) game.step(DT);
+}
+
+/** Let them go and play until the race is done with, or `cap` seconds have gone by. */
+export function race(game: Game, cap = 120) {
+  game.release();
+  for (let f = 0; f < cap * 60 && !game.over; f++) game.step(DT);
+  return game.over;
 }

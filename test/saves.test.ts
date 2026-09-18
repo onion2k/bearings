@@ -20,7 +20,9 @@ const read = (file: string) => readFileSync(new URL(file, DIR), 'utf8');
 
 /** What each save was worth when it was written, and what loading it must keep. */
 const KEPT: Record<string, Record<string, unknown>> = {
-  '01-first.json': { bank: 7, banked: 7 },
+  // written when a save held what had been banked, before the game was a race at all
+  '01-first.json': { races: 0, best: 0 },
+  '02-race.json': { races: 12, best: 5.21 },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -30,15 +32,16 @@ describe('saves from every shape the game has written', () => {
 
   for (const file of files) {
     describe(file, () => {
-      it('loads with what it banked kept', () => {
+      it('loads with what it was worth kept', () => {
         const save = new Progress(memoryStore(read(file))).save;
         for (const [key, was] of Object.entries(KEPT[file])) expect(save[key as keyof typeof save]).toEqual(was);
-        expect(Number.isFinite(save.bank) && save.bank >= 0).toBe(true);
+        expect(Number.isFinite(save.races) && save.races >= 0).toBe(true);
       });
 
       it('plays on from where it left off, and breaks no rule', () => {
         const game = new Game(new Progress(memoryStore(read(file))), {}, { random: seeded(7) });
-        for (let f = 0; f < 300; f++) game.step(1 / 60, { throttle: 1, steer: 0.3 });
+        game.release();
+        for (let f = 0; f < 300; f++) game.step(1 / 60);
         expect(checkInvariants(game)).toEqual([]);
       });
 
@@ -55,9 +58,11 @@ describe('saves from every shape the game has written', () => {
   }
 
   it('takes defaults for what an old save lacks, and shrugs at what it cannot read', () => {
-    expect(new Progress(memoryStore('{"bank": 3}')).save).toEqual({ bank: 3, banked: 0 });
-    expect(new Progress(memoryStore('not json')).save).toEqual({ bank: 0, banked: 0 });
-    expect(new Progress(memoryStore('{"bank": "lots"}')).save).toEqual({ bank: 0, banked: 0 });
+    expect(new Progress(memoryStore('{"races": 3}')).save).toEqual({ races: 3, best: 0 });
+    expect(new Progress(memoryStore('not json')).save).toEqual({ races: 0, best: 0 });
+    expect(new Progress(memoryStore('{"races": "lots"}')).save).toEqual({ races: 0, best: 0 });
+    // the shape before this game was a race at all: nothing it held means anything now, and it opens anyway
+    expect(new Progress(memoryStore('{"bank": 7, "banked": 7}')).save).toEqual({ races: 0, best: 0 });
   });
 
   it('has the shape the game writes now: a new field means a new file here', () => {

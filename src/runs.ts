@@ -27,5 +27,20 @@ export const FIRST: Run = {
   ],
 };
 
+/**
+ * The short one: straight down the hill with a single turn in it, for a race
+ * that is over in a handful of seconds.
+ */
+export const SHORT: Run = {
+  name: 'The Chute',
+  pieces: [
+    { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
+    { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'curveRight', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'ramp', x: 3, y: -1, z: -2, facing: 3 },
+    { kind: 'finish', x: 3, y: -2, z: -3, facing: 3 },
+  ],
+};
+
 /** Every run that comes with the game, in the order they are offered. */
-export const RUNS: readonly Run[] = [FIRST];
+export const RUNS: readonly Run[] = [FIRST, SHORT];

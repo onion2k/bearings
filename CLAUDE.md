@@ -1,15 +1,16 @@
 # Bearing: working on it
 
-A marble run game: build the run, let a marble go, and watch where gravity
-takes it. TypeScript, Vite, and WebGPU through
-[artshape-render](https://github.com/onion2k/artshape-render), with the
-physics from [artshape-physics](https://github.com/onion2k/artshape-physics).
-The README says what the game is; this file says how it is made. The house
-rules in `~/.claude/CLAUDE.md` apply too. What runs today is still the
-template's stub, a sled shoving balls into a hole, kept because it works
-every gate below at the size of one thing. Where this file describes the
-stub rather than the game, it says so; the stub gives way one feature at a
-time, and each feature takes the description with it.
+A marble run game: eight marbles let go down a run, and the run decides it.
+TypeScript, Vite, and WebGPU through
+[artshape-render](https://github.com/onion2k/artshape-render). The README
+says what the game is; this file says how it is made. The house rules in
+`~/.claude/CLAUDE.md` apply too.
+
+The marbles ride a track solver of the game's own, in `src/marbles.ts`, and
+not artshape-physics, which the template came with: its floor is flat tiers,
+one height a tile, so a marble on it never feels a slope, and a marble run is
+nothing but slopes. The template's stub, a sled shoving balls into a hole, is
+gone; the gates it held have each been handed the race instead.
 
 ## The factory
 
@@ -32,7 +33,7 @@ The three properties, and what holds each:
 - **Loads fast.** Boot time and the gzipped download are measured by
   `npm run perf` in headless Chromium and held to a budget and a baseline.
 - **Draws fast.** A frame's cost at the standard view is measured by the
-  same gate, and the physics' by `npm run bench`. A feature that cannot fit
+  same gate, and the race's by `npm run bench`. A feature that cannot fit
   the budget gets a rung the game steps down to on a slower machine, not a
   pass.
 
@@ -45,9 +46,9 @@ Numbers, held by gates, on this machine at 1280×800:
 | Boot, page start to the frame loop running             | 3000 ms                        | `perf`       |
 | Download, scripts and styles gzipped                   | 400 kB                         | `perf`       |
 | A frame drawn, lower quartile at the standard view     | 8 ms                           | `perf`       |
-| The physics, a frame, against the reference arithmetic | baseline ± 20%                 | `bench`      |
-| Pace, the autopilot's minutes to bank ten balls        | baseline ± 20%                 | `pace:check` |
-| Anything kept: bodies, slots, save bytes, heap         | ceilings in `scripts/leaks.ts` | `leaks`      |
+| The race, a frame, against the reference arithmetic    | baseline ± 20%                 | `bench`      |
+| Pace, the autopilot's minutes to see ten races through | baseline ± 20%                 | `pace:check` |
+| Anything kept: marbles, track, save, heap              | ceilings in `scripts/leaks.ts` | `leaks`      |
 
 A budget is what the game may cost at all; a baseline is what it cost at
 the last commit, held both ways, so a step toward a budget is noticed as
@@ -64,7 +65,7 @@ headless boot and a GPU frame, and say so in the file.
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
     npm run leaks          an hour of play, watching what must stay bounded (10 min of it in check)
     npm run pace           the autopilot's pace, seed by seed; pace:check holds it to its baseline
-    npm run bench          the physics' frame time held to scripts/bench-baseline.json
+    npm run bench          the race's frame time held to scripts/bench-baseline.json
     npm run perf           boot, frame and download held to smoke/perf-baseline.json and the budget
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
     npm run look           the scenes held to the pictures in smoke/screens
@@ -75,26 +76,25 @@ change meant to move it, and the commit says why. Look at every picture.
 
 ## How the code is laid out
 
-- `src/game.ts` is the game without the picture: everything that happens in
-  the arena, a step at a time. It tells what happened through `GameEvents`,
-  and knows nothing of the renderer or the page.
-- `src/main.ts` is the page. It turns those events into words on the screen
-  and draws the frame. There is no game logic here.
+- `src/game.ts` is the game without the picture: a run put on, a field on
+  its gate, and the race, a step at a time. It tells what happened through
+  `GameEvents`, and knows nothing of the renderer or the page.
+- `src/marbles.ts` is the race itself: every marble as how far along its
+  segment it is and how far across the channel, with gravity taken along the
+  track. `src/track.ts` works a run of pieces out into that track — the
+  lattice, the kinds of piece, the segments with their frames, and what may
+  be wrong with a run. Neither takes anything from the renderer, so the same
+  run is drawn, raced and measured from one working out.
+- `src/main.ts` is the page. It turns events into words on the board and
+  draws the frame. There is no game logic here. `src/scene.ts` sweeps the
+  channel along the track's own samples and places the marbles.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
-- Content (the floor, the hole, the balls) lives in `arena.ts`. The save
-  lives in `progress.ts`. Chance comes from `random.ts`, handed in.
-- `src/track.ts` works a run of pieces out into the track a marble rides: the
-  lattice, the kinds of piece, the segments with their frames, and what may
-  be wrong with a run. It takes no chance and knows nothing of the renderer,
-  so the same run is drawn, raced and measured from one working out.
-  `src/runs.ts` is the runs that come with the game — content, and a run the
-  player designs is the same shape. Neither is wired into the game yet; the
-  race will be.
-- `src/physics.ts` is the game's side of artshape-physics, and nothing else
-  imports the package directly. A change a package needs goes in that repo,
-  with a version bump here.
+- Content is `src/runs.ts`, the runs that come with the game, and
+  `src/field.ts`, what the eight marbles are called and look like. A run the
+  player designs will be the same shape as one that comes with the game. The
+  save lives in `progress.ts`. Chance comes from `random.ts`, handed in.
 
 ## Skills
 
@@ -107,33 +107,38 @@ before anything is written; **/commit** commits in the house style.
 
 What to copy the shape of, when building something new:
 
-- **In the arena:** the ball and the hole, which are the stub's and not yet
-  the game's. The ball is a body kind in `arena.ts`, drawn by `scene.ts`,
-  banked by `game.ts`, counted by `invariants.ts`, read by `debug.ts`, and
-  pictured in `smoke/look.spec.ts`: one kind of thing, six places, and that
-  is the shape worth copying until the game has its own. The race will
-  replace this entry with what it builds.
+- **On the run: a marble.** Its state is typed arrays in `marbles.ts`,
+  stepped by `game.ts`, drawn by `scene.ts` with its look from `field.ts`,
+  its rules in `checkMarbles` and `invariants.ts`, read by `marbles()` in
+  `debug.ts`, hashed in `scripts/determinism.ts`, counted in
+  `scripts/leaks.ts`, and pictured in `smoke/look.spec.ts`. One kind of
+  thing, eight places, and a new thing on the run goes to all of them.
 - **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
   it hands a marble on, and the curve it follows — and every path over the
   kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
   a switch anyone can forget to add to. Copy that shape for anything the game
   has several of.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the pace gate
-  (`scripts/pace.ts`). Each has unit tests of its own working parts.
-- **Test helpers:** `newGame(seed)` in `test/helpers.ts`, and `memoryStore`
-  in `src/progress.ts` for a save that is not the player's.
+  (`scripts/pace.ts`). Each has unit tests of its own working parts, and the
+  fuzzer's reload is tried against a save that forgets, in
+  `test/fuzz-reload.test.ts`, since a correct save never makes it fire.
+- **Test helpers:** `newGame(seed)` and `race(game)` in `test/helpers.ts`,
+  and `memoryStore` in `src/progress.ts` for a save that is not the player's.
 
-## Replacing the stub
+## What comes next
 
-The stub gives way one feature at a time, through `/feature`, every gate
-green at each step. `arena.ts` is the content and usually goes first; the
-tile grid, the rock and the hole are the physics package's terms and can
-stay. The ball is the one body kind: a new kind is a radius and a name in
-the content, a mesh and a group in `scene.ts`, and a line in the invariants.
-The sled is the player's machine and goes last, since the autopilot, the
-fuzzer's `aim` and the smoke tests all drive it. When a thing a gate holds
-goes, the gate is handed its replacement in the same change: a gate that
-holds nothing is worse than none, because it looks like it does.
+The race runs; what makes it a game is still to come, each through
+`/feature`: more runs and a way to choose between them, the bet, the
+designer, and patterns on the marbles, which want a change to artshape-render
+since it has no textures. Two things are open and belong with those:
+
+- **Pole is strong.** The front of the grid wins about 63 races in 100 on
+  First Drop, because only the leader ever has clean air. A wider channel
+  makes it worse, not better: traffic is what shuffles a field. The bet
+  either prices that with odds or wants a design change, not more tuning.
+- **Overlap is a solver's business.** Two marbles are parted across the
+  channel and then along it for whatever a wall refuses, over several
+  passes. A new piece that pinches the channel meets this first.
 
 ## Rules for the code
 
@@ -177,9 +182,9 @@ For anything new in the run, check what it does:
   fast it arrives
 - **a join:** where it meets the piece above and the piece below, both ways
   round; a seam a marble catches on, and a gap it drops through
-- **many marbles:** a train of them nose to tail, and a crowd of them at
-  rest against it; at capacity (`BODY_CAPACITY`), and what it costs a frame
-  at that many
+- **many marbles:** a train of them nose to tail, a clump of three pressed
+  together, and one pinned on a wall by another; all eight at once
+  (`MARBLES`), and what it costs a frame at that many
 - **stuck:** a marble that settles on it, wedges against it, or circles it
   for ever. A run that cannot finish has to be noticed and said, not waited
   on
@@ -191,8 +196,8 @@ For anything new in the run, check what it does:
   released again from the same seed to the same result, marble for marble
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **phone:** narrow screen, and a slower GPU: which rung it steps down to
-- **while the stub stands:** the hole, the sled and the rock walls, which a
-  new thing still meets until `arena.ts` is replaced
+- **another run:** put on part way through a race, and the one before it
+  thrown away cleanly
 
 ## Verifying in a browser
 

@@ -1,12 +1,15 @@
 /**
- * What the player has done, and where it is kept: the bank, in the
- * browser's storage or, for the game run without a page, anywhere. Old
- * saves must still load: a field a save does not have takes its default,
- * and a field it has that the game no longer knows is left alone.
+ * What the player has to show for it, and where it is kept: the races run
+ * and the best winning time seen, in the browser's storage or, for the game
+ * run without a page, anywhere. Old saves must still load: a field a save
+ * does not have takes its default, so a save written before a field existed
+ * opens without complaint.
  */
 export interface Save {
-  bank: number;
-  banked: number;
+  /** How many races have been run to the end. */
+  races: number;
+  /** The best winning time seen, in seconds; 0 before there is one. */
+  best: number;
 }
 
 /** Where the save is kept. */
@@ -61,7 +64,7 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
   };
 }
 
-const fresh = (): Save => ({ bank: 0, banked: 0 });
+const fresh = (): Save => ({ races: 0, best: 0 });
 
 /** A number from a save, or the default where it is missing or not a number. */
 function number(from: Record<string, unknown>, key: string, or: number): number {
@@ -86,17 +89,18 @@ export class Progress {
     if (typeof raw !== 'object' || raw === null) return;
     const from = raw as Record<string, unknown>;
     const d = fresh();
-    this.save.bank = number(from, 'bank', d.bank);
-    this.save.banked = number(from, 'banked', d.banked);
+    this.save.races = number(from, 'races', d.races);
+    this.save.best = number(from, 'best', d.best);
   }
 
-  get bank() {
-    return this.save.bank;
+  get races() {
+    return this.save.races;
   }
 
-  deposit(value: number) {
-    this.save.bank += value;
-    this.save.banked += value;
+  /** A race run to the end, won in `seconds`. */
+  ran(seconds: number) {
+    this.save.races++;
+    if (seconds > 0 && (this.save.best === 0 || seconds < this.save.best)) this.save.best = seconds;
   }
 
   persist() {

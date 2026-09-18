@@ -1,22 +1,22 @@
 /**
- * The page: the game drawn, and what the player does to it. Everything that
- * happens in the arena happens in `game.ts`; this turns its events into
- * words on the screen and draws the frame, on the game path of
- * artshape-render. There is no game logic here.
+ * The page: the race drawn, and what the player does to it. Everything that
+ * happens on the run happens in `game.ts`; this turns its events into words
+ * on the screen and draws the frame, on the game path of artshape-render.
+ * There is no game logic here.
  */
 import { createContext } from 'artshape-render/gpu/context';
 import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { LightPool } from 'artshape-render/game/lights';
 import { GameRenderer } from 'artshape-render/game/renderer';
-import { HOLE } from './arena';
 import { createApi } from './debug';
+import { nameOf } from './field';
 import { frameCost } from './frame-cost';
 import { Game, type GameEvents } from './game';
 import { Input } from './input';
 import { Progress } from './progress';
 import { seeded } from './random';
-import { ARENA_BOX, Scene } from './scene';
+import { Scene, boxOf } from './scene';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -25,12 +25,15 @@ const LIGHT_CAPACITY = 16,
   PARTICLE_CAPACITY = 1024;
 /** How many of the game's events the test API keeps, before the oldest go. */
 const EVENTS_KEPT = 500;
+/** How closely the camera chases the leader: a share of the way there each frame. */
+const CHASE = 0.06;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const boot = document.getElementById('boot')!;
 const bootMsg = document.getElementById('bootMsg')!;
-const bankPanel = document.getElementById('bank')!;
-const bankText = bankPanel.querySelector('b')!;
+const board = document.getElementById('board')!;
+const title = document.getElementById('title')!;
+const order = document.getElementById('order')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
 
@@ -50,67 +53,115 @@ async function main() {
     sunDir: [0.35, -0.3, 0.89],
     sunColour: [1, 0.96, 0.9],
     exposure: 1.1,
-    ambient: 0.6,
+    ambient: 0.65,
     background: [0.04, 0.04, 0.05],
   };
   const env = bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 });
   renderer.setEnvironment(env.specular, env.brdf, env.mips);
   renderer.camera.fov = 40;
-  renderer.camera.near = 2;
-  renderer.camera.far = 500;
-  renderer.setSunShadow(ARENA_BOX);
+  renderer.camera.near = 1;
+  renderer.camera.far = 600;
 
   // ---- the game, and what it says has happened ----
 
   const query = new URLSearchParams(location.search);
   const progress = new Progress();
-  const input = new Input();
+  /**
+   * The board, redrawn when something happens. The game announces the run it
+   * puts on from inside its own constructor, before there is a game to draw a
+   * board from, so this is a no-op until the game exists.
+   */
+  let refresh = () => {};
   /** What has happened, a line each, for the test API. */
   const eventLog: string[] = [];
   const log = (line: string) => {
     eventLog.push(line);
     if (eventLog.length > EVENTS_KEPT) eventLog.splice(0, eventLog.length - EVENTS_KEPT);
   };
-  const showBank = () => {
-    bankText.textContent = String(progress.save.bank);
-  };
   const events: GameEvents = {
-    banked(_kind, x, y) {
-      log(`banked ${x.toFixed(1)},${y.toFixed(1)}`);
-      showBank();
+    picked(run, name) {
+      log(`picked ${run}`);
+      title.textContent = name;
+      refresh();
     },
-    dropped(_kind, x, y) {
-      log(`dropped ${x.toFixed(1)},${y.toFixed(1)}`);
+    released(count) {
+      log(`released ${count}`);
+      refresh();
+    },
+    finished(marble, place, seconds) {
+      log(`finished ${marble} ${place} ${seconds.toFixed(2)}`);
+      refresh();
+    },
+    stalled(marble, seconds) {
+      log(`stalled ${marble} ${seconds.toFixed(2)}`);
+      refresh();
+    },
+    over(winner, seconds) {
+      log(`over ${winner} ${seconds.toFixed(2)}`);
+      refresh();
     },
   };
-  // ?seed=N makes chance the same from before the first ball drops, for a test that wants the same arena every run
+  // ?seed=N makes chance the same from before the field is drawn, for a test that wants the same race every run
   const seed = query.get('seed');
   const game = new Game(progress, events, seed !== null ? { random: seeded(+seed) } : {});
-  const { world, sled } = game;
+  refresh = () => showOrder();
 
   // ---- the scene ----
 
   const scene = new Scene();
-  renderer.setStatic(scene.static(world.solid));
-  renderer.setDynamic(scene.dynamic());
+  let follow = true;
+  /** The middle of the run that is on, and how far back the whole of it is seen from. */
+  const home: [number, number, number] = [0, 0, 0];
+  let across = 60;
+  const rebuild = () => {
+    renderer.setStatic(scene.static(game.track));
+    const box = boxOf(game.track);
+    renderer.setSunShadow(box);
+    const mid: [number, number, number] = [
+      (box.min[0] + box.max[0]) / 2,
+      (box.min[1] + box.max[1]) / 2,
+      (box.min[2] + box.max[2]) / 2,
+    ];
+    home[0] = mid[0];
+    home[1] = mid[1];
+    home[2] = mid[2];
+    across = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
+    lights.clear();
+    lights.add({ position: [mid[0], mid[1], box.max[2] + 20], radius: 160, colour: [1, 0.9, 0.75], intensity: 60 });
+    renderer.setLights(lights);
+  };
   const lights = new LightPool(LIGHT_CAPACITY);
-  lights.add({ position: [HOLE.x, HOLE.y, 14], radius: 40, colour: [1, 0.85, 0.6], intensity: 30 });
-  renderer.setLights(lights);
+  renderer.setDynamic(scene.dynamic());
+  rebuild();
 
   const cam = renderer.camera;
-  cam.target = [0, 0, 0];
-  cam.position = [0, -70, 60];
+  cam.target = [home[0], home[1], home[2]];
+  cam.position = [home[0] + 40, home[1] - 50, home[2] + 40];
   const orbit = new Orbit(cam, {
     element: canvas,
-    minPolar: 0.2,
-    maxPolar: 1.3,
-    minDistance: 20,
-    maxDistance: 160,
+    minPolar: 0.15,
+    maxPolar: 1.45,
+    minDistance: 12,
+    maxDistance: 240,
     rotateSpeed: 0.4,
     zoomSpeed: 0.8,
     panSpeed: 0,
     inertia: 0.5,
   });
+  /**
+   * The whole of the run in view, from off its shoulder, far enough back to
+   * take it all in: where the camera starts, and where it goes when another
+   * run is put on. A player opening the game sees the run before they see
+   * anything race down it.
+   */
+  const frameRun = () => {
+    cam.target[0] = home[0];
+    cam.target[1] = home[1];
+    cam.target[2] = home[2];
+    orbit.setSpherical({ azimuth: 0.9, polar: 0.95, radius: across * 0.9 });
+    for (let i = 0; i < 400; i++) orbit.update();
+  };
+  frameRun();
 
   let width = 1,
     height = 1;
@@ -127,9 +178,8 @@ async function main() {
   resize();
 
   function upload() {
-    const balls = scene.write(world, sled);
-    renderer.move(0, scene.balls, balls);
-    renderer.move(1, scene.sled, 1);
+    const n = scene.write(game.marbles);
+    renderer.move(0, scene.marbles, n);
   }
 
   /** What a frame of the scene as it stands costs, drawn to a texture of our own rather than the canvas, so no wait to be shown is counted. */
@@ -152,12 +202,27 @@ async function main() {
     return cost;
   }
 
+  /** The order of the race as it stands, for the board. */
+  function showOrder() {
+    const { marbles } = game;
+    const rows = game
+      .standing()
+      .map((i) => {
+        const place = marbles.place[i];
+        const when = marbles.took[i] > 0 ? `${marbles.took[i].toFixed(2)}s` : marbles.state[i] === 3 ? 'stopped' : '';
+        return `<li${place === 1 ? ' class="won"' : ''}><b>${nameOf(i)}</b><span>${when}</span></li>`;
+      })
+      .join('');
+    order.innerHTML = rows;
+  }
+
   await renderer.ready;
   boot.classList.add('gone');
-  bankPanel.hidden = false;
+  board.hidden = false;
   stats.hidden = false;
   help.hidden = false;
-  showBank();
+  title.textContent = game.track.name;
+  showOrder();
 
   // ---- each frame ----
 
@@ -165,22 +230,44 @@ async function main() {
   let smoothed = 0;
   function simulate(dt: number) {
     frames++;
-    game.step(dt, input.read());
+    game.step(dt);
   }
   function draw(dt: number) {
+    // while they race the camera rides with whoever is in front, easing rather than snapping so a pass is
+    // worth watching; before the off and after it, it drifts back to take in the whole run. Written in
+    // place, since this is every frame and a new array each time would be garbage sixty times a second.
+    if (follow) {
+      const m = game.marbles;
+      const lead = m.leader();
+      cam.target[0] += ((lead >= 0 ? m.x[lead] : home[0]) - cam.target[0]) * CHASE;
+      cam.target[1] += ((lead >= 0 ? m.y[lead] : home[1]) - cam.target[1]) * CHASE;
+      cam.target[2] += ((lead >= 0 ? m.z[lead] : home[2]) - cam.target[2]) * CHASE;
+    }
     orbit.update();
     cam.update();
     upload();
     const t = performance.now();
     renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
     smoothed += (performance.now() - t - smoothed) * 0.05;
-    if (frames % 30 === 0) stats.textContent = `${smoothed.toFixed(1)} ms · ${world.live} on the floor`;
+    if (frames % 30 === 0)
+      stats.textContent = `${smoothed.toFixed(1)} ms · ${game.marbles.finishers} home · ${game.progress.save.races} races`;
   }
+
+  new Input((intent) => {
+    if (intent === 'release') game.release();
+    else if (intent === 'reset') game.reset();
+    else {
+      game.pick(game.run + 1);
+      rebuild();
+      frameRun();
+    }
+    showOrder();
+  });
 
   // ---- the test API, and the frame loop ----
 
   // ?paused=1 starts the game stopped where it was built, so a test sees the
-  // same arena every run: no frame of its own has run, and every one after is
+  // same race every run: no frame of its own has run, and every one after is
   // the test's, of a length it chose
   let paused = query.has('paused');
   let ready = false;
@@ -196,13 +283,19 @@ async function main() {
     simulate,
     draw,
     frame: () => frames,
-    setDrive: (d) => {
-      input.override = d;
+    rebuild: () => {
+      rebuild();
+      frameRun();
+      showOrder();
     },
-    look(x, y, view) {
-      cam.target = [x, y, 0];
+    look(x, y, z, view) {
+      follow = false;
+      cam.target = [x, y, z];
       orbit.setSpherical(view);
       for (let i = 0; i < 400; i++) orbit.update();
+    },
+    setFollow: (on) => {
+      follow = on;
     },
     measureFrame,
     events: eventLog,

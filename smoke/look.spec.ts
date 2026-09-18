@@ -1,7 +1,7 @@
 /**
  * What the game looks like, held to pictures taken before. Every other check
  * is on what the game does; nothing until now noticed a palette gone muddy,
- * a light lost, or the rock drawn over the floor.
+ * a light lost, or a marble drawn beside the chute instead of in it.
  *
  * Each scene is set through the test API with chance seeded from before the
  * game is built, the game paused, the camera parked by hand, and a fixed
@@ -28,17 +28,33 @@ async function hideStats(page: Page) {
 }
 
 test.describe('what it looks like', () => {
-  test('the arena, from the start', async ({ page }) => {
+  test('the run, with the field on the gate', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     await page.evaluate(() => {
       const g = window.game!;
-      g.step(180);
-      g.look(0, 0, { azimuth: 0.9, polar: 0.95, radius: 90 });
+      g.step(60);
+      // the whole of First Drop in frame, from off its shoulder, with the camera following nothing
+      g.look(15, 17, -11, { azimuth: 0.9, polar: 0.95, radius: 56 });
       g.step(1);
     });
     await hideStats(page);
-    await expect(page.locator('#view')).toHaveScreenshot('arena.png', TOLERANCE);
+    await expect(page.locator('#view')).toHaveScreenshot('run.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the field away, part way down', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.release();
+      g.step(120);
+      g.look(15, 17, -11, { azimuth: 0.9, polar: 0.95, radius: 56 });
+      g.step(1);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('racing.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 });

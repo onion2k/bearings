@@ -72,26 +72,28 @@ describe('the marbles', () => {
     expect(marbles.over).toBe(true);
   });
 
-  it('never lets one marble through another', () => {
-    const { marbles } = field(2);
-    marbles.release();
-    let closest = Infinity;
-    for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
-      marbles.step(DT);
-      const running = marbles.running();
-      // two abreast are a fair way apart across the channel, so it is the distance in both that counts
-      for (let k = 0; k < running.length; k++)
-        for (let j = k + 1; j < running.length; j++) {
-          const a = running[k],
-            b = running[j];
-          closest = Math.min(
-            closest,
-            Math.hypot(marbles.far(b) - marbles.far(a), marbles.across[b] - marbles.across[a]),
-          );
-        }
+  it('never lets one marble into another, race after race, by more than the rules allow', () => {
+    // held to the same slack as the invariant, over enough races to meet a clump pinned on a wall, which
+    // is where one pass of pushing apart was not enough: the wall took the push and gave none of it back
+    let closest = Infinity,
+      where = '';
+    for (let seed = 1; seed <= 60; seed++) {
+      const { marbles } = field(seed);
+      marbles.release();
+      for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
+        marbles.step(DT);
+        for (let a = 0; a < marbles.count; a++)
+          for (let b = a + 1; b < marbles.count; b++) {
+            if (marbles.state[a] !== RACING || marbles.state[b] !== RACING) continue;
+            const d = Math.hypot(marbles.far(b) - marbles.far(a), marbles.across[b] - marbles.across[a]);
+            if (d < closest) {
+              closest = d;
+              where = `seed ${seed}, frame ${f}, marbles ${a} and ${b}`;
+            }
+          }
+      }
     }
-    // they may squash together a touch as they are pushed apart, but never to half a marble
-    expect(closest).toBeGreaterThan(RADIUS);
+    expect(closest, where).toBeGreaterThanOrEqual(RADIUS * 2 - 0.05);
   });
 
   it('holds every marble inside the channel', () => {
@@ -227,6 +229,18 @@ describe('the marbles', () => {
     expect(marbles.stalled).toBe(1);
     expect(marbles.over, 'a race nobody can finish is still over').toBe(true);
     expect(told.some((l) => l.startsWith('stalled'))).toBe(true);
+  });
+
+  it('names the leader without making anything, and agrees with the running order', () => {
+    const { marbles } = field(6);
+    expect(marbles.leader(), 'nobody leads before the off').toBe(-1);
+    marbles.release();
+    for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
+      marbles.step(DT);
+      const running = marbles.running();
+      expect(marbles.leader(), `frame ${f}`).toBe(running.length > 0 ? running[0] : -1);
+    }
+    expect(marbles.leader(), 'nor once they are all home').toBe(-1);
   });
 
   it('says when a marble has gone somewhere it may not', () => {

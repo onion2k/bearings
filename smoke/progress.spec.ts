@@ -1,9 +1,9 @@
 /**
- * The game played through in a real browser: a ball put in front of the
- * sled, driven into the hole, banked, and another dropped. Played through
- * the test API with the game paused and stepped a frame at a time, so it is
- * the same every run and waits on no clock — but everything that follows,
- * the physics, the scene, the words on the screen, is the game's own.
+ * A race played through in a real browser: a field let go, run to the cup,
+ * and the board showing who won. Played through the test API with the game
+ * paused and stepped a frame at a time, so it is the same every run and
+ * waits on no clock — but everything that follows, the solver, the scene,
+ * the words on the screen, is the game's own.
  *
  * A feature that a player can reach gets a stage here, and after every
  * stage the game's invariants are checked.
@@ -20,35 +20,77 @@ async function play(page: Page, frames: number, stage: string) {
   expect(broken, `invariants after ${stage}`).toEqual([]);
 }
 
-test('a ball pushed into the hole is banked, and another takes its place', async ({ page }, info) => {
+test('a field let go races to the cup, and the board says who won', async ({ page }, info) => {
   const problems = watch(page);
   await start(page, { seed: 1, paused: true });
-  await play(page, 120, 'settling');
-  const { hole, balls } = await page.evaluate(() => window.game!.content());
-  // the sled south of the hole facing it, and a ball between the two
-  await page.evaluate(
-    ([x, y]) => {
-      const g = window.game!;
-      g.teleport(x, y - 22, Math.PI / 2);
-      g.place(g.bodies()[0].slot, x, y - 14, 1);
-      g.events();
-      g.drive(1, 0);
-    },
-    [hole.x, hole.y],
-  );
-  let banked = 0;
-  for (let f = 0; f < 600 && !banked; f += 10) {
-    await play(page, 10, 'driving at the hole');
-    banked = await page.evaluate(() => window.game!.state().banked);
+
+  const content = await page.evaluate(() => window.game!.content());
+  expect(content.runs.length, 'there is more than one run to pick').toBeGreaterThan(1);
+  expect(content.length, 'the run has some length to it').toBeGreaterThan(10);
+  expect(content.marbles).toBeGreaterThan(1);
+
+  // ---- on the gate ----
+  await play(page, 30, 'waiting on the gate');
+  const onTheGate = await page.evaluate(() => window.game!.state());
+  expect(onTheGate.waiting).toBe(content.marbles);
+  expect(onTheGate.racing).toBe(0);
+  expect(onTheGate.over).toBe(false);
+
+  // every marble starts on the first piece, inside the channel
+  const lined = await page.evaluate(() => window.game!.marbles());
+  for (const m of lined) {
+    expect(m.segment, `marble ${m.index} on the gate`).toBe(0);
+    expect(m.state).toBe('waiting');
+    expect(Math.abs(m.across)).toBeLessThanOrEqual(1);
   }
+
+  // ---- let go ----
   await page.evaluate(() => window.game!.release());
-  expect(banked, 'a ball banked').toBeGreaterThanOrEqual(1);
-  const events = await page.evaluate(() => window.game!.events());
-  expect(events.some((e) => e.startsWith('banked'))).toBe(true);
-  expect(events.some((e) => e.startsWith('dropped'))).toBe(true);
-  await play(page, 120, 'the new ball landing');
-  expect(await page.evaluate(() => window.game!.state().live), 'the floor keeps its balls').toBe(balls);
-  await expect(page.locator('#bank b')).toHaveText(String(banked));
-  await info.attach('banked', { body: await page.screenshot(), contentType: 'image/png' });
+  await play(page, 60, 'the off');
+  const away = await page.evaluate(() => window.game!.state());
+  expect(away.racing, 'they are away').toBeGreaterThan(0);
+  expect(away.leader, 'somebody is in front').toBeGreaterThanOrEqual(0);
+  const moving = await page.evaluate(() => window.game!.marbles());
+  expect(
+    moving.some((m) => m.far > 1),
+    'and getting down the run',
+  ).toBe(true);
+
+  // ---- run to the end ----
+  const took = await page.evaluate(() => window.game!.settle(120));
+  expect(took, 'the race took some time').toBeGreaterThan(0);
+  const done = await page.evaluate(() => window.game!.state());
+  expect(done.over, 'the race is over').toBe(true);
+  expect(done.finished + done.stalled).toBe(content.marbles);
+  expect(done.races, 'and it was counted').toBe(1);
+  expect(done.best).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+
+  // what the page was told, and what it shows
+  const said = await page.evaluate(() => window.game!.events());
+  expect(said.filter((l) => l.startsWith('finished')).length).toBeGreaterThan(0);
+  expect(said.some((l) => l.startsWith('over'))).toBe(true);
+  const rows = page.locator('#order li');
+  await expect(rows).toHaveCount(content.marbles);
+  await expect(rows.first()).toHaveClass(/won/);
+  await expect(rows.first()).toContainText(/\d+\.\d\ds/);
+
+  // ---- and again ----
+  await page.evaluate(() => window.game!.reset());
+  await play(page, 30, 'set up again');
+  const again = await page.evaluate(() => window.game!.state());
+  expect(again.waiting).toBe(content.marbles);
+  expect(again.over).toBe(false);
+  expect(again.races, 'what was run is kept').toBe(1);
+
+  // ---- another run ----
+  await page.evaluate(() => window.game!.pick(1));
+  await play(page, 30, 'another run on');
+  const next = await page.evaluate(() => window.game!.state());
+  expect(next.run).toBe(1);
+  expect(next.runName).toBe(content.runs[1]);
+  await expect(page.locator('#title')).toHaveText(content.runs[1]);
+
+  await info.attach('the board', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);
 });

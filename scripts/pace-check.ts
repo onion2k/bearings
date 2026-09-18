@@ -19,10 +19,10 @@ function main() {
   const stuck = runs.filter((r) => !r.finished);
   for (const r of runs)
     console.log(
-      `seed ${r.seed}: ${r.finished ? `${r.minutes} min to bank ${CHECK.balls}` : `stuck at ${CHECK.capMinutes} min`}`,
+      `seed ${r.seed}: ${r.finished ? `${r.minutes} min for ${CHECK.races} races` : `stuck at ${CHECK.capMinutes} min`}`,
     );
   console.log(`median ${figure} min (${seconds} s)`);
-  for (const r of stuck) console.error(`  seed ${r.seed} did not bank ${CHECK.balls} balls in ${CHECK.capMinutes} min`);
+  for (const r of stuck) console.error(`  seed ${r.seed} did not run ${CHECK.races} races in ${CHECK.capMinutes} min`);
   if (stuck.length) process.exitCode = 1;
   if (!args.includes('--check')) return;
 

@@ -53,16 +53,46 @@
     backdrop-filter: blur(8px);
     pointer-events: none;
   }
-  #bank {
+  #board {
     top: 16px;
     left: 16px;
-    font-size: 15px;
+    min-width: 168px;
+    font-size: 13px;
   }
-  #bank b {
-    display: block;
-    font-size: 30px;
+  #title {
+    font-size: 15px;
     font-weight: 700;
     color: var(--gold);
+    margin-bottom: 6px;
+  }
+  #order {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: place;
+  }
+  #order li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    counter-increment: place;
+    color: var(--dim);
+    line-height: 1.7;
+  }
+  #order li::before {
+    content: counter(place) '.';
+    width: 16px;
+    color: var(--dim);
+  }
+  #order li b {
+    flex: 1;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  #order li.won b {
+    color: var(--gold);
+  }
+  #order span {
     font-variant-numeric: tabular-nums;
   }
   #stats {
@@ -107,9 +137,14 @@
   }
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
-<div class="panel" id="bank" hidden><b>0</b>banked</div>
+<div class="panel" id="board" hidden>
+  <div id="title"></div>
+  <ol id="order"></ol>
+</div>
 <div class="panel" id="stats" hidden></div>
-<div class="panel" id="help" hidden><span>W A S D</span> drive · drag to orbit, wheel to zoom</div>
+<div class="panel" id="help" hidden>
+  <span>space</span> let them go · <span>R</span> again · <span>N</span> next run · drag to orbit, wheel to zoom
+</div>
 <div id="boot">
   <p id="bootMsg">starting WebGPU…</p>
 </div>

@@ -1,24 +1,34 @@
 /**
- * The game itself, without the picture or the page: the arena and the balls
- * on it, the sled, the hole, and the bank, a step at a time.
+ * The game itself, without the picture or the page: a run chosen, a field of
+ * marbles on its start gate, and a race, a step at a time.
  *
  * What happens is told to `events`, for whoever shows it: the browser turns
  * it into words on the screen; the fuzzer and the tests leave it out, or
  * keep a note of it. Nothing here waits on anything there, so the same game
  * runs in the page and in Node, and what the tests try is what is played.
+ *
+ * Nothing the player does reaches a marble once it is let go. That is the
+ * game — the run decides it — and it is also what makes a race exactly
+ * repeatable from its seed, which every replay and every baseline rests on.
  */
-import { BALL, BALLS, buildRock, dropPoint } from './arena';
-import { makeWorld, type Pusher, type World } from './physics';
+import { Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
-import { Sled, type Drive } from './sled';
+import { RUNS } from './runs';
+import { type Track, compile } from './track';
 
 /** What happens, for whoever shows it. Every one may be left out. */
 export interface GameEvents {
-  /** A ball down the hole, from (x, y). */
-  banked?(kind: number, x: number, y: number): void;
-  /** A ball dropped onto the floor at (x, y), to replace one banked. */
-  dropped?(kind: number, x: number, y: number): void;
+  /** A run was put on: which one it is, and what it is called. */
+  picked?(run: number, name: string): void;
+  /** They were let go. */
+  released?(count: number): void;
+  /** A marble reached the cup: which one, in which place, and how long it took. */
+  finished?(marble: number, place: number, seconds: number): void;
+  /** A marble came to rest short of the cup. */
+  stalled?(marble: number, seconds: number): void;
+  /** The race is done with: who won, and in what time. -1 where nothing finished at all. */
+  over?(winner: number, seconds: number): void;
 }
 
 export interface GameOptions {
@@ -27,28 +37,16 @@ export interface GameOptions {
 }
 
 export class Game {
-  readonly world: World;
-  readonly sled = new Sled();
   /** Game time, in seconds. */
   t = 0;
   /** Where chance comes from: replaced by the test API's `seed`. */
   random: Random;
-  private readonly pusher: Pusher = {
-    x: 0,
-    y: 0,
-    z: 0,
-    yaw: 0,
-    hx: 0,
-    hy: 0,
-    hz: 0,
-    vx: 0,
-    vy: 0,
-    spin: 0,
-    px: 0,
-    py: 0,
-    owner: 0,
-  };
-  private lastBank: number;
+  /** Which of the runs is on. */
+  run = 0;
+  track!: Track;
+  marbles!: Marbles;
+  /** Whether the race that is on has been counted into the save yet. */
+  private counted = true;
 
   constructor(
     readonly progress: Progress,
@@ -56,41 +54,76 @@ export class Game {
     options: GameOptions = {},
   ) {
     this.random = options.random ?? Math.random;
-    this.world = makeWorld(buildRock(), () => this.random());
-    this.world.pushers = [this.pusher];
-    this.lastBank = progress.bank;
-    for (let k = 0; k < BALLS; k++) this.drop(false);
+    this.pick(0);
   }
 
-  /** One frame of `dt` seconds, driven so. */
-  step(dt: number, drive: Drive) {
+  /** Put a run on: it is worked out, and a field drawn for its start gate. */
+  pick(run: number) {
+    this.run = ((run % RUNS.length) + RUNS.length) % RUNS.length;
+    this.track = compile(RUNS[this.run]);
+    this.marbles = new Marbles(
+      this.track,
+      {
+        released: (n) => this.events.released?.(n),
+        finished: (m, place, s) => this.events.finished?.(m, place, s),
+        stalled: (m, s) => this.events.stalled?.(m, s),
+      },
+      { random: () => this.random() },
+    );
+    this.counted = false;
+    this.events.picked?.(this.run, this.track.name);
+  }
+
+  /** The field back on the start gate, with a fresh draw for the grid. */
+  reset() {
+    this.marbles.draw(() => this.random());
+    this.marbles.reset();
+    this.counted = false;
+  }
+
+  /** Let them go. */
+  release() {
+    this.marbles.release();
+  }
+
+  /** Whether the race that is on has been run. */
+  get over(): boolean {
+    return this.marbles.over;
+  }
+
+  /**
+   * Who is winning, or who won: every marble in the order it stands. Those
+   * home first in the order they came, then those still going with the one
+   * furthest on in front, then those still on the gate in the order they
+   * will leave it, and last anything that stopped short. A board is worth
+   * having before the off as well as after it.
+   */
+  standing(): number[] {
+    const { marbles } = this;
+    const all = [...Array(marbles.count).keys()];
+    const home = all.filter((i) => marbles.place[i] > 0).sort((a, b) => marbles.place[a] - marbles.place[b]);
+    const waiting = all.filter((i) => marbles.state[i] === WAITING).sort((a, b) => marbles.grid[a] - marbles.grid[b]);
+    const stopped = all.filter((i) => marbles.state[i] === STALLED);
+    return [...home, ...marbles.running(), ...waiting, ...stopped];
+  }
+
+  /** One frame of `dt` seconds. */
+  step(dt: number) {
     this.t += dt;
-    const { sled, world } = this;
-    sled.step(dt, drive);
-    sled.pusher(this.pusher);
-    // what is ahead of the sled wakes before the sled arrives
-    if (Math.abs(sled.speed) > 0.3) world.wakeNear(sled.x + Math.cos(sled.yaw) * 3, sled.y + Math.sin(sled.yaw) * 3, 5);
-    let fell = 0;
-    world.step(dt, (kind, x, y) => {
-      this.progress.deposit(1);
-      this.events.banked?.(kind, x, y);
-      fell++;
-    });
-    // the floor keeps its balls: one down the hole, one dropped
-    for (; fell > 0; fell--) this.drop(true);
-    if (this.progress.bank !== this.lastBank) this.persist();
-  }
-
-  /** A ball dropped from above onto somewhere clear, and told of if `tell`. */
-  private drop(tell: boolean) {
-    const [x, y] = dropPoint(this.random);
-    if (this.world.spawn(BALL, x, y, 6) < 0) return;
-    if (tell) this.events.dropped?.(BALL, x, y);
+    this.marbles.step(dt);
+    // a race counts once, when it is done with, however it ended
+    if (!this.counted && this.marbles.over) {
+      this.counted = true;
+      const won = this.standing().find((i) => this.marbles.place[i] === 1) ?? -1;
+      const seconds = won >= 0 ? this.marbles.took[won] : 0;
+      this.progress.ran(seconds);
+      this.persist();
+      this.events.over?.(won, seconds);
+    }
   }
 
   /** The save written now. */
   persist() {
     this.progress.persist();
-    this.lastBank = this.progress.bank;
   }
 }

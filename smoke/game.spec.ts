@@ -2,8 +2,8 @@
  * The game as a player gets it: served by Vite, run in Chromium on the real
  * GPU, with a fresh save each test. What the unit tests cannot reach — the
  * renderer, the keyboard, the frame loop, the page — checked for the things
- * that would make it plainly broken: an error, a black screen, a sled that
- * does not move, a save that does not come back.
+ * that would make it plainly broken: an error, a black screen, a gate that
+ * will not open, a save that does not come back.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
@@ -43,14 +43,15 @@ function content(png: Buffer) {
   return { spread: Math.sqrt(sq / n - mean * mean), lit: lit / n };
 }
 
-test('boots with no errors and draws the arena', async ({ page }, info) => {
+test('boots with no errors and draws the run', async ({ page }, info) => {
   const problems = watch(page);
   await start(page);
   expect(await framesInASecond(page)).toBeGreaterThan(20);
   const state = await page.evaluate(() => window.game!.state());
-  expect(state.live, 'balls on the floor').toBeGreaterThan(0);
+  expect(state.waiting, 'a field on the gate').toBeGreaterThan(0);
+  expect(state.runName, 'a run is on').not.toBe('');
   const shot = await page.screenshot();
-  await info.attach('arena', { body: shot, contentType: 'image/png' });
+  await info.attach('run', { body: shot, contentType: 'image/png' });
   const c = content(shot);
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(c.spread, 'variety in the picture').toBeGreaterThan(20);
@@ -58,38 +59,45 @@ test('boots with no errors and draws the arena', async ({ page }, info) => {
   expect(problems).toEqual([]);
 });
 
-test('drives the sled by the keyboard', async ({ page }) => {
-  const problems = watch(page);
-  await start(page);
-  const before = await page.evaluate(() => window.game!.state().sled);
-  await page.keyboard.down('w');
-  await expect
-    .poll(() => page.evaluate(() => window.game!.state().sled.y), { timeout: 5000 })
-    .toBeGreaterThan(before.y + 5);
-  await page.keyboard.down('a');
-  await expect
-    .poll(() => page.evaluate(() => window.game!.state().sled.yaw), { timeout: 5000 })
-    .toBeGreaterThan(before.yaw + 0.3);
-  await page.keyboard.up('a');
-  await page.keyboard.up('w');
-  expect(problems).toEqual([]);
+test('lets them go with the keyboard, and sets up again', async ({ page }) => {
+  await start(page, { seed: 3 });
+  await page.evaluate(() => window.game!.pause());
+  expect((await page.evaluate(() => window.game!.state())).racing).toBe(0);
+
+  // space is the gate: a real key on the real page, not the test API
+  await page.keyboard.press(' ');
+  await page.evaluate(() => window.game!.step(30));
+  const off = await page.evaluate(() => window.game!.state());
+  expect(off.racing, 'the field is away').toBeGreaterThan(0);
+  expect(off.waiting).toBe(0);
+
+  // and R puts them back on the gate
+  await page.keyboard.press('r');
+  await page.evaluate(() => window.game!.step(1));
+  const again = await page.evaluate(() => window.game!.state());
+  expect(again.waiting, 'back on the gate').toBeGreaterThan(0);
+  expect(again.racing).toBe(0);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
 });
 
-test('keeps the bank across a reload', async ({ page }) => {
+test('keeps what has been run across a reload', async ({ page }) => {
   const problems = watch(page);
   await start(page);
   const before = await page.evaluate(() => {
     const g = window.game!;
     g.pause();
-    g.deposit(123);
-    g.step(1);
+    g.release();
+    // played out to the end, so a race is counted and written
+    g.settle(120);
     g.save();
     return g.state();
   });
+  expect(before.races, 'a race was run').toBeGreaterThan(0);
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.game?.ready ?? false), { timeout: 60_000 }).toBe(true);
   const after = await page.evaluate(() => window.game!.state());
-  expect(after.bank).toBe(before.bank);
+  expect(after.races).toBe(before.races);
+  expect(after.best).toBeCloseTo(before.best, 5);
   expect(problems).toEqual([]);
 });
 
@@ -99,7 +107,7 @@ test.describe('on a phone', () => {
   test('boots, and nothing is wider than the screen', async ({ page }, info) => {
     const problems = watch(page);
     await start(page);
-    await expect(page.locator('#bank')).toBeVisible();
+    await expect(page.locator('#board')).toBeVisible();
     await info.attach('phone', { body: await page.screenshot(), contentType: 'image/png' });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
     expect(problems).toEqual([]);

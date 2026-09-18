@@ -1,21 +1,30 @@
 # Bearing
 
-A marble run game. You build the run — ramps, funnels, chutes, whatever the
-run has — and then you let a marble go and watch. Once it is rolling you do
-not touch it: gravity and the shape you built are the whole of the game, and
-a run that works is one you got right before you let go.
+A marble run game. Eight marbles wait on the gate at the top of a run; you
+let them go, and the run decides it. Once they are rolling nobody touches
+them — gravity and the shape of the run are the whole of it — so what a
+player brings is the choice of run and, to come, the marble they back and
+the runs they build themselves.
 
-Built on [artshape-render](https://github.com/onion2k/artshape-render) and
-[artshape-physics](https://github.com/onion2k/artshape-physics): TypeScript,
-Vite and WebGPU, in the browser, on the machine's own GPU.
+Built on [artshape-render](https://github.com/onion2k/artshape-render):
+TypeScript, Vite and WebGPU, in the browser, on the machine's own GPU. The
+marbles ride a track solver of the game's own rather than a general physics
+engine, because a marble in a chute only ever needs to know how far along it
+is and how far across.
+
+## Playing it
+
+**Space** lets the field go, **R** puts it back on the gate, **N** puts the
+next run on. Drag to go round the run, and the wheel to go nearer. The board
+keeps the order as it stands, and the times once they are home.
 
 ## Where it is
 
-The game itself has not been built yet. What runs today is the template's
-stub — a sled on a walled floor, a dozen balls and a hole in the middle —
-kept because it exercises every gate below at the size of one thing. It
-gives way one feature at a time through `/feature`, and the first thing to
-go is the content in `src/arena.ts`. `CLAUDE.md` says how.
+The race runs, on two runs: First Drop, six levels down with three turns,
+and The Chute, over in a few seconds. Still to come, a feature at a time
+through `/feature`: more runs and a way to choose them, backing a marble,
+building a run of your own, and patterns on the marbles. `CLAUDE.md` says
+how the code is made and what is open.
 
 ## What is here
 
@@ -46,13 +55,14 @@ And every gate at n=1, the three properties among them:
     npm run bench          what the physics costs a frame, held to a baseline
     npm run perf           boot time, a frame's cost and the download, held to a budget and a baseline
     npm run smoke          the real thing in headless Chromium on the GPU
-    npm run look           what it looks like, held to a picture
+    npm run look           what it looks like, held to its pictures
     npm run check          all of it
 
-One fuzzer action, one invariant, one watched size, one bench scenario, one
-pace figure, one saved shape in `test/saves/`, one picture, one stage in the
-play-through, and one perf figure each for boot, frame and download. Each is
-a model for the next.
+They came at the size of one thing each and have grown with the race: four
+things the fuzzer does, as a player can — let them go, set up again, put
+another run on, reload — the rules for the track, the marbles, the places
+and the save, two bench scenarios, two saved shapes in `test/saves/`, two
+pictures, and one play-through with a stage for everything a player reaches.
 
 The line every change goes down is in `CLAUDE.md`: a spec agreed, tests
 seen failing, the change built, every gate run, the result looked at, a
@@ -78,19 +88,20 @@ can stay up while they run.
 
 ## Layout
 
-    src/game.ts        the game without the picture
+    src/game.ts        the game without the picture: a run, a field, a race
+    src/marbles.ts     the race itself: marbles riding the track
+    src/track.ts       a run of pieces worked out into the track they ride
     src/main.ts        the page: events into words, the frame drawn
+    src/scene.ts       the channel swept along the track, and the marbles placed
     src/debug.ts       window.game, the test API
     src/invariants.ts  what must always hold
     src/autopilot.ts   the game played by itself, for the gates
-    src/arena.ts       content: the floor, the hole, the balls
+    src/runs.ts        content: the runs that come with the game
+    src/field.ts       content: the eight marbles, their names and looks
     src/progress.ts    the save, and where it is kept
-    src/physics.ts     the game's side of artshape-physics
-    src/scene.ts       the arena as it is drawn
-    src/sled.ts        the player's machine
     scripts/           the gates, each with its baseline beside it
     test/              unit tests, and a corpus of every save shape
-    smoke/             Playwright: boots, drives, plays through, looks right
+    smoke/             Playwright: boots, races, plays through, looks right
 
 Taken from the [artshape game template](https://github.com/onion2k/artshape-game-template)
 in September 2026.

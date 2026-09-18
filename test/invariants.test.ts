@@ -1,37 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import { ORIGIN_X, ORIGIN_Y } from '../src/arena';
 import { checkInvariants } from '../src/invariants';
-import { newGame, settle } from './helpers';
+import { FINISHED, RACING } from '../src/marbles';
+import { newGame, race, settle } from './helpers';
 
 describe('what must always hold', () => {
-  it('holds of a new game', () => {
+  it('holds of a new game, and of one that has raced', () => {
     const { game } = newGame();
     settle(game);
     expect(checkInvariants(game)).toEqual([]);
+    race(game);
+    expect(checkInvariants(game)).toEqual([]);
   });
 
-  it('reports a ball in the rock, a ball that is not a number, and a bank that is', () => {
+  it('reports a marble off its piece, one outside the channel, and one that is not a number', () => {
     const { game } = newGame();
-    settle(game);
-    const slot = [...Array(game.world.count).keys()].find((i) => game.world.alive[i])!;
-    const x = game.world.x[slot];
-    game.world.x[slot] = ORIGIN_X + 1;
-    game.world.y[slot] = ORIGIN_Y + 1;
-    expect(checkInvariants(game).join('\n')).toMatch(/in the rock/);
-    game.world.x[slot] = NaN;
+    game.release();
+    settle(game, 30);
+    const was = game.marbles.along[0];
+    game.marbles.along[0] = -99;
+    expect(checkInvariants(game).join('\n')).toMatch(/along a segment/);
+    game.marbles.along[0] = was;
+    game.marbles.across[0] = 99;
+    expect(checkInvariants(game).join('\n')).toMatch(/across a channel/);
+    game.marbles.across[0] = 0;
+    game.marbles.speed[0] = NaN;
     expect(checkInvariants(game).join('\n')).toMatch(/not a number/);
-    game.world.x[slot] = x;
-    game.progress.save.bank = -1;
-    expect(checkInvariants(game).join('\n')).toMatch(/the bank is -1/);
   });
 
-  it('reports a floor short of balls, and a sled off the floor', () => {
+  it('reports a tally that does not match what the marbles are doing', () => {
     const { game } = newGame();
-    settle(game);
-    const slot = [...Array(game.world.count).keys()].find((i) => game.world.alive[i])!;
-    game.world.remove(slot);
-    expect(checkInvariants(game).join('\n')).toMatch(/balls/);
-    game.sled.x = 1e4;
-    expect(checkInvariants(game).join('\n')).toMatch(/off the floor/);
+    race(game);
+    game.marbles.finishers -= 1;
+    expect(checkInvariants(game).join('\n')).toMatch(/in the cup, and/);
+  });
+
+  it('reports a place given twice, and one given to a marble still going', () => {
+    const { game } = newGame();
+    race(game);
+    const second = [...Array(game.marbles.count).keys()].find((i) => game.marbles.place[i] === 2)!;
+    game.marbles.place[second] = 1;
+    expect(checkInvariants(game).join('\n')).toMatch(/both came 1/);
+    game.marbles.place[second] = 2;
+    game.marbles.state[second] = RACING;
+    game.marbles.finishers -= 1;
+    expect(checkInvariants(game).join('\n')).toMatch(/without finishing/);
+    game.marbles.state[second] = FINISHED;
+    game.marbles.finishers += 1;
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('reports a save that has gone backwards', () => {
+    const { game } = newGame();
+    game.progress.save.races = -1;
+    expect(checkInvariants(game).join('\n')).toMatch(/races have been run/);
+    game.progress.save.races = 0;
+    game.progress.save.best = -1;
+    expect(checkInvariants(game).join('\n')).toMatch(/the best time is/);
   });
 });

@@ -4,8 +4,8 @@
  *   npm run bench              measure, and fail if any scenario has got slower by more than the tolerance
  *   npm run bench -- --update  write what it takes now as the new baseline
  *
- * Two scenarios: the floor at rest, which is what most frames are; and the
- * autopilot pushing balls in, which is what a busy frame is. A game adds a
+ * Two scenarios: the field waiting on the gate, which is what a quiet frame
+ * is; and eight marbles racing, which is what a busy one is. A game adds a
  * scenario for each way its frames get costly.
  *
  * A time on one machine is not a time on another, or on the same one with
@@ -41,7 +41,7 @@ interface Result {
   relative: number;
   /** Milliseconds the reference took, the fastest time. */
   ref: number;
-  /** How many bodies were awake at the end, to show the scenario did what it says. */
+  /** How many marbles were still racing at the end, to show the scenario did what it says. */
   awake: number;
   live: number;
 }
@@ -53,27 +53,30 @@ interface Scenario {
   setup: () => { game: Game; frame: () => void };
 }
 
-/** A game from a seed, settled. */
+/** A game from a seed, with its field on the gate. */
 function settled(seed: number): Game {
   const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
-  for (let f = 0; f < 180; f++) game.step(DT, { throttle: 0, steer: 0 });
+  for (let f = 0; f < 180; f++) game.step(DT);
   return game;
 }
 
 const SCENARIOS: Scenario[] = [
   {
-    name: 'the floor at rest',
+    name: 'the field on the gate',
     frames: 600,
     setup: () => {
       const game = settled(1);
-      return { game, frame: () => game.step(DT, { throttle: 0, steer: 0 }) };
+      return { game, frame: () => game.step(DT) };
     },
   },
   {
-    name: 'the autopilot pushing balls in',
+    name: 'eight marbles racing',
     frames: 600,
     setup: () => {
       const game = settled(1);
+      game.release();
+      // a little way in, so the whole run is timed with the field spread out on it and not queued on the gate
+      for (let f = 0; f < 60; f++) game.step(DT);
       const pilot = new Autopilot(game);
       return { game, frame: () => pilot.step(DT) };
     },
@@ -112,10 +115,10 @@ function measure(s: Scenario): Result {
     const t = performance.now();
     for (let f = 0; f < s.frames; f++) frame();
     best = Math.min(best, (performance.now() - t) / s.frames);
-    const { world } = game;
+    const { marbles } = game;
     awake = 0;
-    for (let i = 0; i < world.count; i++) if (world.alive[i] && !world.asleep[i]) awake++;
-    live = world.live;
+    for (let i = 0; i < marbles.count; i++) if (marbles.state[i] === 1) awake++;
+    live = marbles.count;
   }
   return { ms: best, relative: best / ref, ref, awake, live };
 }
@@ -194,7 +197,7 @@ async function main() {
 }
 
 function line(r: Result): string {
-  return `${r.ms.toFixed(3)} ms a frame (${r.relative.toPrecision(3)} of the reference), ${r.awake} of ${r.live} awake`;
+  return `${r.ms.toFixed(3)} ms a frame (${r.relative.toPrecision(3)} of the reference), ${r.awake} of ${r.live} racing`;
 }
 
 function round(n: number): number {
