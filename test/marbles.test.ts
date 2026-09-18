@@ -1203,6 +1203,63 @@ describe('the marbles', () => {
     });
   });
 
+  describe('never jumping', () => {
+    /** First Drop with a gap two long at the join into its third piece, as a join laid wrong would leave. */
+    function gapped(count = 1) {
+      const { marbles } = field(1, count);
+      const next = marbles.track.segments[2];
+      for (let k = 0; k < next.points.length; k += 3) next.points[k] += 2;
+      return marbles;
+    }
+
+    it('says when a marble moves further in a step than its speed and what pushed it explain', () => {
+      const marbles = gapped();
+      marbles.release();
+      let said = '';
+      for (let f = 0; f < 60 * 60 && !said && !marbles.over; f++) {
+        marbles.step(DT);
+        said = checkMarbles(marbles).join('\n');
+      }
+      // on to First Drop's third piece, where the gap is
+      expect(said).toMatch(/marble 0 moved .* further in a step than .*, on to piece 2$/);
+    });
+
+    it('goes on saying so until the field is set on the gate again, however long after', () => {
+      const marbles = gapped();
+      marbles.release();
+      for (let f = 0; f < 60 * 60 && !marbles.over; f++) marbles.step(DT);
+      // the fuzzer asks after every tenth step, so a jump is held until it is asked about, not only the step it happens
+      expect(checkMarbles(marbles).join('\n')).toMatch(/further in a step than/);
+      marbles.reset();
+      expect(checkMarbles(marbles)).toEqual([]);
+    });
+
+    it('counts what a marble was set to between steps as where it is, not as a jump', () => {
+      const { marbles } = field(1, 1);
+      marbles.release();
+      for (let f = 0; f < 60; f++) marbles.step(DT);
+      // put somewhere else by hand, as a test sets a scene or the test API's place does
+      marbles.segment[0] = 3;
+      marbles.along[0] = 1;
+      for (let f = 0; f < 60; f++) marbles.step(DT);
+      expect(checkMarbles(marbles)).toEqual([]);
+    });
+
+    it('takes pushes into account: a whole field squeezed through a gate and a wheel breaks no rule', () => {
+      for (const kinds of [
+        ['start', 'gate', 'finish'],
+        ['start', 'wheel', 'finish'],
+        ['start', 'pegs', 'sweeper', 'finish'],
+      ] as const)
+        for (let seed = 1; seed <= 6; seed++) {
+          const { marbles } = fieldOn(chain([...kinds]), seed);
+          marbles.release();
+          for (let f = 0; f < 60 * 60 && !marbles.over; f++) marbles.step(DT);
+          expect(checkMarbles(marbles), `${kinds.join(', ')}, seed ${seed}`).toEqual([]);
+        }
+    });
+  });
+
   it('says when a marble has gone somewhere it may not', () => {
     const { marbles } = field(1);
     marbles.along[0] = -99;

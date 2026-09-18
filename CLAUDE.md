@@ -220,6 +220,16 @@ belonging with those:
   the hole, nor on to one still falling; it waits in the hole. A new piece that pinches the channel
   meets all of this first, and racing every pair is what found each of
   these.
+- **Nothing jumps, but a push still can.** A marble may move no further in
+  a step than its own speed and what pushed it explain, give or take a
+  quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
+  worst since the gate in `Marbles.jumped`, and `checkMarbles` rules on it.
+  The funnel's two jumps, into its bowl and out of its hole, were this. A
+  push is counted as explained, and two are still big: a crowd squeezing
+  into the neck of a gate's pen is parted by as much as a marble and a half
+  in one step, and a wheel's paddle comes down on a marble all at once and
+  shoves it clear. Each is next through `/bug`, and then pushes are held to
+  half a marble a step as well.
 - **Nothing is quite level.** A straight or a curve leans down by a
   twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
   always drains; a truly level piece let a crowd come to rest on it.

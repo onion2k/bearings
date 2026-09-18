@@ -4,8 +4,9 @@
  *
  * The run it is on is a sound one and joins up, and is one of the runs there
  * are. Every marble is a number, on a piece of the track, inside the channel,
- * not inside another marble, and doing exactly one thing, with the tallies
- * agreeing — all of that is the marbles' own rules, in `checkMarbles`. The
+ * not inside another marble, never further in a step than its speed and what
+ * pushed it take it, and doing exactly one thing, with the tallies agreeing —
+ * all of that is the marbles' own rules, in `checkMarbles`. The
  * places given out are 1, 2, 3 and so on with none repeated, and only to
  * marbles that got there. No player has two marbles, nor any marble two
  * players. The save only ever grew.

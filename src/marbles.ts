@@ -140,6 +140,16 @@ export const LANDING_LOOK = 3;
 export const AIR_TIME = 4;
 
 /**
+ * How much further a marble may move in a step than its own speed and what
+ * pushed it explain: a quarter of a marble's width. Honest motion leaves a
+ * little over, since a marble's middle rides a radius off the floor and goes
+ * further than the floor under it over a crest; the most seen, over every run
+ * and every pair of pieces, is 0.19, at nearly thirty over the top of a drop.
+ * The funnel's jumps, into its bowl and out of its hole, were 1 and more.
+ */
+export const JUMP = 0.25;
+
+/**
  * How slowly a marble may be going, and for how long, before the run is
  * called on it. A run that cannot be finished has to be noticed and said,
  * because the alternative is a race nobody is ever told is over. It is
@@ -252,6 +262,30 @@ export class Marbles {
 
   private readonly here = spot();
   private readonly ahead = spot();
+  private readonly there = spot();
+  /** Somewhere in the world a marble is, worked out into and read straight back, so working it out makes nothing. */
+  private readonly point = [0, 0, 0];
+  /**
+   * The most each marble has moved in a step beyond what its own speed and
+   * everything that pushed it explain, since the field was last set on the
+   * gate: a marble set down somewhere it never went, as the funnel once set
+   * one down inside its rim and again below its hole. Kept since the gate, and
+   * not for the last step only, because the rules are asked after every tenth
+   * step, and a jump has to be there to be seen whenever they are.
+   */
+  readonly jumped: Float32Array;
+  /** Which piece of the run each marble was on after its worst jump, to say where to look. */
+  readonly jumpedOn: Int32Array;
+  /** Where each marble was as the step began, the fastest it went of its own in it, and how far it was pushed. */
+  private readonly fromX: Float32Array;
+  private readonly fromY: Float32Array;
+  private readonly fromZ: Float32Array;
+  private readonly went: Float32Array;
+  private readonly pushed: Float32Array;
+  /** Where on the track each marble was before it was pushed, to tell how far the push took it. */
+  private readonly holdSegment: Int32Array;
+  private readonly holdAlong: Float32Array;
+  private readonly holdAcross: Float32Array;
   private readonly order: Int32Array;
   /** Which slot on the start each marble drew. */
   readonly grid: Int32Array;
@@ -314,6 +348,16 @@ export class Marbles {
     this.grid = new Int32Array(n);
     this.bySlot = new Int32Array(n);
     this.crossed = new Int32Array(n);
+    this.jumped = new Float32Array(n);
+    this.jumpedOn = new Int32Array(n);
+    this.fromX = new Float32Array(n);
+    this.fromY = new Float32Array(n);
+    this.fromZ = new Float32Array(n);
+    this.went = new Float32Array(n);
+    this.pushed = new Float32Array(n);
+    this.holdSegment = new Int32Array(n);
+    this.holdAlong = new Float32Array(n);
+    this.holdAcross = new Float32Array(n);
     this.draw(random);
     this.reset();
   }
@@ -367,6 +411,8 @@ export class Marbles {
       this.state[i] = WAITING;
       this.took[i] = -1;
       this.place[i] = 0;
+      this.jumped[i] = 0;
+      this.jumpedOn[i] = 0;
       this.bySlot[slot] = i;
     }
     this.write();
@@ -397,6 +443,18 @@ export class Marbles {
   step(dt: number) {
     this.t += dt;
     const { track } = this;
+    // where each is as the step begins, from what it is doing and not from where it was last drawn: whatever it
+    // was set to between steps, as the field is on the gate and a test sets a scene, is where it is, not a jump
+    for (let i = 0; i < this.count; i++) {
+      // one waiting on the gate or lost off the run is not moving of its own, and is not held to it
+      if (this.state[i] === WAITING || this.state[i] === LOST) continue;
+      this.locate(i);
+      this.fromX[i] = this.point[0];
+      this.fromY[i] = this.point[1];
+      this.fromZ[i] = this.point[2];
+      this.went[i] = 0;
+      this.pushed[i] = 0;
+    }
     for (let k = 0; k < this.count; k++) {
       const i = this.bySlot[k];
       if (this.state[i] === FLYING) {
@@ -442,8 +500,11 @@ export class Marbles {
       // a chute settles a marble into its middle; a board lets it wander, which is what a board is for
       this.drift[i] -= this.drift[i] * (this.here.w > HALF_WIDTH * 1.5 ? 0.3 : 2) * dt;
       this.across[i] += this.drift[i] * dt;
+      this.went[i] = Math.max(this.went[i], Math.hypot(this.speed[i], this.drift[i]));
+      this.hold(i);
       this.walls(i);
       this.knock(i, true);
+      this.pushedFromHold(i);
 
       // off the end of a piece and on to the next. Reaching the cup at all is finishing: a marble that
       // rolled to a halt inside it would otherwise never be called home.
@@ -483,8 +544,11 @@ export class Marbles {
       if (this.along[i] < 0) {
         const seg0 = this.segment[i];
         if (seg0 === 0 || track.segments[seg0 - 1].flies || track.segments[seg0 - 1].funnel) {
+          // the end of the track stops it, as a wall would
+          this.hold(i);
           this.along[i] = 0;
           if (this.speed[i] < 0) this.speed[i] = 0;
+          this.pushedFromHold(i);
         } else {
           this.segment[i] = seg0 - 1;
           this.along[i] += track.segments[seg0 - 1].length;
@@ -497,6 +561,40 @@ export class Marbles {
     // one that rolled over it
     this.placeFinishers();
     this.write();
+    this.reckon(dt);
+  }
+
+  /**
+   * How far each marble moved in the step against what explains it: its own
+   * speed, and everything that pushed it. What is left over is a jump, and
+   * the biggest of those is kept until the field is set on the gate again.
+   */
+  private reckon(dt: number) {
+    for (let i = 0; i < this.count; i++) {
+      // one still on the gate was not looked at as the step began, and one lost has gone off everything
+      if (this.state[i] === WAITING || this.state[i] === LOST) continue;
+      const moved = Math.hypot(this.x[i] - this.fromX[i], this.y[i] - this.fromY[i], this.z[i] - this.fromZ[i]);
+      const beyond = moved - this.went[i] * dt - this.pushed[i];
+      if (beyond > this.jumped[i]) {
+        this.jumped[i] = beyond;
+        this.jumpedOn[i] = this.track.segments[this.segment[i]].piece;
+      }
+    }
+  }
+
+  /** Where a marble is in the world as it stands, into `point`: on the track, in the air or in a bowl. */
+  private locate(i: number) {
+    const s = this.state[i];
+    if (s === FLYING || s === LOST) {
+      this.point[0] = this.x[i];
+      this.point[1] = this.y[i];
+      this.point[2] = this.z[i];
+    } else if (s === SWIRLING) {
+      const bowl = this.track.segments[this.segment[i]].funnel!;
+      this.point[0] = bowl.x + this.bowlX[i];
+      this.point[1] = bowl.y + this.bowlY[i];
+      this.point[2] = bowl.z + floorUnder(bowl, Math.hypot(this.bowlX[i], this.bowlY[i])) + RADIUS;
+    } else this.onTrack(i);
   }
 
   /**
@@ -512,6 +610,9 @@ export class Marbles {
     this.rolled[i] += (this.speed[i] * dt) / RADIUS;
     this.drift[i] -= this.drift[i] * 2 * dt;
     this.across[i] += this.drift[i] * dt;
+    this.went[i] = Math.max(this.went[i], Math.hypot(this.speed[i], this.drift[i]));
+    // the walls, the marble in front and the stop are what hold it where it waits
+    this.hold(i);
     this.walls(i);
     const wait = seg.length - RADIUS - (this.place[i] - 1) * RADIUS * 2;
     if (this.along[i] >= wait) {
@@ -519,6 +620,7 @@ export class Marbles {
       this.speed[i] = 0;
     }
     if (this.along[i] < 0) this.along[i] = 0;
+    this.pushedFromHold(i);
   }
 
   /**
@@ -676,12 +778,21 @@ export class Marbles {
     this.vy[i] -= inward * ry * dt;
     x += this.vx[i] * dt;
     y += this.vy[i] * dt;
+    // round the bowl and down or up its slope, as steep as it is anywhere between where it was and where it is
+    const there = Math.hypot(x, y) || 1e-6;
+    const steeper = Math.max(
+      Math.abs(slope),
+      Math.abs((floorUnder(bowl, there + eps) - floorUnder(bowl, there - eps)) / (2 * eps)),
+    );
+    this.went[i] = Math.max(this.went[i], Math.hypot(this.vx[i], this.vy[i]) * Math.hypot(1, steeper));
     // the rim: set back inside it, and gripped by how hard it is pressed out into it
     const edge = bowl.rim - RADIUS;
     const out = Math.hypot(x, y);
     if (out > edge) {
       const nx = x / out,
         ny = y / out;
+      // the rim stops it, and it is set back as far as it went past
+      this.pushed[i] += Math.hypot(out - edge, floorUnder(bowl, out) - floorUnder(bowl, edge));
       x = nx * edge;
       y = ny * edge;
       const vn = this.vx[i] * nx + this.vy[i] * ny;
@@ -836,7 +947,15 @@ export class Marbles {
       }
       if (!parted) break;
     }
-    for (let i = 0; i < this.count; i++) if (this.state[i] === SWIRLING) this.placeInBowl(i);
+    // how far the others and the rim pushed each: until now it was where its own way round took it
+    for (let i = 0; i < this.count; i++) {
+      if (this.state[i] !== SWIRLING) continue;
+      const x = this.x[i],
+        y = this.y[i],
+        z = this.z[i];
+      this.placeInBowl(i);
+      this.pushed[i] += Math.hypot(this.x[i] - x, this.y[i] - y, this.z[i] - z);
+    }
   }
 
   /** Off the lip: the speed it had along the track and across it becomes its way through the air. */
@@ -873,9 +992,15 @@ export class Marbles {
     this.x[i] += this.vx[i] * dt;
     this.y[i] += this.vy[i] * dt;
     this.z[i] += this.vz[i] * dt;
+    this.went[i] = Math.max(this.went[i], Math.hypot(this.vx[i], this.vy[i], this.vz[i]));
     this.rolled[i] += (Math.hypot(this.vx[i], this.vy[i]) * dt) / RADIUS;
     const from = this.track.segments[this.segment[i]].funnel;
-    if (from) this.throat(i, from);
+    if (from) {
+      const x = this.x[i],
+        y = this.y[i];
+      this.throat(i, from);
+      this.pushed[i] += Math.hypot(this.x[i] - x, this.y[i] - y);
+    }
     let s = this.track.segments[this.segment[i]].next;
     for (let k = 0; k < LANDING_LOOK && s >= 0; k++) {
       if (this.land(i, s)) return;
@@ -967,6 +1092,8 @@ export class Marbles {
       x = nx * edge;
       y = ny * edge;
       r = edge;
+      // the rim's wall stops it
+      this.pushed[i] += Math.hypot(bowl.x + x - this.x[i], bowl.y + y - this.y[i]);
       this.x[i] = bowl.x + x;
       this.y[i] = bowl.y + y;
       const vn = this.vx[i] * nx + this.vy[i] * ny;
@@ -1037,6 +1164,14 @@ export class Marbles {
       const s = this.state[this.bySlot[k]];
       if (s === RACING || s === FINISHED) this.order[n++] = this.bySlot[k];
     }
+    for (let k = 0; k < n; k++) this.hold(this.order[k]);
+    this.settle(n);
+    // how far the others, the walls and anything in the way pushed each, settling them
+    for (let k = 0; k < n; k++) this.pushedFromHold(this.order[k]);
+  }
+
+  /** The first `n` of `order` settled: their speeds exchanged where they close, and then parted. */
+  private settle(n: number) {
     const runs = this.order;
     const touch = RADIUS * 2;
     // first the speed: what two marbles closing on each other give each other, once for each touch
@@ -1145,18 +1280,58 @@ export class Marbles {
     for (let i = 0; i < this.count; i++) {
       // in the air or gone, a marble is where its flight put it, not anywhere on the track
       if (this.state[i] === FLYING || this.state[i] === LOST || this.state[i] === SWIRLING) continue;
-      at(this.track, this.segment[i], this.along[i], this.here);
-      // across the channel, square to both the way it is going and the way up
-      const bx = this.here.ty * this.here.uz - this.here.tz * this.here.uy;
-      const by = this.here.tz * this.here.ux - this.here.tx * this.here.uz;
-      const bz = this.here.tx * this.here.uy - this.here.ty * this.here.ux;
-      // on a mound it rides up over it, by the height of the floor under it
-      const seg = this.track.segments[this.segment[i]];
-      const lift = RADIUS + (seg.mounds.length > 0 ? moundHeight(seg, this.along[i], this.across[i]) : 0);
-      this.x[i] = this.here.x + bx * this.across[i] + this.here.ux * lift;
-      this.y[i] = this.here.y + by * this.across[i] + this.here.uy * lift;
-      this.z[i] = this.here.z + bz * this.across[i] + this.here.uz * lift;
+      this.onTrack(i);
+      this.x[i] = this.point[0];
+      this.y[i] = this.point[1];
+      this.z[i] = this.point[2];
     }
+  }
+
+  /** Where a marble on the track is in the world, into `point`: a radius up off the floor, and across the channel. */
+  private onTrack(i: number) {
+    this.onTrackAt(this.segment[i], this.along[i], this.across[i]);
+  }
+
+  /** Where a marble would be in the world, `along` a segment and `across` its channel, into `point`. */
+  private onTrackAt(segment: number, along: number, across: number) {
+    const h = at(this.track, segment, along, this.there);
+    // across the channel, square to both the way it is going and the way up
+    const bx = h.ty * h.uz - h.tz * h.uy;
+    const by = h.tz * h.ux - h.tx * h.uz;
+    const bz = h.tx * h.uy - h.ty * h.ux;
+    // on a mound it rides up over it, by the height of the floor under it
+    const seg = this.track.segments[segment];
+    const lift = RADIUS + (seg.mounds.length > 0 ? moundHeight(seg, along, across) : 0);
+    this.point[0] = h.x + bx * across + h.ux * lift;
+    this.point[1] = h.y + by * across + h.uy * lift;
+    this.point[2] = h.z + bz * across + h.uz * lift;
+  }
+
+  /** Where on the track a marble is now, kept to tell later how far it has been pushed from it. */
+  private hold(i: number) {
+    this.holdSegment[i] = this.segment[i];
+    this.holdAlong[i] = this.along[i];
+    this.holdAcross[i] = this.across[i];
+  }
+
+  /**
+   * How far a marble on the track has been pushed since it was held, added
+   * to what pushed it this step. Most steps nothing pushes a marble, and
+   * then nothing is worked out.
+   */
+  private pushedFromHold(i: number) {
+    if (
+      this.segment[i] === this.holdSegment[i] &&
+      this.along[i] === this.holdAlong[i] &&
+      this.across[i] === this.holdAcross[i]
+    )
+      return;
+    this.onTrackAt(this.holdSegment[i], this.holdAlong[i], this.holdAcross[i]);
+    const x = this.point[0],
+      y = this.point[1],
+      z = this.point[2];
+    this.onTrack(i);
+    this.pushed[i] += Math.hypot(this.point[0] - x, this.point[1] - y, this.point[2] - z);
   }
 
   /** How far along the whole run a marble is: what places it against the others. */
@@ -1221,6 +1396,12 @@ export function checkMarbles(marbles: Marbles): string[] {
       marbles.vz[i],
     ];
     if (!numbers.every(Number.isFinite)) problems.push(`marble ${i} is not a number`);
+    // nothing moves a marble in a step but its own speed and what pushes it: anything more is a jump, as the funnel
+    // once set a marble down inside its rim where it had never been, and again on the piece below its hole
+    if (marbles.jumped[i] > JUMP)
+      problems.push(
+        `marble ${i} moved ${marbles.jumped[i].toFixed(3)} further in a step than its speed and what pushed it explain, on to piece ${marbles.jumpedOn[i]}`,
+      );
     const piece = track.segments[seg];
     if (marbles.along[i] < -1e-3 || marbles.along[i] > piece.length + 1e-3)
       problems.push(`marble ${i} is ${marbles.along[i]} along a segment ${piece.length} long`);
