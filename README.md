@@ -26,9 +26,10 @@ Five runs, each its own kind of race, and on every one something that
 breaks a field up, since a chute alone is single file and finishes in the
 order the grid set: **peg boards** that knock a marble off its line;
 **sweepers** that swing across a board; **gates** that hold a pen and slide
-open from one wall, then the other; a **paddle wheel** that holds back
-whatever catches a paddle up; and a **funnel**, where the field circles a bowl
-until each marble is slow enough to drop through the hole. The runs:
+open from one wall, then the other; a **paddle wheel** right across its pen
+that holds back every marble that comes under it; and a **funnel**, where
+the field circles a bowl until each marble is slow enough to drop through
+the hole. The runs:
 **First Drop**, a peg board and a gate between long drops; **The Chute**, a
 sweeper and a gate and over in five seconds; **The Tower**, a gate, three
 turns of a spiral and a funnel at its foot; **The Leap**, two jumps, the

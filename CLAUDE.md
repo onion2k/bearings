@@ -160,8 +160,8 @@ want a change to artshape-render since it has no textures. Open, and
 belonging with those:
 
 - **Where on the grid still counts for something.** Over sixty races each,
-  pole wins 7% on The Tower, 12% on First Drop, 13% on Switchback, 15% on
-  The Chute and 22% on The Leap, down from 27% to 85% before the pegs, pens
+  pole wins 7% on The Tower, 12% on First Drop, 15% on The Chute, 18% on
+  Switchback and 22% on The Leap, down from 27% to 85% before the pegs, pens
   and funnel; and the back half of the grid wins 70% on The Tower, whose
   gate lets the back of a pen go first as often as the front. The bet prices
   this with odds, run by run.
@@ -177,9 +177,17 @@ belonging with those:
   twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
   always drains; a truly level piece let a crowd come to rest on it.
 - **A wheel is a gate that turns.** A marble that catches a paddle up is
-  held until the paddle lifts out; one that arrives between paddles runs on
-  under it. It holds a marble anything from nothing to two thirds of a
-  second, and that spread is what it is for.
+  held until the paddle lifts out, and those that come close together are
+  gathered abreast behind it and let go at once. It stands right across its
+  pen, and holds every marble from half a second to a second and a third;
+  over one half of its pen, the field came down the other half after a bend
+  and went by untouched.
+- **Nothing in the way may be missed.** A marble keeps its line through a
+  pen, within a chute's width of the middle, and a bend puts a whole field
+  on its outside; a thing in the way that does not reach across that
+  stream, both sides, is one a layout can make the field miss.
+  `test/runs.test.ts` holds every piece with something in the way to
+  changing the order it hands the field on in.
 
 ## Rules for the code
 

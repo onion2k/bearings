@@ -113,7 +113,7 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  test('the wheel on switchback, a paddle down in the chute', async ({ page }) => {
+  test('the field gathered behind the wheel on switchback', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const atWheel = await page.evaluate(() => {
@@ -121,13 +121,13 @@ test.describe('what it looks like', () => {
       g.pick(4);
       g.release();
       g.follow(false);
-      g.step(709);
-      // from along the axle, so the paddles are seen as the cross they make
-      g.look(13.25, -28.05, -25, { azimuth: Math.PI, polar: 1.25, radius: 11 });
+      g.step(719);
+      // looking down its pen, so the wheel is seen right across it from wall to wall, with the field at it
+      g.look(13.25, -28.05, -25.5, { azimuth: -Math.PI / 2, polar: 0.75, radius: 14 });
       g.step(1);
       return g.marbles().filter((m) => m.segment === 8).length;
     });
-    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(4);
+    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(6);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('wheel.png', TOLERANCE);
     expect(problems).toEqual([]);

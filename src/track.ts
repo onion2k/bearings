@@ -430,6 +430,15 @@ const BOARD = 3.6;
 export const PEG = 0.22;
 
 /**
+ * A paddle wheel, which the scene draws as the solver has it: how wide its
+ * pen is either side of the middle; how far its paddles reach across, which
+ * is the pen less a paddle's own thickness, so no marble gets round an end;
+ * how thick a paddle is, how high the axle stands above a marble's middle,
+ * how long a paddle is, and how long the wheel takes to go round.
+ */
+export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1, arm: 1.45, period: 4.8 };
+
+/**
  * Rows of pegs, each row shifted half a gap from the one before, so that a
  * marble falling straight down a board meets a peg in every other row. The
  * gaps are wider than a marble, so nothing can wedge; what a marble cannot
@@ -550,22 +559,23 @@ const SHAPES: Record<Kind, Shape> = {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
     rough: Math.hypot(CELL, LEVEL) * 1.1,
     curve: rampCurve,
-    // a pen, and a wheel over one half of it: a wheel across the whole of a chute carries a field on in the
-    // order it came, a paddle's worth at a time; over half a pen it holds back the marbles on its side while
-    // those on the other roll past, and which side a marble is on is where the pegs and the jostle left it
-    width: opening(2.6, 0.25, 0.8),
-    // four paddles, one down in the chute at a time for 0.6 s: a marble that catches one up is held behind it
-    // until it lifts out, and one that arrives as a paddle lifts runs on under the wheel untouched, so a marble
-    // is kept anything from nothing to two thirds of a second by where in its turn it finds the wheel. The axle
+    // a pen, and a wheel right across it. A wheel over one half of its pen was a wheel the field could miss: a
+    // marble comes into a pen within a chute's width of its middle and keeps its line, and after a bend the whole
+    // field comes down the outside, so on Switchback it passed the wheel by in every race of sixty
+    width: opening(WHEEL.pen, 0.25, 0.8),
+    // four paddles, one down in the chute at a time for 1.2 s: a marble that catches one up is held behind it
+    // until it lifts out, and one that arrives as a paddle lifts runs on under the wheel. A wheel turning twice as
+    // fast held only one marble at a time, and handed a field on in the order it came; this one gathers those
+    // that come close together behind a paddle, abreast across the pen, and lets them all go at once. The axle
     // stands low enough that a paddle's tip clears the chute's floor at the bottom of its turn, so the wheel the
     // marbles meet is the wheel that is drawn
     obstacles: [0, 0.25, 0.5, 0.75].map((turn) => ({
       u: 0.5,
-      across: -1.25,
-      half: 1.35,
+      across: 0,
+      half: WHEEL.half,
       angle: Math.PI / 2,
-      radius: 0.18,
-      motion: { kind: 'paddle' as const, period: 2.4, turn, axle: 1, arm: 1.45 },
+      radius: WHEEL.radius,
+      motion: { kind: 'paddle' as const, period: WHEEL.period, turn, axle: WHEEL.axle, arm: WHEEL.arm },
     })),
   },
   funnel: {

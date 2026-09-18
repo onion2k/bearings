@@ -17,6 +17,7 @@ import {
   HALF_WIDTH,
   MOVING_MOST,
   PEG,
+  WHEEL,
   type Obstacle,
   type Pose,
   type Track,
@@ -179,7 +180,13 @@ export class Scene {
         roughness: 0.45,
       },
       { mesh: bar(1, 0.4, GATE_HEIGHT), matrices: this.gates, count: 0, albedo: [0.7, 0.1, 0.08], roughness: 0.5 },
-      { mesh: wheel(1.45, 2.7, 4), matrices: this.wheels, count: 0, albedo: [0.68, 0.5, 0.16], roughness: 0.3 },
+      {
+        mesh: wheel(WHEEL.arm, WHEEL.half * 2, 4),
+        matrices: this.wheels,
+        count: 0,
+        albedo: [0.68, 0.5, 0.16],
+        roughness: 0.3,
+      },
     ];
   }
 

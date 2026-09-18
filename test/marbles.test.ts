@@ -572,23 +572,28 @@ describe('the marbles', () => {
       }
     });
 
-    it('holds a marble back by where in its turn it finds the wheel, from not at all to over half a second', () => {
-      /** How long a marble let go into the piece at `speed` takes to cross it, the wheel's turn begun at `phase`. */
-      const crossing = (kind: 'wheel' | 'ramp', phase: number) => {
+    it('holds back every marble that comes under the wheel, whichever side of the chute it comes in on', () => {
+      /** How long a marble let go into the piece `across` its chute takes to cross it, the wheel's turn begun at `phase`. */
+      const crossing = (kind: 'wheel' | 'ramp', across: number, phase: number) => {
         const run = chain(['start', 'ramp', kind, 'straight', 'finish']);
-        // under the wheel's half of the pen, and on a plain ramp as near that side as its chute allows
-        const { marbles } = setOn(run, 2, 0.2, kind === 'wheel' ? -1.2 : -0.7, 5);
+        const { marbles } = setOn(run, 2, 0.2, across, 5);
         const paddles = marbles.track.segments[2].obstacles;
         if (paddles.length) marbles.phase[paddles[0].slot] = phase;
         let f = 0;
         for (; f < 10 * 60 && marbles.segment[0] === 2; f++) marbles.step(DT);
         return f * DT;
       };
-      const ramp = crossing('ramp', 0);
-      const wheel = Array.from({ length: 20 }, (_, k) => crossing('wheel', k / 20));
-      const mean = wheel.reduce((a, b) => a + b, 0) / wheel.length;
-      expect(mean - ramp, 'held back, on the whole').toBeGreaterThan(0.15);
-      expect(Math.max(...wheel) - Math.min(...wheel), 'by more at one moment than another').toBeGreaterThan(0.4);
+      // either edge of a chute's stream, as a field comes down the outside of a bend one way or the other: a wheel
+      // over one half of its pen let one side go by untouched
+      for (const across of [-0.7, 0.7]) {
+        const ramp = crossing('ramp', across, 0);
+        const wheel = Array.from({ length: 20 }, (_, k) => crossing('wheel', across, k / 20));
+        expect(Math.min(...wheel) - ramp, `${across} across: held, whenever it comes`).toBeGreaterThan(0.3);
+        expect(
+          Math.max(...wheel) - Math.min(...wheel),
+          `${across} across: longer at one moment than another`,
+        ).toBeGreaterThan(0.4);
+      }
     });
 
     it('starts the moving pieces somewhere in their turn chosen by the seed, the same for the same seed', () => {
