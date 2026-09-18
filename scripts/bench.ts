@@ -1,7 +1,7 @@
 /**
  * How long a frame of the game takes, held to what it took before.
  *
- *   npm run bench              measure, and fail if any scenario has got slower by more than the tolerance
+ *   npm run bench              measure, and fail if any scenario has moved by more than the tolerance, either way
  *   npm run bench -- --update  write what it takes now as the new baseline
  *
  * Two scenarios: the field waiting on the gate, which is what a quiet frame
@@ -9,12 +9,19 @@
  * scenario for each way its frames get costly.
  *
  * A time on one machine is not a time on another, or on the same one with
- * something else running. So each scenario is run several times, fresh, in a
- * worker of its own, and the fastest run is the one that counts: noise only
- * ever makes a run slower. And it is held to the baseline as a multiple of a
- * fixed piece of arithmetic timed alongside it, which goes faster and slower
- * with the machine much as the game does, so a baseline written on one
- * machine means something on another. The milliseconds are reported too.
+ * something else running. So each scenario is held to the baseline as a
+ * multiple of a fixed piece of arithmetic, timed just before and just after
+ * each run, which goes faster and slower with the machine much as the game
+ * does: a baseline written on one machine means something on another, and
+ * on this one as it warms. Each scenario is run several times, fresh, in a
+ * worker of its own, and the run that counts is the one that took least
+ * against its reference, since noise only ever makes a run slower. Each is
+ * run for long enough that its time is well clear of the timer's grain: a
+ * frame of the race costs a hundredth of a millisecond, and a waiting one a
+ * twentieth of that. The milliseconds are reported too.
+ *
+ * It holds both ways, as every baseline here does: a race gone faster is
+ * written into the baseline, so that giving the speed back later is seen.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -22,16 +29,11 @@ import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+import { TOLERANCE, bestRatio, judge } from './benching';
 
 const BASELINE = 'scripts/bench-baseline.json';
-/**
- * How much slower than the baseline before it fails: a share of it, and at
- * least an absolute amount, so a scenario that costs next to nothing is not
- * failed for a hundredth of a millisecond of noise.
- */
-const TOLERANCE = 0.2,
-  SLACK_MS = 0.05;
-const RUNS = 4;
+/** How many times each scenario is run: four let a slow moment through often enough to wobble the figure by a tenth. */
+const RUNS = 8;
 const DT = 1 / 60;
 
 interface Result {
@@ -63,7 +65,9 @@ function settled(seed: number): Game {
 const SCENARIOS: Scenario[] = [
   {
     name: 'the field on the gate',
-    frames: 600,
+    // a waiting frame costs so little that six hundred of them were timed in under half a millisecond, and the
+    // figure wobbled by four tenths from one run of the bench to the next
+    frames: 20000,
     setup: () => {
       const game = settled(1);
       return { game, frame: () => game.step(DT) };
@@ -71,11 +75,13 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'eight marbles racing',
-    frames: 600,
+    // about three races back to back, set up again between them as a player would: one race was too short a time
+    // to measure steadily, and the figure wobbled by a sixth
+    frames: 3000,
     setup: () => {
       const game = settled(1);
       game.release();
-      // a little way in, so the whole run is timed with the field spread out on it and not queued on the gate
+      // a little way in, so the first race is timed with the field spread out on it and not queued on the gate
       for (let f = 0; f < 60; f++) game.step(DT);
       const pilot = new Autopilot(game);
       return { game, frame: () => pilot.step(DT) };
@@ -104,23 +110,22 @@ function reference(): number {
 }
 
 function measure(s: Scenario): Result {
-  let best = Infinity,
-    ref = Infinity,
-    awake = 0,
+  let awake = 0,
     live = 0;
+  // the reference warmed up first, so its first times are not the compiler's
   for (let k = 0; k < 3; k++) reference();
-  for (let k = 0; k < RUNS * 3; k++) ref = Math.min(ref, reference());
-  for (let run = 0; run < RUNS; run++) {
+  const best = bestRatio(RUNS, reference, () => {
     const { game, frame } = s.setup();
     const t = performance.now();
     for (let f = 0; f < s.frames; f++) frame();
-    best = Math.min(best, (performance.now() - t) / s.frames);
+    const ms = (performance.now() - t) / s.frames;
     const { marbles } = game;
     awake = 0;
     for (let i = 0; i < marbles.count; i++) if (marbles.state[i] === 1) awake++;
     live = marbles.count;
-  }
-  return { ms: best, relative: best / ref, ref, awake, live };
+    return ms;
+  });
+  return { ms: best.ms, relative: best.ratio, ref: best.ref, awake, live };
 }
 
 if (!isMainThread) {
@@ -165,41 +170,34 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  let slower = 0;
+  let moved = 0;
   SCENARIOS.forEach((s, k) => {
     const now = results[k],
       was = baseline[s.name];
     if (!was) {
       console.log(`${s.name}: ${line(now)}, not in the baseline`);
-      slower++;
+      moved++;
       return;
     }
     const change = now.relative / was.relative - 1;
-    // what the baseline's time comes to on this machine as it is now, for the absolute allowance
-    const expected = was.relative * now.ref;
-    const verdict =
-      change > TOLERANCE && now.ms - expected > SLACK_MS
-        ? 'SLOWER'
-        : change < -TOLERANCE && expected - now.ms > SLACK_MS
-          ? 'faster'
-          : 'within tolerance';
-    if (verdict === 'SLOWER') slower++;
+    const verdict = judge(was.relative, now.relative);
+    if (verdict !== 'within tolerance') moved++;
     console.log(
-      `${s.name}: ${line(now)}, ${change >= 0 ? '+' : ''}${(change * 100).toFixed(0)}% on the baseline (${verdict})`,
+      `${s.name}: ${line(now)}, ${change >= 0 ? '+' : ''}${(change * 100).toFixed(0)}% on the baseline (${verdict === 'within tolerance' ? verdict : verdict.toUpperCase()})`,
     );
   });
-  if (slower) {
+  if (moved) {
     console.error(
-      `\n${slower} scenario${slower === 1 ? '' : 's'} slower than the baseline by more than ${TOLERANCE * 100}% and ${SLACK_MS} ms`,
+      `\n${moved} scenario${moved === 1 ? '' : 's'} moved from the baseline by more than ${TOLERANCE * 100}%: if that was meant, npm run bench -- --update, and say why`,
     );
     process.exitCode = 1;
   }
 }
 
 function line(r: Result): string {
-  return `${r.ms.toFixed(3)} ms a frame (${r.relative.toPrecision(3)} of the reference), ${r.awake} of ${r.live} racing`;
+  return `${r.ms.toFixed(4)} ms a frame (${r.relative.toPrecision(3)} of the reference), ${r.awake} of ${r.live} racing`;
 }
 
 function round(n: number): number {
-  return Math.round(n * 10000) / 10000;
+  return Math.round(n * 100000) / 100000;
 }

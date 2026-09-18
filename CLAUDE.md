@@ -47,7 +47,7 @@ Numbers, held by gates, on this machine at 1280×800:
 | Boot, page start to the frame loop running          | 3000 ms                        | `perf`       |
 | Download, scripts and styles gzipped                | 400 kB                         | `perf`       |
 | A frame drawn, lower quartile, on every run         | 8 ms                           | `perf`       |
-| The race, a frame, against the reference arithmetic | baseline ± 20%                 | `bench`      |
+| The race, a frame, against the reference arithmetic | baseline ± 15%                 | `bench`      |
 | Pace, each run's minutes to see ten races through   | baseline ± 20%, run by run     | `pace:check` |
 | Anything kept: marbles, track, save, heap           | ceilings in `scripts/leaks.ts` | `leaks`      |
 
@@ -175,10 +175,14 @@ What to copy the shape of, when building something new:
   jump on to a chute, and none once it landed on a peg board. A run rebuilt
   enough to change its races gets a new id, so a best set on the old one is
   not held against the new; the game drops bests for ids it no longer has.
-- **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the pace gate
-  (`scripts/pace.ts`). Each has unit tests of its own working parts, and the
-  fuzzer's reload is tried against a save that forgets, in
-  `test/fuzz-reload.test.ts`, since a correct save never makes it fire.
+- **Tools:** the fuzzer (`scripts/fuzzer.ts`), the pace gate
+  (`scripts/pace.ts`) and the race bench (`scripts/bench.ts`, its
+  arithmetic in `scripts/benching.ts`). Each has unit tests of its own
+  working parts, and the fuzzer's reload is tried against a save that
+  forgets, in `test/fuzz-reload.test.ts`, since a correct save never makes
+  it fire. The bench was blind to a race five times slower until it was
+  made to fail one on purpose; a gate is trusted once it has been seen to
+  fail what it is for.
 - **Test helpers:** `newGame(seed)` and `race(game)` in `test/helpers.ts`,
   and `memoryStore` in `src/progress.ts` for a save that is not the player's.
   `Marbles.friction` is the solver's lever for a test that wants a marble
