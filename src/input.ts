@@ -1,9 +1,10 @@
 /**
  * The keyboard. There is nothing to steer — once they are let go the run
  * decides it — so what the players have is picking their marbles, the gate,
- * setting up again, and choosing which run to watch.
+ * setting up again, choosing which run to watch, and C for the catalog of
+ * pieces and back.
  */
-export type Intent = 'release' | 'reset' | 'next' | { pick: number };
+export type Intent = 'release' | 'reset' | 'next' | 'shelf' | { pick: number };
 
 export class Input {
   constructor(private readonly told: (intent: Intent) => void) {
@@ -13,7 +14,17 @@ export class Input {
       // 1 to 8 pick the marble in that row of the board, which before the off lists the field in its own order
       const row = k.length === 1 && k >= '1' && k <= '8' ? Number(k) - 1 : -1;
       const intent: Intent | null =
-        row >= 0 ? { pick: row } : k === ' ' ? 'release' : k === 'r' ? 'reset' : k === 'n' ? 'next' : null;
+        row >= 0
+          ? { pick: row }
+          : k === ' '
+            ? 'release'
+            : k === 'r'
+              ? 'reset'
+              : k === 'n'
+                ? 'next'
+                : k === 'c'
+                  ? 'shelf'
+                  : null;
       if (!intent) return;
       e.preventDefault();
       this.told(intent);

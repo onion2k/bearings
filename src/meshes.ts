@@ -230,3 +230,33 @@ export function bowl(
   }
   return b;
 }
+
+/**
+ * A mound in a floor, standing on z = 0: `height` at its middle, falling
+ * away as the square of a cosine to nothing at `radius`, as the solver has
+ * it, with its normals leaning the way its sides do.
+ */
+export function mound(radius: number, height: number, rings = 8, sides = 20): Mesh {
+  const b = new MeshBuilder();
+  const k = Math.PI / (2 * radius);
+  for (let i = 0; i <= rings; i++) {
+    const r = (radius * i) / rings;
+    const z = height * Math.cos(k * r) ** 2;
+    // how steeply it falls there, for a normal that leans out by as much
+    const s = -height * k * Math.sin(2 * k * r);
+    const l = Math.hypot(s, 1);
+    for (let j = 0; j <= sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const c = Math.cos(a),
+        sn = Math.sin(a);
+      b.vertex(c * r, sn * r, z, (-c * s) / l, (-sn * s) / l, 1 / l, j / sides, i / rings);
+    }
+  }
+  const row = sides + 1;
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) {
+      const a = i * row + j;
+      b.quad(a, a + row, a + row + 1, a + 1);
+    }
+  return b.build();
+}

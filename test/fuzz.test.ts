@@ -14,7 +14,7 @@ describe('the fuzzer', () => {
       for (const [action, n] of Object.entries(r.done)) done[action] = (done[action] ?? 0) + n;
     }
     expect(finished, 'the monkey gets marbles home').toBeGreaterThan(0);
-    for (const action of ['release', 'watch', 'reset', 'pick', 'claim', 'reload'])
+    for (const action of ['release', 'watch', 'reset', 'pick', 'claim', 'browse', 'reload'])
       expect(done[action] ?? 0, action).toBeGreaterThan(0);
   });
 

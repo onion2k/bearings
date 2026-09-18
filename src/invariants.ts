@@ -15,6 +15,7 @@
  */
 import type { Game } from './game';
 import { FINISHED, checkMarbles } from './marbles';
+import { PIECES } from './catalog';
 import { RUNS } from './runs';
 import { checkTrack } from './track';
 
@@ -63,11 +64,12 @@ export function checkInvariants(game: Game): string[] {
   report('the players', players);
 
   // the run on is one of the runs there are, and it is the one the save says, or the save says none yet
-  if (!Number.isInteger(game.run) || game.run < 0 || game.run >= RUNS.length)
-    out.push(`run ${game.run} is on, of ${RUNS.length}`);
-  else if (track.name !== RUNS[game.run].name) out.push(`run ${game.run} is on, and the track is ${track.name}`);
-  else if (progress.save.run !== '' && progress.save.run !== RUNS[game.run].id)
-    out.push(`the save says ${progress.save.run} is on, and ${RUNS[game.run].id} is`);
+  const list = game.shelf === 'runs' ? RUNS : PIECES;
+  if (!Number.isInteger(game.run) || game.run < 0 || game.run >= list.length)
+    out.push(`run ${game.run} is on, of ${list.length} ${game.shelf}`);
+  else if (track.name !== list[game.run].name) out.push(`run ${game.run} is on, and the track is ${track.name}`);
+  else if (game.shelf === 'runs' && progress.save.run !== '' && progress.save.run !== list[game.run].id)
+    out.push(`the save says ${progress.save.run} is on, and ${list[game.run].id} is`);
 
   const { races, bests } = progress.save;
   if (!Number.isInteger(races) || races < 0) out.push(`${races} races have been run`);

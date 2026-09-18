@@ -176,6 +176,70 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the field lined up in the lane at the end of first drop, in the order it finished', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const home = await page.evaluate(() => {
+      const g = window.game!;
+      g.release();
+      g.follow(false);
+      g.settle(60);
+      // and long enough after for the last home to roll up to the back of the queue
+      g.step(600);
+      g.look(12, 36, -24, { azimuth: 0.4, polar: 0.9, radius: 14 });
+      g.step(1);
+      return g.state().finished;
+    });
+    expect(home, 'the picture is of the whole field home, or it is not this picture').toBe(8);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('lane.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  for (const [name, piece, frames] of [
+    ['narrow', 'Narrow', 100],
+    ['bumps', 'Bumps', 100],
+    ['broad', 'Shallow and broad', 90],
+  ] as const) {
+    test(`the catalog's ${piece.toLowerCase()}, with the field on it`, async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true });
+      const on = await page.evaluate(
+        ([piece, frames]) => {
+          const g = window.game!;
+          g.browse('pieces');
+          g.pick(g.content().catalog.indexOf(piece));
+          g.release();
+          g.follow(false);
+          g.step(frames);
+          // the piece is laid out from the lattice's first cell, two cells long and a level down
+          g.look(12, 0, -6, { azimuth: -1.2, polar: 0.7, radius: 18 });
+          g.step(1);
+          return g.state().runName;
+        },
+        [piece, frames] as const,
+      );
+      expect(on).toBe(piece);
+      await hideStats(page);
+      await expect(page.locator('#view')).toHaveScreenshot(`${name}.png`, TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+  }
+
+  test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.locator('#toPieces').click();
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(g.content().catalog.indexOf('Bumps'));
+      g.step(2);
+    });
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('catalog.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
     test('the board and the run, at the width of a phone', async ({ page }) => {

@@ -20,7 +20,8 @@ Tap a marble on the board, or press its number, **1** to **8**, to pick it
 for the next player without one: the first to pick is P1, the next P2. Pick
 it again to let it go. **Space** lets the field go, and the board says who
 won; **R** puts it back on the gate, and everyone keeps their marble for the
-next race until they change it. The arrows
+next race until they change it. **C**, or the tabs over the run's name,
+turns the board to the catalog of pieces and back. The arrows
 either side of the run's name on the board choose another run, as does
 **N**, and under the name is your best on it. Drag to go round the run, and
 the wheel to go nearer. The board keeps the order as it stands, and the
@@ -41,7 +42,14 @@ sweeper and a gate and over in five seconds; **The Tower**, a gate, three
 turns of a spiral and a funnel at its foot; **The Leap**, two jumps, the
 first on to a peg board; and **Switchback**, twenty pieces of drops, turns,
 pegs and a wheel. Where a marble starts on the grid tells little of where it
-finishes. The game remembers which run you last played and your best on
+finishes. Every run ends in a lane one marble wide, where the field rolls up
+and waits in the order it came home.
+
+The catalog shows every kind of piece on its own, named and said what it
+does, and each can be raced by itself. Besides those on the runs, there are
+shallow straights at a chute's width and opening to two and three times it,
+a narrow section that squeezes the field to single file, and a bumpy board
+whose mounds turn a marble aside as it rolls over one. The game remembers which run you last played and your best on
 each. Still to come, a feature at a time through `/feature`: building a run
 of your own, and patterns on the marbles. `CLAUDE.md` says how the code is
 made and what is open.

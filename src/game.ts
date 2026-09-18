@@ -18,8 +18,9 @@
 import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
+import { PIECES } from './catalog';
 import { RUNS } from './runs';
-import { type Track, compile } from './track';
+import { type Run, type Track, compile } from './track';
 
 /** What happens, for whoever shows it. Every one may be left out. */
 export interface GameEvents {
@@ -39,6 +40,9 @@ export interface GameEvents {
   claimed?(marble: number, player: number): void;
 }
 
+/** Which of the two lists is on the board: the runs, which are raced and kept, or the catalog of pieces, which is only looked at. */
+export type Shelf = 'runs' | 'pieces';
+
 export interface GameOptions {
   /** Chance; Math.random unless told otherwise, and the tests always tell. */
   random?: Random;
@@ -49,8 +53,11 @@ export class Game {
   t = 0;
   /** Where chance comes from: replaced by the test API's `seed`. */
   random: Random;
-  /** Which of the runs is on. */
+  /** Which shelf is on the board, and which of its runs is on. */
+  shelf: Shelf = 'runs';
   run = 0;
+  /** Where each shelf was left, to go back to it there. */
+  private readonly left: Record<Shelf, number> = { runs: 0, pieces: 0 };
   track!: Track;
   marbles!: Marbles;
   /** Whether the race that is on has been counted into the save yet. */
@@ -80,17 +87,41 @@ export class Game {
     this.putOn(Math.max(saved, 0));
   }
 
-  /** Put a run on, and remember it was: the save is written, so the next visit starts on it. */
+  /** The runs on the shelf that is on the board. */
+  get list(): readonly Run[] {
+    return this.shelf === 'runs' ? RUNS : PIECES;
+  }
+
+  /** The run that is on, whichever shelf it is from. */
+  get current(): Run {
+    return this.list[this.run];
+  }
+
+  /**
+   * Put a run on from the shelf that is on the board. A run is remembered,
+   * and the save written so the next visit starts on it; a piece from the
+   * catalog is somewhere to look, and is not.
+   */
   pick(run: number) {
     this.putOn(run);
-    this.progress.chose(RUNS[this.run].id);
+    if (this.shelf !== 'runs') return;
+    this.progress.chose(this.current.id);
     this.persist();
+  }
+
+  /** The other shelf on the board, put on where it was left: the first of it, the first time. */
+  browse(shelf: Shelf) {
+    if (shelf === this.shelf) return;
+    this.left[this.shelf] = this.run;
+    this.shelf = shelf;
+    this.putOn(this.left[shelf]);
   }
 
   /** A run worked out, and a field drawn for its start gate. */
   private putOn(run: number) {
-    this.run = ((run % RUNS.length) + RUNS.length) % RUNS.length;
-    this.track = compile(RUNS[this.run]);
+    const { list } = this;
+    this.run = ((run % list.length) + list.length) % list.length;
+    this.track = compile(list[this.run]);
     this.marbles = new Marbles(
       this.track,
       {
@@ -156,7 +187,7 @@ export class Game {
 
   /** The best winning time on the run that is on, or 0 before it has one. */
   best(): number {
-    return this.progress.best(RUNS[this.run].id);
+    return this.shelf === 'runs' ? this.progress.best(this.current.id) : 0;
   }
 
   /** Whether the race that is on has been run. */
@@ -191,8 +222,11 @@ export class Game {
       this.counted = true;
       const won = this.standing().find((i) => this.marbles.place[i] === 1) ?? -1;
       const seconds = won >= 0 ? this.marbles.took[won] : 0;
-      this.progress.ran(RUNS[this.run].id, seconds);
-      this.persist();
+      // a race on a piece from the catalog is only a look at it, and is neither counted nor kept
+      if (this.shelf === 'runs') {
+        this.progress.ran(this.current.id, seconds);
+        this.persist();
+      }
       this.events.over?.(won, seconds);
     }
   }

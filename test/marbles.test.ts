@@ -754,6 +754,145 @@ describe('the marbles', () => {
     });
   });
 
+  describe('at the end of the run', () => {
+    it('lines the field up in the lane in the order it finished, at rest, nose to tail from the stop', () => {
+      for (const seed of [1, 2, 3]) {
+        const { marbles } = fieldOn(FIRST, seed);
+        marbles.release();
+        for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          expect(checkMarbles(marbles), `seed ${seed} frame ${f}`).toEqual([]);
+        }
+        // and a while longer, for the last home to roll up to the back of the queue
+        for (let f = 0; f < 10 * 60; f++) marbles.step(DT);
+        expect(checkMarbles(marbles), `seed ${seed}, lined up`).toEqual([]);
+        const end = marbles.track.segments.length - 1;
+        const lane = marbles.track.segments[end];
+        const inOrder = [...Array(marbles.count).keys()].sort((a, b) => marbles.place[a] - marbles.place[b]);
+        inOrder.forEach((i, k) => {
+          expect(marbles.state[i]).toBe(FINISHED);
+          expect(marbles.segment[i], `seed ${seed}: place ${k + 1} in the lane`).toBe(end);
+          expect(Math.abs(marbles.speed[i]), `seed ${seed}: place ${k + 1} at rest`).toBeLessThan(0.05);
+          // the winner against the stop, and each after it against the one in front
+          const should = lane.length - RADIUS - k * RADIUS * 2;
+          expect(marbles.along[i], `seed ${seed}: place ${k + 1} where it should wait`).toBeCloseTo(should, 1);
+        });
+      }
+    });
+
+    it('places two that cross the line in the same frame by which crossed it first, not by who is asked first', () => {
+      const run = chain(['start', 'straight', 'straight', 'finish']);
+      const { marbles } = fieldOn(run, 1, 2);
+      // the one asked first in a frame is the one on the lower slot; it is put behind
+      const first = marbles.grid[0] === 0 ? 0 : 1,
+        second = 1 - first;
+      const before = marbles.track.segments[2];
+      for (const i of [first, second]) {
+        marbles.state[i] = RACING;
+        marbles.segment[i] = 2;
+        marbles.speed[i] = 10;
+        marbles.drift[i] = 0;
+      }
+      marbles.along[first] = before.length - 0.1;
+      marbles.along[second] = before.length - 0.05;
+      marbles.across[first] = -0.6;
+      marbles.across[second] = 0.6;
+      marbles.step(DT);
+      expect(marbles.place[second], 'the one further past the line').toBe(1);
+      expect(marbles.place[first]).toBe(2);
+    });
+  });
+
+  it('never pushes a marble over the line: only rolling over it finishes a race', () => {
+    const run = chain(['start', 'straight', 'straight', 'finish']);
+    const { marbles } = fieldOn(run, 1, 2);
+    const before = marbles.track.segments[2];
+    // one just short of the line, and one right up inside it from behind, both still: parting them pushes the front one on
+    for (const [i, along] of [
+      [0, before.length - 0.05],
+      [1, before.length - 0.45],
+    ] as const) {
+      marbles.state[i] = RACING;
+      marbles.segment[i] = 2;
+      marbles.along[i] = along;
+      marbles.across[i] = 0;
+      marbles.speed[i] = 0;
+      marbles.drift[i] = 0;
+    }
+    marbles.step(DT);
+    expect(checkMarbles(marbles)).toEqual([]);
+    expect(marbles.state[0], 'still racing, and short of the line').toBe(RACING);
+    expect(marbles.segment[0]).toBe(2);
+  });
+
+  describe('through a narrow section', () => {
+    it('takes a whole field through in single file, none inside another and none held up for good', () => {
+      for (const seed of [1, 2, 3, 4]) {
+        const { marbles } = fieldOn(chain(['start', 'ramp', 'narrow', 'straight', 'finish']), seed);
+        marbles.release();
+        for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          expect(checkMarbles(marbles), `seed ${seed} frame ${f}`).toEqual([]);
+        }
+        expect(marbles.over, `seed ${seed}`).toBe(true);
+        expect(marbles.stalled + marbles.lost, `seed ${seed}: none stuck at the squeeze`).toBe(0);
+      }
+    });
+  });
+
+  describe('over a bumpy section', () => {
+    const BUMPS = chain(['start', 'bumps', 'straight', 'finish']);
+
+    it('turns a marble aside that rolls on to a mound off its middle', () => {
+      const { marbles } = fieldOn(BUMPS, 1, 1);
+      const seg = marbles.track.segments[1];
+      const m = seg.mounds[0];
+      marbles.state[0] = RACING;
+      marbles.segment[0] = 1;
+      marbles.along[0] = Math.max(0, m.along - m.radius - 0.5);
+      marbles.across[0] = m.across + m.radius * 0.3;
+      marbles.speed[0] = 3;
+      marbles.drift[0] = 0;
+      let furthest = 0;
+      for (let f = 0; f < 3 * 60 && marbles.segment[0] === 1 && marbles.along[0] < m.along + m.radius; f++) {
+        marbles.step(DT);
+        furthest = Math.max(furthest, marbles.across[0] - (m.across + m.radius * 0.3));
+      }
+      expect(furthest, 'pushed away from the mound, to the side it was already on').toBeGreaterThan(0.2);
+    });
+
+    it('carries a marble up over a mound, and not through it', () => {
+      const { marbles } = fieldOn(BUMPS, 1, 1);
+      const seg = marbles.track.segments[1];
+      const m = seg.mounds[0];
+      marbles.state[0] = RACING;
+      marbles.segment[0] = 1;
+      marbles.along[0] = m.along;
+      marbles.across[0] = m.across;
+      marbles.speed[0] = 0;
+      marbles.step(DT);
+      const onTop = marbles.z[0];
+      marbles.along[0] = m.along;
+      marbles.across[0] = m.across + m.radius + 0.2;
+      marbles.speed[0] = 0;
+      marbles.step(DT);
+      expect(onTop - marbles.z[0], 'higher on the mound than beside it').toBeGreaterThan(m.height * 0.7);
+    });
+
+    it('takes a whole field over the mounds and home, none held up and no rule broken', () => {
+      for (const seed of [1, 2, 3]) {
+        const { marbles } = fieldOn(BUMPS, seed);
+        marbles.release();
+        for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          expect(checkMarbles(marbles), `seed ${seed} frame ${f}`).toEqual([]);
+        }
+        expect(marbles.over).toBe(true);
+        expect(marbles.stalled + marbles.lost, `seed ${seed}`).toBe(0);
+      }
+    });
+  });
+
   it('says when a marble has gone somewhere it may not', () => {
     const { marbles } = field(1);
     marbles.along[0] = -99;

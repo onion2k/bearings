@@ -24,6 +24,8 @@ import {
   type Track,
   at,
   bowlHeight,
+  moundHeight,
+  moundSlope,
   pose,
   pose0,
   spot,
@@ -85,6 +87,16 @@ export const WAITING = 0,
  * the more speed it loses, so a fast one circles longest.
  */
 export const KNOCK = 0.5;
+/**
+ * The lane at the end of the run is lined with felt and tilted toward its
+ * stop: whatever a marble comes over the line with, it is slowed to a crawl
+ * of `LANE_PULL / LANE_BRAKE` and creeps on until it reaches its place in the
+ * queue. Without the tilt one would come to rest short of the marble in
+ * front and leave a gap; without the felt it would hit the stop at the speed
+ * it finished at.
+ */
+export const LANE_PULL = 2.4;
+export const LANE_BRAKE = 2;
 /**
  * How far off true a strike on something in the way may come away, either
  * way, in radians. Nothing on a real run is quite true, a peg or a paddle
@@ -236,6 +248,10 @@ export class Marbles {
    */
   private rattle: Random = () => 0.5;
   private rattleFrom = 0;
+  /** Those over the line this step, and how many: their places are given out once everything has moved. */
+  private readonly crossed: Int32Array;
+  private crossing = 0;
+  private readonly slope: [number, number] = [0, 0];
 
   constructor(
     readonly track: Track,
@@ -274,6 +290,7 @@ export class Marbles {
     this.bottom = bottom;
     this.grid = new Int32Array(n);
     this.bySlot = new Int32Array(n);
+    this.crossed = new Int32Array(n);
     this.draw(random);
     this.reset();
   }
@@ -303,6 +320,7 @@ export class Marbles {
   reset() {
     this.t = 0;
     this.rattle = seeded(this.rattleFrom);
+    this.crossing = 0;
     this.finishers = 0;
     this.stalled = 0;
     this.lost = 0;
@@ -366,12 +384,23 @@ export class Marbles {
         this.swirl(i, dt);
         continue;
       }
+      if (this.state[i] === FINISHED) {
+        this.lane(i, dt);
+        continue;
+      }
       if (this.state[i] !== RACING) continue;
       at(track, this.segment[i], this.along[i], this.here);
       // gravity along the track: down its own slope, less the share that goes into the marble's spin
       const pull = GRAVITY * (LEAN - this.here.tz) * ROLLING;
       const drag = DRAG * this.friction * this.speed[i] * Math.abs(this.speed[i]);
       this.speed[i] += (pull - drag) * dt;
+      // up a mound's side a marble is pulled back down it, which turns it away from the middle of the mound
+      const seg = track.segments[this.segment[i]];
+      if (seg.mounds.length > 0) {
+        moundSlope(seg, this.along[i], this.across[i], this.slope);
+        this.speed[i] -= GRAVITY * ROLLING * this.slope[0] * dt;
+        this.drift[i] -= GRAVITY * ROLLING * this.slope[1] * dt;
+      }
       // rolling resistance only ever slows a marble to a stop, never past it: taken as a push the other way it
       // could be bigger than the speed it was slowing, throwing a marble back and forth, and a marble that
       // should have stuck fast was jittered all the way to the cup
@@ -440,9 +469,59 @@ export class Marbles {
         }
       }
     }
+    this.placeFinishers();
     this.touching();
     this.jostle();
     this.write();
+  }
+
+  /**
+   * A marble past the line, rolling on down the lane at the end of the run to
+   * wait in it: the winner against the stop, and each after it a marble's
+   * length behind the one that finished before it, so the field ends lined
+   * up in the order it came home.
+   */
+  private lane(i: number, dt: number) {
+    const seg = this.track.segments[this.segment[i]];
+    this.speed[i] += (LANE_PULL - LANE_BRAKE * this.speed[i]) * dt;
+    this.along[i] += this.speed[i] * dt;
+    this.rolled[i] += (this.speed[i] * dt) / RADIUS;
+    this.drift[i] -= this.drift[i] * 2 * dt;
+    this.across[i] += this.drift[i] * dt;
+    this.walls(i);
+    const wait = seg.length - RADIUS - (this.place[i] - 1) * RADIUS * 2;
+    if (this.along[i] >= wait) {
+      this.along[i] = wait;
+      this.speed[i] = 0;
+    }
+    if (this.along[i] < 0) this.along[i] = 0;
+  }
+
+  /**
+   * The places for those over the line this step, given out in the order they
+   * crossed it: a marble further past it for its speed crossed it earlier in
+   * the step. Given out in the order the step reached them instead, two that
+   * crossed together were placed by their slots on the grid, and the lane
+   * lined them up the other way round.
+   */
+  private placeFinishers() {
+    const n = this.crossing;
+    if (n === 0) return;
+    const since = (i: number) => this.along[i] / Math.max(this.speed[i], 1e-6);
+    // few enough to sort in place, which makes nothing
+    for (let a = 1; a < n; a++)
+      for (let b = a; b > 0 && since(this.crossed[b]) > since(this.crossed[b - 1]); b--) {
+        const swap = this.crossed[b];
+        this.crossed[b] = this.crossed[b - 1];
+        this.crossed[b - 1] = swap;
+      }
+    for (let k = 0; k < n; k++) {
+      const i = this.crossed[k];
+      this.took[i] = this.t;
+      this.place[i] = ++this.finishers;
+      this.events.finished?.(i, this.place[i], this.t);
+    }
+    this.crossing = 0;
   }
 
   /**
@@ -852,14 +931,9 @@ export class Marbles {
 
   /** A marble in the cup: how long it took, and what place it came. */
   private finish(i: number) {
-    const seg = this.track.segments[this.segment[i]];
-    this.along[i] = seg.length;
-    this.speed[i] = 0;
-    this.drift[i] = 0;
+    // over the line, and on into the lane at whatever speed it crossed it; its place waits for the end of the step
     this.state[i] = FINISHED;
-    this.took[i] = this.t;
-    this.place[i] = ++this.finishers;
-    this.events.finished?.(i, this.place[i], this.t);
+    this.crossed[this.crossing++] = i;
   }
 
   /**
@@ -895,7 +969,10 @@ export class Marbles {
    */
   private touching() {
     let n = 0;
-    for (let k = 0; k < this.count; k++) if (this.state[this.bySlot[k]] === RACING) this.order[n++] = this.bySlot[k];
+    for (let k = 0; k < this.count; k++) {
+      const s = this.state[this.bySlot[k]];
+      if (s === RACING || s === FINISHED) this.order[n++] = this.bySlot[k];
+    }
     const runs = this.order;
     const touch = RADIUS * 2;
     // first the speed: what two marbles closing on each other give each other, once for each touch
@@ -978,14 +1055,16 @@ export class Marbles {
       // bowl it dropped out of, nor on across a gap or into a bowl without flying or dropping into it
       if (this.along[i] < 0) {
         const before = track.segments[this.segment[i] - 1] as Segment | undefined;
-        if (!before || before.flies || before.funnel) {
+        // nor is a marble in the lane pushed back over the line it has crossed
+        if (!before || before.flies || before.funnel || this.state[i] === FINISHED) {
           this.along[i] = 0;
           return;
         }
         this.segment[i]--;
         this.along[i] += track.segments[this.segment[i]].length;
       } else if (this.along[i] > seg.length) {
-        if (seg.next < 0 || seg.flies || track.segments[seg.next].funnel) {
+        // and a push does not carry a marble over the line: only rolling over it finishes a race
+        if (seg.next < 0 || seg.flies || track.segments[seg.next].funnel || track.segments[seg.next].next < 0) {
           this.along[i] = seg.length;
           return;
         }
@@ -1005,9 +1084,12 @@ export class Marbles {
       const bx = this.here.ty * this.here.uz - this.here.tz * this.here.uy;
       const by = this.here.tz * this.here.ux - this.here.tx * this.here.uz;
       const bz = this.here.tx * this.here.uy - this.here.ty * this.here.ux;
-      this.x[i] = this.here.x + bx * this.across[i] + this.here.ux * RADIUS;
-      this.y[i] = this.here.y + by * this.across[i] + this.here.uy * RADIUS;
-      this.z[i] = this.here.z + bz * this.across[i] + this.here.uz * RADIUS;
+      // on a mound it rides up over it, by the height of the floor under it
+      const seg = this.track.segments[this.segment[i]];
+      const lift = RADIUS + (seg.mounds.length > 0 ? moundHeight(seg, this.along[i], this.across[i]) : 0);
+      this.x[i] = this.here.x + bx * this.across[i] + this.here.ux * lift;
+      this.y[i] = this.here.y + by * this.across[i] + this.here.uy * lift;
+      this.z[i] = this.here.z + bz * this.across[i] + this.here.uz * lift;
     }
   }
 
@@ -1080,6 +1162,8 @@ export function checkMarbles(marbles: Marbles): string[] {
     if (state > SWIRLING) problems.push(`marble ${i} is doing ${state}, which is nothing a marble does`);
     else doing[state]++;
     if (state === FLYING && !piece.flies) problems.push(`marble ${i} is in the air off a piece with no lip`);
+    if (state === FINISHED && piece.next !== -1) problems.push(`marble ${i} is home on a piece short of the end`);
+    if (state === RACING && piece.next === -1) problems.push(`marble ${i} is still racing past the line`);
     if (state === SWIRLING) {
       if (!piece.funnel) problems.push(`marble ${i} is going round a piece that is no funnel`);
       else if (marbles.bowlRadius(i) > piece.funnel.rim - RADIUS + 1e-3)
@@ -1114,7 +1198,8 @@ export function checkMarbles(marbles: Marbles): string[] {
       // two marbles in the same place on the track would be one passing through the other, across the channel
       // as well as along it; in the air nothing touches, so only those on the track and in a bowl are held to it
       let apart = Infinity;
-      if (marbles.state[a] === RACING && marbles.state[b] === RACING)
+      const onTrack = (i: number) => marbles.state[i] === RACING || marbles.state[i] === FINISHED;
+      if (onTrack(a) && onTrack(b))
         apart = Math.hypot(marbles.far(b) - marbles.far(a), marbles.across[b] - marbles.across[a]);
       else if (
         marbles.state[a] === SWIRLING &&

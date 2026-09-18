@@ -12,9 +12,11 @@ import { MeshBuilder } from 'artshape-render/mesh/types';
 import { FIELD } from './field';
 import { FLYING, MARBLES, RADIUS, SWIRLING, type Marbles } from './marbles';
 import { basis, spin } from './matrix';
-import { bar, bowl as bowlMesh, post, sphere, sweep, wheel } from './meshes';
+import { bar, bowl as bowlMesh, mound, post, sphere, sweep, wheel } from './meshes';
 import {
   HALF_WIDTH,
+  LANE,
+  MOUND,
   MOVING_MOST,
   PEG,
   WHEEL,
@@ -104,6 +106,19 @@ export class Scene {
     const bowls = new MeshBuilder();
     const pegs: number[] = [];
     const posts: number[] = [];
+    const mounds: number[] = [];
+    // the line a race is won at, across the start of the last piece, and the stop at the far end of its lane
+    const end = track.segments.length - 1;
+    const lineAt = new Float32Array(16),
+      stopAt = new Float32Array(16);
+    this.onTrack(track, lineAt, 0, end, 0.06, 0, 0, Math.PI / 2);
+    this.onTrack(track, stopAt, 0, end, track.segments[end].length, 0, 0, Math.PI / 2);
+    // a spot is read no further than the end of its piece, so the stop is moved on by half its own thickness from
+    // there, to stand just beyond the lane and not half in it where the winner waits
+    const last = at(track, end, track.segments[end].length, this.here);
+    stopAt[12] += last.tx * 0.12;
+    stopAt[13] += last.ty * 0.12;
+    stopAt[14] += last.tz * 0.12;
     this.sweeping = [];
     this.gating = [];
     this.turning = [];
@@ -125,6 +140,7 @@ export class Scene {
           [entry - opening - 0.05, entry + 0.02],
         );
       } else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
+      for (const m of seg.mounds) mounds.push(s, m.along, m.across);
       for (const ob of seg.obstacles) {
         if (ob.motion.kind === 'fixed') pegs.push(s, ob.along, ob.across);
         else if (ob.motion.kind === 'sweep') this.sweeping.push({ segment: s, ob });
@@ -143,6 +159,9 @@ export class Scene {
     const postAt = new Float32Array(Math.max(1, posts.length / 3) * 16);
     for (let k = 0; k < posts.length; k += 3)
       this.onTrack(track, postAt, k / 3, posts[k], posts[k + 1], posts[k + 2], 0, Math.PI / 2);
+    const moundAt = new Float32Array(Math.max(1, mounds.length / 3) * 16);
+    for (let k = 0; k < mounds.length; k += 3)
+      this.onTrack(track, moundAt, k / 3, mounds[k], mounds[k + 1], mounds[k + 2], 0, 0);
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
@@ -161,6 +180,16 @@ export class Scene {
         albedo: [0.25, 0.25, 0.28],
         roughness: 0.5,
       },
+      // the mounds the same grey as the floor they rise out of, so they read as the floor's own shape
+      {
+        mesh: mound(MOUND.radius, MOUND.height),
+        matrices: moundAt,
+        count: mounds.length / 3,
+        albedo: [0.42, 0.44, 0.5],
+        roughness: 0.65,
+      },
+      { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
+      { mesh: bar((LANE + SKIN) * 2, 0.24, WALL + 0.08), matrices: stopAt, albedo: [0.25, 0.25, 0.28], roughness: 0.5 },
     ];
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)

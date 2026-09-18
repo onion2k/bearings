@@ -15,7 +15,6 @@ import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
-import { RUNS } from '../src/runs';
 
 const DT = 1 / 60;
 /** How many frames between checks, when nothing has just been done. */
@@ -103,10 +102,20 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        1,
+        () => {
+          // the other shelf on the board: the catalog of pieces, or back to the runs, then something off it
+          game.browse(game.shelf === 'runs' ? 'pieces' : 'runs');
+          game.pick(Math.floor(random() * game.list.length));
+          busy = Math.floor(between(10, 60));
+          did('browse');
+        },
+      ],
+      [
         2,
         () => {
           // another run put on, which throws away the race that was on
-          game.pick(Math.floor(random() * RUNS.length));
+          game.pick(Math.floor(random() * game.list.length));
           busy = Math.floor(between(10, 60));
           did('pick');
         },

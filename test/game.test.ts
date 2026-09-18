@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkInvariants } from '../src/invariants';
 import { FINISHED, WAITING } from '../src/marbles';
+import { PIECES } from '../src/catalog';
 import { RUNS } from '../src/runs';
 import { DT, newGame, race, settle } from './helpers';
 
@@ -222,6 +223,45 @@ describe('the game', () => {
       }
       expect(named, 'three players of eight win some of the time').toBeGreaterThan(0);
       expect(nobody, 'and some of the time nobody had the winner').toBeGreaterThan(0);
+    });
+  });
+
+  describe('the shelf of pieces', () => {
+    it('puts the pieces on in place of the runs, one after another, and goes back to the run it was on', () => {
+      const { game } = newGame(4);
+      game.pick(2);
+      game.browse('pieces');
+      expect(game.shelf).toBe('pieces');
+      expect(game.track.name).toBe(PIECES[0].name);
+      game.pick(game.run + 1);
+      expect(game.track.name).toBe(PIECES[1].name);
+      game.pick(-1);
+      expect(game.track.name, 'round from the first to the last').toBe(PIECES[PIECES.length - 1].name);
+      expect(game.progress.save.run, 'a piece is somewhere to look, not a run to come back to').toBe(RUNS[2].id);
+      expect(checkInvariants(game)).toEqual([]);
+      game.browse('runs');
+      expect(game.track.name).toBe(RUNS[2].name);
+      game.browse('pieces');
+      expect(game.track.name, 'and back to the piece it was on').toBe(PIECES[PIECES.length - 1].name);
+    });
+
+    it('counts no race run on a piece, and keeps no best for one', () => {
+      const { game } = newGame(5);
+      game.browse('pieces');
+      expect(race(game)).toBe(true);
+      expect(game.progress.save.races).toBe(0);
+      expect(Object.keys(game.progress.save.bests)).toEqual([]);
+      expect(game.best()).toBe(0);
+      expect(checkInvariants(game)).toEqual([]);
+    });
+
+    it('keeps who has which marble when the shelf changes', () => {
+      const { game } = newGame(6);
+      game.claim(3);
+      game.browse('pieces');
+      expect(game.players[3]).toBe(1);
+      game.browse('runs');
+      expect(game.players[3]).toBe(1);
     });
   });
 });

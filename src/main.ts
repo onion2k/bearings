@@ -12,7 +12,8 @@ import { GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
 import { nameOf } from './field';
 import { frameCost } from './frame-cost';
-import { Game, type GameEvents } from './game';
+import { ABOUT } from './catalog';
+import { Game, type GameEvents, type Shelf } from './game';
 import { LOST, STALLED } from './marbles';
 import { Input } from './input';
 import { Progress } from './progress';
@@ -45,6 +46,8 @@ const bestLine = document.getElementById('best')!;
 const prev = document.getElementById('prev')!;
 const next = document.getElementById('next')!;
 const order = document.getElementById('order')!;
+const toRuns = document.getElementById('toRuns')!;
+const toPieces = document.getElementById('toPieces')!;
 const verdict = document.getElementById('verdict')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
@@ -262,7 +265,11 @@ async function main() {
   function showOrder() {
     const { marbles } = game;
     const best = game.best();
-    bestLine.textContent = best > 0 ? `best ${best.toFixed(2)}s` : 'no best yet';
+    // a run shows the best time on it, and a piece from the catalog says what it does instead
+    bestLine.textContent =
+      game.shelf === 'pieces' ? ABOUT[game.run] : best > 0 ? `best ${best.toFixed(2)}s` : 'no best yet';
+    toRuns.classList.toggle('on', game.shelf === 'runs');
+    toPieces.classList.toggle('on', game.shelf === 'pieces');
     const rows = game
       .standing()
       .map((i) => {
@@ -346,6 +353,15 @@ async function main() {
   };
   prev.addEventListener('click', () => step(-1));
   next.addEventListener('click', () => step(1));
+  /** The runs or the catalog of pieces on the board, put on where it was left, built and framed. */
+  const shelve = (shelf: Shelf) => {
+    game.browse(shelf);
+    rebuild();
+    frameRun();
+    showOrder();
+  };
+  toRuns.addEventListener('click', () => shelve('runs'));
+  toPieces.addEventListener('click', () => shelve('pieces'));
   // a row of the board picked by a tap or a click, for the next player without a marble, or let go again
   order.addEventListener('click', (e) => {
     const row = (e.target as HTMLElement).closest('li');
@@ -355,6 +371,7 @@ async function main() {
     if (intent === 'release') game.release();
     else if (intent === 'reset') game.reset();
     else if (intent === 'next') step(1);
+    else if (intent === 'shelf') shelve(game.shelf === 'runs' ? 'pieces' : 'runs');
     else {
       if (intent.pick < game.marbles.count) game.claim(game.standing()[intent.pick]);
     }

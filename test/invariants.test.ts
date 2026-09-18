@@ -77,4 +77,12 @@ describe('what must always hold', () => {
     game.players[3] = 1;
     expect(checkInvariants(game).join('\n')).toMatch(/player 1 has marbles 0 and 3/);
   });
+
+  it('reports a piece on that is not one of the pieces', () => {
+    const { game } = newGame(1);
+    game.browse('pieces');
+    expect(checkInvariants(game)).toEqual([]);
+    game.run = 999;
+    expect(checkInvariants(game).join('\n')).toMatch(/of \d+ pieces/);
+  });
 });

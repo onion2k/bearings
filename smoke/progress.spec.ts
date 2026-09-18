@@ -83,6 +83,22 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   expect(done.best).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
 
+  // and the field rolls on past the line into the lane at the end, and waits there in the order it finished
+  await play(page, 10 * 60, 'rolling up the lane');
+  const queue = await page.evaluate(() =>
+    window
+      .game!.marbles()
+      .filter((m) => m.place > 0)
+      .sort((a, b) => a.place - b.place)
+      .map((m) => ({ segment: m.segment, along: m.along, speed: m.speed })),
+  );
+  expect(queue.length).toBe(content.marbles);
+  for (let k = 1; k < queue.length; k++) {
+    expect(queue[k].segment, 'all in the lane').toBe(queue[0].segment);
+    expect(queue[k - 1].along - queue[k].along, `place ${k + 1} a marble behind place ${k}`).toBeCloseTo(0.9, 1);
+    expect(Math.abs(queue[k].speed), 'at rest').toBeLessThan(0.05);
+  }
+
   // what the page was told, and what it shows
   const said = await page.evaluate(() => window.game!.events());
   expect(said.filter((l) => l.startsWith('finished')).length).toBeGreaterThan(0);
@@ -142,6 +158,37 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
     expect(raced[1], `invariants after racing ${content.runs[i]}`).toEqual([]);
     expect(raced[0].finished, `every marble home on ${content.runs[i]}`).toBe(content.marbles);
   }
+
+  // ---- the catalog of pieces, by its tab, and back ----
+  const onRun = await page.evaluate(() => window.game!.state().runName);
+  await page.locator('#toPieces').click();
+  await play(page, 30, 'the catalog on');
+  const shelf = await page.evaluate(() => window.game!.state());
+  expect(shelf.shelf).toBe('pieces');
+  expect(content.catalog.length, 'a piece for every kind').toBeGreaterThan(15);
+  await expect(page.locator('#title')).toHaveText(content.catalog[0]);
+  await expect(page.locator('#best'), 'a piece says what it does').not.toHaveText(/best|no best/);
+  await page.locator('#next').click();
+  await expect(page.locator('#title')).toHaveText(content.catalog[1]);
+  // every piece raced by itself through the page, with every marble home and nothing broken, and none of it kept
+  const racesBefore = shelf.races;
+  for (let i = 0; i < content.catalog.length; i++) {
+    const raced = await page.evaluate((n) => {
+      const g = window.game!;
+      g.pick(n);
+      g.release();
+      g.settle(90);
+      return [g.state(), g.invariants()] as const;
+    }, i);
+    expect(raced[1], `invariants after racing ${content.catalog[i]}`).toEqual([]);
+    expect(raced[0].finished, `every marble home on ${content.catalog[i]}`).toBe(content.marbles);
+    expect(raced[0].races, 'a race on a piece is not counted').toBe(racesBefore);
+  }
+  await page.keyboard.press('c');
+  await play(page, 30, 'back to the runs');
+  const back = await page.evaluate(() => window.game!.state());
+  expect(back.shelf).toBe('runs');
+  expect(back.runName, 'on the run it was left on').toBe(onRun);
 
   // ---- the pieces that break a field up, watched at work ----
   // the rules checked every few frames on the way down, and not only once the race is over: the tower's funnel

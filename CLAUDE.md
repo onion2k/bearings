@@ -103,7 +103,9 @@ change meant to move it, and the commit says why. Look at every picture.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
-- Content is `src/runs.ts`, the runs that come with the game, and
+- Content is `src/runs.ts`, the runs that come with the game;
+  `src/catalog.ts`, every kind of piece named, said what it does and set
+  between a start and the end, for the board's second shelf; and
   `src/field.ts`, what the eight marbles are called and look like. A run's
   `id` is what the save knows it by, and never changes once a run has
   shipped; a run the player designs will be the same shape. The save lives
@@ -134,8 +136,19 @@ What to copy the shape of, when building something new:
   ends in the air, and the solver takes a marble off its lip. A board is the
   same plus `width`; pegs and moving parts are `obstacles`, each with a
   `Motion` that `pose` turns into where it is at a moment, from a phase the
-  race draws from its seed; a funnel is `bowl`. Copy that shape for anything
-  the game has several of.
+  race draws from its seed; a funnel is `bowl`; lumps in a floor are
+  `mounds`. A width may pinch below a chute's, down to single file
+  (`NARROW`), but is a chute's wherever one piece meets another. A new kind
+  needs an entry in `CATALOG` too, which the compiler insists on, and the
+  catalog's test then races it by itself. Copy that shape for anything the
+  game has several of.
+- **The end of the run:** `finish` is the line and a lane one marble wide
+  behind it. A marble is placed as it crosses, by which crossed first in
+  the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
+  marble's length behind the one that finished before it.
+- **A shelf of runs:** `Game.shelf` and `browse`. The runs are raced,
+  counted and kept; the pieces from the catalog are put on the same way
+  but nothing raced on them is counted or saved.
 - **The players:** `Game.players`, a player number for each marble, picked
   by `claim` before the off and read by `champion` after it; kept from race
   to race and never saved. Ruled on in `invariants.ts`, read by `marbles()`
@@ -203,6 +216,14 @@ belonging with those:
   pen, and holds every marble from half a second to a second and a third;
   over one half of its pen, the field came down the other half after a bend
   and went by untouched.
+- **The lane at the end is felt and a tilt.** Whatever a marble crosses the
+  line at, it is slowed to a crawl (`LANE_PULL / LANE_BRAKE`) and creeps on
+  to its place; without the tilt it stopped short of the queue, and
+  without the felt it hit the stop at the speed it finished at.
+- **Mounds are soft pegs.** A marble on one is pushed down its slope, which
+  turns it away from the mound's middle, and is drawn riding over it. Like
+  a peg they give each marble the same push from the same place; unlike a
+  peg's strike, it is not scattered.
 - **Nothing in the way may be missed.** A marble keeps its line through a
   pen, within a chute's width of the middle, and a bend puts a whole field
   on its outside; a thing in the way that does not reach across that
@@ -274,6 +295,11 @@ For anything new in the run, check what it does:
 - **another run:** put on part way through a race, and the one before it
   thrown away cleanly; framed to fit the screen, whatever its shape; and put
   back on after a reload
+- **the end:** a field lined up in the lane in the order it finished,
+  none inside another and none pushed back over the line or a racer pushed
+  over it; two crossing the line in one step placed by which crossed first
+- **the catalog:** the piece on its own between a start and the end, sound,
+  raced home on every seed its test tries, and drawn within budget
 - **the players:** a pick before the off, one tried once they are away and
   refused, one let go and its number taken by the next to pick; picks kept
   through a reset and another run; the winner named, or nobody where no

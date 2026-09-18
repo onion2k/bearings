@@ -12,10 +12,11 @@
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import type { Game } from './game';
+import type { Game, Shelf } from './game';
 import { checkInvariants } from './invariants';
 import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
 import { seeded } from './random';
+import { PIECES } from './catalog';
 import { RUNS } from './runs';
 
 declare global {
@@ -36,6 +37,8 @@ export interface GameState {
   run: number;
   runName: string;
   runId: string;
+  /** Which shelf is on the board: the runs, or the catalog of pieces. */
+  shelf: Shelf;
   /** How the race that is on stands. */
   waiting: number;
   racing: number;
@@ -76,6 +79,8 @@ export interface Marble {
 /** What the run is, for setting a scene without importing the game's source. */
 export interface Content {
   runs: string[];
+  /** Every piece in the catalog, by name, in the order its shelf shows them. */
+  catalog: string[];
   /** How long the run that is on is, and how many pieces it has. */
   length: number;
   pieces: number;
@@ -104,8 +109,10 @@ export interface GameApi {
   /** The rules that must always hold, broken; empty when all is well. */
   invariants(): string[];
 
-  /** Put a run on, by its number. */
+  /** Put a run on, by its number on the shelf that is on the board. */
   pick(run: number): void;
+  /** The other shelf on the board, where it was left. */
+  browse(shelf: Shelf): void;
   /** Let them go: where each starts is drawn now. */
   release(): void;
   /** The field back on the start gate. */
@@ -193,7 +200,8 @@ export function createApi(host: DebugHost): GameApi {
         best: game.best(),
         run: game.run,
         runName: game.track.name,
-        runId: RUNS[game.run].id,
+        runId: game.current.id,
+        shelf: game.shelf,
         waiting,
         racing,
         finished: marbles.finishers,
@@ -229,6 +237,7 @@ export function createApi(host: DebugHost): GameApi {
     },
     content: () => ({
       runs: RUNS.map((r) => r.name),
+      catalog: PIECES.map((p) => p.name),
       length: game.track.length,
       pieces: game.track.segments.length,
       marbles: game.marbles.count,
@@ -240,6 +249,10 @@ export function createApi(host: DebugHost): GameApi {
 
     pick(run) {
       game.pick(run);
+      host.rebuild();
+    },
+    browse(shelf) {
+      game.browse(shelf);
       host.rebuild();
     },
     release: () => game.release(),

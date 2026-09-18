@@ -59,6 +59,11 @@ export type Kind =
   | 'gate'
   | 'wheel'
   | 'funnel'
+  | 'shallow'
+  | 'shallowWide'
+  | 'shallowBroad'
+  | 'narrow'
+  | 'bumps'
   | 'finish';
 
 /** A piece as it was placed: which kind, which lattice point it enters at, and which way it faces. */
@@ -106,6 +111,8 @@ export interface Segment {
   obstacles: Obstacle[];
   /** Where it is a bowl and not a channel: a marble circles it, and leaves by the hole in its middle. */
   funnel: Bowl | null;
+  /** Low rounded lumps in its floor, which a marble rolls up over and is turned aside by. */
+  mounds: Mound[];
   /** How far along the whole run the segment begins: what orders one marble against another. */
   start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
@@ -138,6 +145,55 @@ export type Motion =
   | { kind: 'sweep'; reach: number; period: number }
   | { kind: 'gate'; shut: number; period: number; slide: number }
   | { kind: 'paddle'; period: number; turn: number; axle: number; arm: number };
+
+/**
+ * A lump in the floor of a piece, in its own terms: its middle, how far it
+ * spreads, and how high it stands there. It rises from the floor as a cosine
+ * does from its trough, so there is no edge for a marble to catch on: only a
+ * slope, steepest half way up, that a marble climbs and is turned down off.
+ */
+export interface Mound {
+  along: number;
+  across: number;
+  radius: number;
+  height: number;
+}
+
+/** How high the floor stands over the mounds at a point on a piece: nothing where there are none. */
+export function moundHeight(seg: Segment, along: number, across: number): number {
+  let h = 0;
+  for (const m of seg.mounds) {
+    const d = Math.hypot(along - m.along, across - m.across);
+    if (d < m.radius) h = Math.max(h, m.height * Math.cos((Math.PI * d) / (2 * m.radius)) ** 2);
+  }
+  return h;
+}
+
+/**
+ * Which way the floor slopes over the mounds at a point, along and across,
+ * as how far it rises for a step each way: the steepest of the mounds there,
+ * where two overlap, as the floor itself is the higher of them.
+ */
+export function moundSlope(seg: Segment, along: number, across: number, out: [number, number]): [number, number] {
+  out[0] = 0;
+  out[1] = 0;
+  let top = 0;
+  for (const m of seg.mounds) {
+    const da = along - m.along,
+      dc = across - m.across;
+    const d = Math.hypot(da, dc);
+    if (d >= m.radius || d < 1e-9) continue;
+    const k = Math.PI / (2 * m.radius);
+    const h = m.height * Math.cos(k * d) ** 2;
+    if (h <= top) continue;
+    top = h;
+    // the height is height * cos^2(k d), which falls away at -height * k * sin(2 k d) for every step out from the middle
+    const fall = -m.height * k * Math.sin(2 * k * d);
+    out[0] = (fall * da) / d;
+    out[1] = (fall * dc) / d;
+  }
+  return out;
+}
 
 /**
  * Something in a marble's way, in its segment's own terms: a rod with rounded
@@ -296,6 +352,8 @@ interface Shape {
   obstacles?: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[];
   /** A bowl in place of a channel: its rim through the entry, its middle `rim` to the left. */
   bowl?: { rim: number; hole: number; depth: number };
+  /** Lumps in its floor, in its own terms: `u` is how far along it, as a share of its length. */
+  mounds?: (Omit<Mound, 'along'> & { u: number })[];
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
@@ -424,6 +482,40 @@ function opening(wide: number, open: number, close: number): (t: number) => numb
     HALF_WIDTH +
     (wide - HALF_WIDTH) * (t < open ? ease(t / open) : t > close ? 1 - ease((t - close) / (1 - close)) : 1);
 }
+
+/**
+ * How narrow a squeeze is, from its middle to its wall: a marble and a
+ * tenth, so a marble fits and two cannot pass. And the end of the run's lane,
+ * the same, so the field waits in it in single file.
+ */
+export const NARROW = 0.55;
+export const LANE = 0.55;
+
+/** The end of the run: two cells of level lane, for eight marbles to wait in nose to tail. */
+function laneCurve(t: number, out: number[]): void {
+  out[0] = CELL * 2 * t;
+  out[1] = 0;
+  out[2] = 0;
+  out[3] = CELL * 2;
+  out[4] = 0;
+  out[5] = 0;
+}
+
+/**
+ * Mounds over a bumpy board, in rows that stagger like the pegs' do, so a
+ * marble rolling straight down it meets one row after another off the middle
+ * of a mound, and is turned one way and then the other.
+ */
+function moundRows(): (Omit<Mound, 'along'> & { u: number })[] {
+  const out: (Omit<Mound, 'along'> & { u: number })[] = [];
+  [0.25, 0.4, 0.55, 0.7].forEach((u, r) => {
+    for (const across of r % 2 === 0 ? [-1.8, 0, 1.8] : [-0.9, 0.9]) out.push({ u, across, ...MOUND });
+  });
+  return out;
+}
+
+/** How far a mound spreads from its middle, and how high it stands there: every mound is this one, so one mesh draws them all. */
+export const MOUND = { radius: 0.75, height: 0.3 };
 
 /** How wide a peg board is, and its pegs: how thick, how far apart across and along, and in how many rows. */
 const BOARD = 3.6;
@@ -584,8 +676,43 @@ const SHAPES: Record<Kind, Shape> = {
     curve: funnelCurve,
     bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH },
   },
-  finish: { exit: null, rough: CELL, curve: straightCurve },
+  // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to
+  // two chutes and three in its middle, where a field spreads out and finds its own lines
+  shallow: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 2.1, curve: boardCurve },
+  shallowWide: {
+    exit: { x: 2, y: 0, z: -1, turn: 0 },
+    rough: CELL * 2.1,
+    curve: boardCurve,
+    width: opening(HALF_WIDTH * 2, 0.2, 0.8),
+  },
+  shallowBroad: {
+    exit: { x: 2, y: 0, z: -1, turn: 0 },
+    rough: CELL * 2.1,
+    curve: boardCurve,
+    width: opening(HALF_WIDTH * 3, 0.2, 0.8),
+  },
+  // squeezed down to single file in its middle and let out again: two abreast coming in leave one behind the other
+  narrow: {
+    exit: { x: 2, y: 0, z: -1, turn: 0 },
+    rough: CELL * 2.1,
+    curve: boardCurve,
+    width: opening(NARROW, 0.3, 0.7),
+  },
+  // a board with mounds in its floor, which turn a marble aside as it rolls over one, as a soft peg would
+  bumps: {
+    exit: { x: 2, y: 0, z: -1, turn: 0 },
+    rough: CELL * 2.1,
+    curve: boardCurve,
+    width: opening(3.2, 0.15, 0.85),
+    mounds: moundRows(),
+  },
+  // the end: past the line at its start, a lane one marble wide, where the field rolls up and waits in the order
+  // it finished
+  finish: { exit: null, rough: CELL * 2.1, curve: laneCurve, width: opening(LANE, 0.25, 1) },
 };
+
+/** Every kind of piece there is, in the order the catalog shows them. */
+export const KINDS = Object.keys(SHAPES) as readonly Kind[];
 
 /** A piece's own x and y turned to face whichever way it was placed. */
 function turnBy(facing: Facing, x: number, y: number, out: number[]): void {
@@ -688,6 +815,7 @@ function sample(piece: Placed, index: number): Segment {
     along: u * length,
     slot: -1,
   }));
+  const mounds: Mound[] = (shape.mounds ?? []).map(({ u, ...rest }) => ({ ...rest, along: u * length }));
   let funnel: Bowl | null = null;
   if (shape.bowl) {
     // the bowl's middle is `rim` to the left of the entry, so the rim runs through it heading the way the piece faces
@@ -708,6 +836,7 @@ function sample(piece: Placed, index: number): Segment {
     width,
     obstacles,
     funnel,
+    mounds,
   };
 }
 
@@ -900,11 +1029,11 @@ export function checkTrack(track: Track): string[] {
       problems.push(`segment ${i} has a gap of ${seg.gap} and flies ${seg.flies}`);
     if (Math.abs(seg.width[0] - HALF_WIDTH) > 1e-4)
       problems.push(`segment ${i} is ${seg.width[0]} wide where it begins`);
-    if (!seg.funnel && Math.abs(seg.width[seg.width.length - 1] - HALF_WIDTH) > 1e-4)
+    if (!seg.funnel && seg.next !== -1 && Math.abs(seg.width[seg.width.length - 1] - HALF_WIDTH) > 1e-4)
       problems.push(`segment ${i} is ${seg.width[seg.width.length - 1]} wide where it ends`);
     for (const w of seg.width)
-      if (!(w >= HALF_WIDTH - 1e-4)) {
-        problems.push(`segment ${i} is narrower than a chute somewhere, at ${w}`);
+      if (!(w >= NARROW - 1e-4)) {
+        problems.push(`segment ${i} is narrower than single file somewhere, at ${w}`);
         break;
       }
     if (Math.abs(seg.start - before) > 1e-4)

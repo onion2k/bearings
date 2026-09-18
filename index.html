@@ -59,6 +59,34 @@
     min-width: 168px;
     font-size: 13px;
   }
+  /* the two shelves the board can show, the runs and the catalog of pieces, as a pair of tabs over the title */
+  #shelves {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    margin: -2px 0 4px;
+  }
+  #shelves button {
+    pointer-events: auto;
+    border: 0;
+    border-radius: 6px;
+    padding: 1px 8px;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #shelves button:hover {
+    color: var(--ink);
+  }
+  #shelves button.on {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--ink);
+  }
   #picker {
     display: flex;
     align-items: center;
@@ -91,7 +119,11 @@
     color: var(--gold);
     white-space: nowrap;
   }
+  /* a best time, or a piece's line of what it does, wrapped to the board's width rather than stretching it */
   #best {
+    max-width: 168px;
+    margin-left: auto;
+    margin-right: auto;
     text-align: center;
     color: var(--dim);
     font-size: 12px;
@@ -208,6 +240,10 @@
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
 <div class="panel" id="board" hidden>
+  <div id="shelves">
+    <button id="toRuns" type="button" class="on">Runs</button>
+    <button id="toPieces" type="button">Pieces</button>
+  </div>
   <div id="picker">
     <button id="prev" type="button" aria-label="The run before">‹</button>
     <div id="title"></div>
@@ -219,8 +255,8 @@
 </div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="help" hidden>
-  <span>1</span>–<span>8</span> pick a marble · <span>space</span> let them go · <span>R</span> again · drag to orbit,
-  wheel to zoom
+  <span>1</span>–<span>8</span> pick a marble · <span>space</span> let them go · <span>R</span> again ·
+  <span>C</span> pieces · drag to orbit, wheel to zoom
 </div>
 <div id="boot">
   <p id="bootMsg">starting WebGPU…</p>

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { MARBLES, RADIUS } from '../src/marbles';
 import { FIRST } from '../src/runs';
 import {
   HALF_WIDTH,
+  LANE,
   MAX_SAMPLES,
   MOVING_MOST,
+  NARROW,
   type Facing,
   type Placed,
   type Run,
@@ -14,6 +17,7 @@ import {
   exitOf,
   pose,
   bowlHeight,
+  moundHeight,
   spot,
 } from '../src/track';
 
@@ -311,7 +315,8 @@ describe('the track', () => {
       expect(checkTrack(track)).toEqual([]);
       for (const seg of track.segments) {
         expect(seg.width[0], `piece ${seg.piece} going in`).toBeCloseTo(HALF_WIDTH, 6);
-        if (!seg.funnel)
+        // a bowl lets a marble out through its middle, and the end of the run meets nothing at its far end
+        if (!seg.funnel && seg.next !== -1)
           expect(seg.width[seg.width.length - 1], `piece ${seg.piece} going out`).toBeCloseTo(HALF_WIDTH, 6);
       }
     });
@@ -406,6 +411,72 @@ describe('the track', () => {
       expect(bowlHeight(bowl, bowl.hole)).toBeCloseTo(-bowl.depth, 6);
       for (let r = bowl.hole; r < bowl.rim; r += 0.25)
         expect(bowlHeight(bowl, r + 0.25)).toBeGreaterThan(bowlHeight(bowl, r));
+    });
+  });
+
+  describe('the pieces for going gently, squeezing and jostling, and the end', () => {
+    const run = chain(['start', 'shallow', 'shallowWide', 'shallowBroad', 'narrow', 'bumps', 'finish']);
+    const track = compile(run);
+    const widest = (s: number) => Math.max(...track.segments[s].width);
+    const narrowest = (s: number) => Math.min(...track.segments[s].width);
+
+    it('hands a marble on where the lattice says: two cells along and a level down', () => {
+      for (const kind of ['shallow', 'shallowWide', 'shallowBroad', 'narrow', 'bumps'] as const)
+        expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 0 }), kind).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
+      expect(exitOf({ kind: 'finish', x: 0, y: 0, z: 0, facing: 0 }), 'the end goes nowhere').toBeNull();
+    });
+
+    it("works out clean, at a chute's width wherever one piece meets another", () => {
+      expect(check(run)).toEqual([]);
+      expect(checkTrack(track)).toEqual([]);
+      for (const seg of track.segments) expect(seg.width[0], `piece ${seg.piece} going in`).toBeCloseTo(HALF_WIDTH, 6);
+    });
+
+    it('comes in three widths of shallow straight: a chute, twice a chute and three times', () => {
+      expect(widest(1)).toBeCloseTo(HALF_WIDTH, 6);
+      expect(widest(2)).toBeCloseTo(HALF_WIDTH * 2, 6);
+      expect(widest(3)).toBeCloseTo(HALF_WIDTH * 3, 6);
+      for (const s of [1, 2, 3]) expect(narrowest(s), 'and never narrower than a chute').toBeCloseTo(HALF_WIDTH, 6);
+    });
+
+    it('squeezes a narrow section down to single file, where two cannot pass', () => {
+      expect(narrowest(4)).toBeCloseTo(NARROW, 6);
+      expect((NARROW - RADIUS) * 2, 'room across for a marble to be beside another').toBeLessThan(RADIUS * 2);
+      expect(NARROW, 'and still room for one').toBeGreaterThan(RADIUS);
+    });
+
+    it('scatters mounds over a bumpy section, on the floor and clear of its walls', () => {
+      const seg = track.segments[5];
+      expect(seg.mounds.length).toBeGreaterThan(5);
+      for (const m of seg.mounds) {
+        const k = Math.round((m.along / seg.length) * (seg.width.length - 1));
+        expect(Math.abs(m.across) + m.radius, 'inside the walls').toBeLessThanOrEqual(seg.width[k] + 1e-6);
+        expect(m.height, 'low enough to roll over').toBeLessThan(RADIUS);
+      }
+      for (const other of track.segments) if (other !== seg) expect(other.mounds.length).toBe(0);
+    });
+
+    it('rises over a mound and nowhere else: its height at its middle, and nothing beyond it', () => {
+      const seg = track.segments[5];
+      const m = seg.mounds[0];
+      expect(moundHeight(seg, m.along, m.across)).toBeCloseTo(m.height, 6);
+      expect(moundHeight(seg, m.along, m.across + m.radius + 0.01)).toBe(0);
+      expect(moundHeight(track.segments[1], 1, 0)).toBe(0);
+    });
+
+    it('ends in a lane one marble wide, long enough for the whole field to wait in nose to tail', () => {
+      const end = track.segments[6];
+      expect(end.next).toBe(-1);
+      expect(end.width[end.width.length - 1]).toBeCloseTo(LANE, 6);
+      expect((LANE - RADIUS) * 2, 'single file').toBeLessThan(RADIUS * 2);
+      const lane = end.arc.filter((_, k) => end.width[k] <= LANE + 1e-6);
+      expect(lane[lane.length - 1] - lane[0], 'room for eight').toBeGreaterThan(RADIUS * 2 * MARBLES);
+    });
+
+    it('says a piece narrower than single file is wrong with a run', () => {
+      const bad = compile(run);
+      bad.segments[4].width[10] = RADIUS * 0.9;
+      expect(checkTrack(bad).join('\n')).toMatch(/narrower than single file/);
     });
   });
 
