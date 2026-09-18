@@ -19,6 +19,7 @@
 import {
   HALF_WIDTH,
   LEVEL,
+  type Bowl,
   type Pose,
   type Segment,
   type Track,
@@ -115,18 +116,21 @@ export const GRIP = 0.1;
 export const DROP = 3;
 /**
  * How fast going round a bowl costs a marble, a share of its speed each
- * second. Without it a marble off the rim keeps its way round, speeds up as it
- * falls in, and is thrown straight back out: it orbits for ever. With it the
- * orbit closes in lap by lap, as a real one does.
+ * second, over what rolling costs it anywhere. At a third, a marble went round
+ * about once before it dropped through, and it had to: the run in ended on
+ * the rim, and its end stood across the way round. With the run in over the
+ * bowl, a lone marble goes round two to three times and a field half as many
+ * again as it did; below this, it goes round no more, only slower.
  */
-export const BOWL_DRAG = 0.35;
+export const BOWL_DRAG = 0.05;
 /**
- * How long a marble may go round a bowl before it is called. Below a drag of
- * about a third a marble could be caught in an orbit that never closed; at
- * this one none has been, but a race that cannot end is noticed, not waited
- * on, whatever is tuned later.
+ * How long a marble may go round a bowl before it is called. The longest any
+ * marble has gone round, over three hundred races of The Tower and a funnel
+ * fed by every sort of piece, is fifteen seconds, all of it going round and
+ * none waiting at the hole; a race that cannot end is noticed, not waited on,
+ * whatever is tuned later.
  */
-export const BOWL_PATIENCE = 15;
+export const BOWL_PATIENCE = 30;
 
 /**
  * How many pieces past a jump a marble in the air looks for somewhere to come
@@ -442,10 +446,6 @@ export class Marbles {
         }
         this.along[i] -= track.segments[this.segment[i]].length;
         this.segment[i] = next;
-        if (track.segments[next].funnel) {
-          this.enter(i);
-          break;
-        }
         if (track.segments[next].next < 0) {
           this.finish(i);
           break;
@@ -622,36 +622,6 @@ export class Marbles {
       pc = this.across[i] - p.across;
     const s = Math.min(Math.max(pa * p.da + pc * p.dc, -p.half), p.half);
     return Math.hypot(pa - p.da * s, pc - p.dc * s) < reach - 1e-3;
-  }
-
-  /**
-   * Into a funnel's bowl, on its rim, going round it the way it came in: its
-   * speed along the track becomes its way round, and what it had across the
-   * track its way in toward the middle.
-   */
-  private enter(i: number) {
-    const seg = this.track.segments[this.segment[i]];
-    const bowl = seg.funnel!;
-    const o = 0;
-    const r = bowl.rim - RADIUS;
-    // the rim point it came in at, from the bowl's middle, and round it the way the track was heading
-    const ex = seg.points[o] - bowl.x,
-      ey = seg.points[o + 1] - bowl.y;
-    const el = Math.hypot(ex, ey) || 1;
-    this.bowlX[i] = (ex / el) * r;
-    this.bowlY[i] = (ey / el) * r;
-    const tx = seg.tangents[o],
-      ty = seg.tangents[o + 1];
-    const tl = Math.hypot(tx, ty) || 1;
-    this.vx[i] = (tx / tl) * this.speed[i] - (ex / el) * this.drift[i];
-    this.vy[i] = (ty / tl) * this.speed[i] - (ey / el) * this.drift[i];
-    this.vz[i] = 0;
-    this.along[i] = 0;
-    this.across[i] = 0;
-    this.crawling[i] = 0;
-    this.aloft[i] = 0;
-    this.state[i] = SWIRLING;
-    this.placeInBowl(i);
   }
 
   /**
@@ -893,6 +863,7 @@ export class Marbles {
    */
   private land(i: number, s: number): boolean {
     const seg = this.track.segments[s];
+    if (seg.funnel) return this.landInBowl(i, s, seg.funnel);
     const n = seg.arc.length;
     let best = 0,
       bd = Infinity;
@@ -938,6 +909,53 @@ export class Marbles {
     this.aloft[i] = 0;
     this.state[i] = RACING;
     if (seg.next < 0) this.finish(i);
+    return true;
+  }
+
+  /**
+   * Whether a marble in the air comes down in a funnel's bowl this step, and
+   * if it does, puts it there: inside the rim, falling and not rising, and
+   * down at the bowl's floor where it is or just through it. It goes on round
+   * the bowl the way it was going across the ground; what it had downward is
+   * the landing, and goes. One that reaches the rim's wall still in the air
+   * comes off it back into the bowl, as it would off the rim going round.
+   */
+  private landInBowl(i: number, s: number, bowl: Bowl): boolean {
+    const edge = bowl.rim - RADIUS;
+    let x = this.x[i] - bowl.x,
+      y = this.y[i] - bowl.y;
+    let r = Math.hypot(x, y);
+    // it came off a lip inside the rim, so anywhere past the rim below the wall's top it has met the wall, however
+    // far past it a fast marble has gone in a step
+    if (r > edge && this.z[i] - RADIUS < bowl.z + bowl.wall) {
+      const nx = x / r,
+        ny = y / r;
+      x = nx * edge;
+      y = ny * edge;
+      r = edge;
+      this.x[i] = bowl.x + x;
+      this.y[i] = bowl.y + y;
+      const vn = this.vx[i] * nx + this.vy[i] * ny;
+      if (vn > 0) {
+        this.vx[i] -= (1 + BOUNCE) * vn * nx;
+        this.vy[i] -= (1 + BOUNCE) * vn * ny;
+      }
+    }
+    if (r > edge) return false;
+    if (this.vz[i] > 0) return false;
+    const up = this.z[i] - RADIUS - (bowl.z + bowlHeight(bowl, r));
+    if (up > 0 || up < -RADIUS * 3) return false;
+    const seg = this.track.segments[s];
+    this.segment[i] = s;
+    this.bowlX[i] = x;
+    this.bowlY[i] = y;
+    this.vz[i] = 0;
+    this.along[i] = Math.min(seg.length, (seg.length * (bowl.rim - r)) / (bowl.rim - bowl.hole));
+    this.across[i] = 0;
+    this.aloft[i] = 0;
+    this.crawling[i] = 0;
+    this.state[i] = SWIRLING;
+    this.placeInBowl(i);
     return true;
   }
 
@@ -1176,6 +1194,11 @@ export function checkMarbles(marbles: Marbles): string[] {
     if (state > SWIRLING) problems.push(`marble ${i} is doing ${state}, which is nothing a marble does`);
     else doing[state]++;
     if (state === FLYING && !piece.flies) problems.push(`marble ${i} is in the air off a piece with no lip`);
+    // off a funnel's lip a marble drops into the bowl under it, and the rim's wall keeps it there: anywhere outside
+    // it, it has gone off the side of the run in, as every marble did when the run in ended on the rim
+    const into = state === FLYING && piece.next >= 0 ? track.segments[piece.next].funnel : null;
+    if (into && Math.hypot(marbles.x[i] - into.x, marbles.y[i] - into.y) > into.rim - RADIUS + 1e-3)
+      problems.push(`marble ${i} is in the air off the side of a funnel's run in, outside its bowl`);
     if (state === FINISHED && piece.next !== -1) problems.push(`marble ${i} is home on a piece short of the end`);
     if (state === RACING && piece.next === -1) problems.push(`marble ${i} is still racing past the line`);
     if (state === SWIRLING) {

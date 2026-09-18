@@ -131,22 +131,9 @@ export class Scene {
     this.turning = [];
     track.segments.forEach((seg, s) => {
       const bowl = seg.funnel;
-      if (bowl) {
-        // the rim is open where the chute feeding it comes in over it: from where the chute's inner wall
-        // crosses the rim to where the chute ends, at the point the rim runs through
-        const entry = Math.atan2(seg.points[1] - bowl.y, seg.points[0] - bowl.x);
-        const inner = bowl.rim - HALF_WIDTH - SKIN;
-        const opening = Math.asin(Math.sqrt(Math.max(0, bowl.rim * bowl.rim - inner * inner)) / bowl.rim);
-        bowlMesh(
-          bowl.hole,
-          bowl.rim,
-          (r) => bowlHeight(bowl, r),
-          WALL,
-          bowls,
-          [bowl.x, bowl.y, bowl.z],
-          [entry - opening - 0.05, entry + 0.02],
-        );
-      } else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
+      // the chute feeding a bowl comes in over its rim, so the rim's wall goes all the way round
+      if (bowl) bowlMesh(bowl.hole, bowl.rim, (r) => bowlHeight(bowl, r), bowl.wall, bowls, [bowl.x, bowl.y, bowl.z]);
+      else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
       // a jump's felt, laid over the floor of its run-up as far as it goes
       if (seg.felt) {
         let to = 1;

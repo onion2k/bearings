@@ -53,13 +53,15 @@ export const SHORT: Run = {
 /**
  * Held at a gate, then three turns of a spiral stacked into a tower, and
  * down into a funnel at its foot. The tower files the field on its outer
- * wall in the order the gate let it go, and the funnel keeps the fastest
- * going round longest, so the field comes out of it nearly the other way
- * round. Its funnel now sits a level below its entry, and it was rebuilt
- * under a new id for it.
+ * wall in the order the gate let it go, and the funnel mixes it: the order
+ * it goes into the bowl tells next to nothing of the order it comes out in.
+ * When the bowl slowed a marble within a lap, the field came out nearly the
+ * other way round, which is an order too. Its id has moved on each time the
+ * funnel changed its races: when the bowl went a level down, and when its
+ * run in came over the bowl and the field went round nearly twice as long.
  */
 export const TOWER: Run = {
-  id: 'the-tower-3',
+  id: 'the-tower-4',
   name: 'The Tower',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOWL_PATIENCE,
   FINISHED,
   FLYING,
   LOST,
@@ -710,6 +711,138 @@ describe('the marbles', () => {
         return { marbles, swirled, round };
       }
 
+      /** How fast a marble is going across the ground, whatever it is doing. */
+      function going(marbles: Marbles, i: number): number {
+        if (marbles.state[i] === RACING) return Math.hypot(marbles.speed[i], marbles.drift[i]);
+        return Math.hypot(marbles.vx[i], marbles.vy[i]);
+      }
+
+      it('drops a marble off the run in into the bowl, from over it, without ever jumping it across the ground', () => {
+        for (const speed of [2, 10, 20])
+          for (const across of [-0.7, 0, 0.7]) {
+            const { marbles } = setOn(FUNNEL, RUN_IN, 0, across, speed);
+            const bowl = marbles.track.segments[BOWL].funnel!;
+            let flew = false,
+              worst = -Infinity;
+            marbles.step(DT);
+            for (let f = 0; f < 20 * 60; f++) {
+              const x = marbles.x[0],
+                y = marbles.y[0],
+                was = going(marbles, 0),
+                rolling = marbles.state[0] === RACING;
+              marbles.step(DT);
+              // through the hole it goes on to the piece below, out of sight under the bowl
+              if (marbles.segment[0] > BOWL) break;
+              // on the chute, a marble's middle goes a little further than the floor under it over a crest, and
+              // this is about the way off the chute: from its last frame on it, through the air and round the bowl
+              if (rolling && marbles.state[0] === RACING) continue;
+              const moved = Math.hypot(marbles.x[0] - x, marbles.y[0] - y);
+              worst = Math.max(worst, moved - Math.max(was, going(marbles, 0)) * DT);
+              if (marbles.state[0] !== FLYING) continue;
+              flew = true;
+              const r = Math.hypot(marbles.x[0] - bowl.x, marbles.y[0] - bowl.y);
+              expect(r, `${speed} at ${across}: in the air over the bowl`).toBeLessThan(bowl.rim - RADIUS + 1e-3);
+            }
+            // ended on the rim, the run in had half its width outside the bowl, and a marble coming off it was set
+            // down inside the rim, as much as a whole chute's width from where it had been the frame before
+            expect(worst, `${speed} at ${across}: never further in a frame than it was going`).toBeLessThan(0.01);
+            expect(flew, `${speed} at ${across}: it dropped in`).toBe(true);
+          }
+      });
+
+      it('keeps the fastest marble there is inside the bowl, off the wall of its rim', () => {
+        // six drops end to end bring a field to the funnel at nearly thirty, the fastest a marble gets anywhere, and
+        // it comes off the lip faster still: over the bowl and down, it meets the rim's wall before the floor
+        const run = chain(['start', 'drop', 'drop', 'drop', 'drop', 'drop', 'drop', 'funnel', 'straight', 'finish']);
+        for (const seed of [1, 2]) {
+          const { marbles } = fieldOn(run, seed);
+          marbles.release();
+          let fastest = 0;
+          for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+            marbles.step(DT);
+            for (let i = 0; i < marbles.count; i++)
+              if (marbles.state[i] === FLYING) fastest = Math.max(fastest, Math.hypot(marbles.vx[i], marbles.vy[i]));
+            expect(checkMarbles(marbles), `seed ${seed} frame ${f}`).toEqual([]);
+          }
+          expect(fastest, `seed ${seed}: off the lip at the fastest`).toBeGreaterThan(25);
+          expect(marbles.lost, `seed ${seed}: none over the rim`).toBe(0);
+          expect(marbles.finishers, `seed ${seed}: all home`).toBe(marbles.count);
+        }
+      });
+
+      it('sets a marble that got past the wall in a step back inside it, and turns it round', () => {
+        // the fastest a marble meets the wall here is about 0.37 a step outward, short of the 0.45 between touching
+        // the wall and being past it; faster, it would be past the wall before it was ever seen touching it
+        const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, 10);
+        marbles.along[0] = marbles.track.segments[RUN_IN].length - 0.01;
+        for (let f = 0; f < 60 && marbles.state[0] !== FLYING; f++) marbles.step(DT);
+        expect(marbles.state[0]).toBe(FLYING);
+        const bowl = marbles.track.segments[BOWL].funnel!;
+        marbles.x[0] = bowl.x;
+        marbles.y[0] = bowl.y - bowl.rim - 0.3;
+        marbles.z[0] = bowl.z + bowl.wall - RADIUS * 2;
+        marbles.vx[0] = 0;
+        marbles.vy[0] = -30;
+        marbles.vz[0] = 0;
+        marbles.step(DT);
+        const r = Math.hypot(marbles.x[0] - bowl.x, marbles.y[0] - bowl.y);
+        expect(r, 'inside the wall').toBeLessThanOrEqual(bowl.rim - RADIUS + 1e-3);
+        expect(marbles.vy[0], 'coming off it').toBeGreaterThan(0);
+        expect(marbles.lost).toBe(0);
+      });
+
+      it('says when a marble in the air off the run in is anywhere but over the bowl', () => {
+        const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, 10);
+        marbles.along[0] = marbles.track.segments[RUN_IN].length - 0.01;
+        for (let f = 0; f < 60 && marbles.state[0] !== FLYING; f++) marbles.step(DT);
+        expect(marbles.state[0]).toBe(FLYING);
+        expect(checkMarbles(marbles)).toEqual([]);
+        // where a marble came off the run in when it ended on the rim, half its width outside the bowl
+        const bowl = marbles.track.segments[BOWL].funnel!;
+        marbles.x[0] = bowl.x;
+        marbles.y[0] = bowl.y - bowl.rim - 0.3;
+        expect(checkMarbles(marbles).join('\n')).toMatch(/off the side of a funnel/);
+      });
+
+      /** How many times round the bowl each marble of a field goes before it drops through, fewest first. */
+      function laps(run: Run, seed: number, count: number): number[] {
+        const { marbles } = fieldOn(run, seed, count);
+        const bowl = marbles.track.segments.find((s) => s.funnel)!.funnel!;
+        const round = new Float64Array(count),
+          last = new Float64Array(count).fill(NaN),
+          out: number[] = [];
+        marbles.release();
+        for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          for (let i = 0; i < count; i++) {
+            if (marbles.state[i] !== SWIRLING) {
+              if (!Number.isNaN(last[i])) out.push(Math.abs(round[i]) / (Math.PI * 2));
+              last[i] = NaN;
+              continue;
+            }
+            const a = Math.atan2(marbles.y[i] - bowl.y, marbles.x[i] - bowl.x);
+            if (!Number.isNaN(last[i])) round[i] += Math.atan2(Math.sin(a - last[i]), Math.cos(a - last[i]));
+            last[i] = a;
+          }
+        }
+        expect(out.length, `seed ${seed}: every marble through the bowl`).toBe(count);
+        return out.sort((a, b) => a - b);
+      }
+
+      it('lets a marble go round and round the bowl before it drops through, with nothing in its way', () => {
+        // with the run in over the bowl and not across its rim, nothing stands in the way of a marble going round,
+        // and the bowl need not take its speed off it within a lap: at the drag it had then, a lone marble went round
+        // once and a field's middle marble a little more
+        expect(laps(FUNNEL, 1, 1)[0], 'alone, twice round at the least').toBeGreaterThan(2);
+        // in a crowd, one that comes down on top of another can lose most of its way round at once, and go straight
+        // through; that is the crowd's doing and not the bowl's, so it is the middle of the field that is held to it,
+        // broken up first by a peg board so that each seed is a race of its own
+        for (const seed of [1, 2, 3, 4]) {
+          const field = laps(chain(['start', 'pegs', 'funnel', 'straight', 'finish']), seed, 8);
+          expect(field[3], `seed ${seed}: five of the eight twice round`).toBeGreaterThan(2);
+        }
+      });
+
       it('circles the bowl, drops through the hole, and goes on to the cup', () => {
         const { marbles, swirled, round } = into(10);
         expect(swirled, 'it spent time in the bowl').toBeGreaterThan(0.5);
@@ -722,7 +855,7 @@ describe('the marbles', () => {
         marbles.along[0] = marbles.track.segments[RUN_IN].length - 0.01;
         // a bowl that takes nothing from a marble going round it: its orbit never closes
         marbles.friction = 0;
-        for (let f = 0; f < 30 * 60 && !marbles.over; f++) marbles.step(DT);
+        for (let f = 0; f < (BOWL_PATIENCE + 10) * 60 && !marbles.over; f++) marbles.step(DT);
         expect(marbles.state[0]).toBe(STALLED);
         expect(marbles.over, 'and the race is over, not waiting on it').toBe(true);
         expect(told.some((l) => l.startsWith('stalled')) || marbles.stalled === 1).toBe(true);

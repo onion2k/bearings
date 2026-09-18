@@ -90,7 +90,7 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   funnel: {
     name: 'Funnel',
-    about: 'Down a level into a bowl the field goes round, each until it is slow enough to drop through.',
+    about: 'Off a lip into a bowl the field goes round, each until it is slow enough to drop through.',
     among: alone('funnel'),
   },
   shallow: {

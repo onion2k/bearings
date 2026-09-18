@@ -175,8 +175,8 @@ export function wheel(arm: number, wide: number, paddles: number): Mesh {
 /**
  * A funnel's bowl, turned round its middle at `centre`: the floor from the
  * hole out to the rim at the height `height(r)` gives, smooth, and a rim wall
- * standing `wall` above it, with a thickness to it. The wall leaves a gap
- * between the angles `gap` gives, where a chute comes in over the rim.
+ * standing `wall` above it, with a thickness to it, all the way round: the
+ * chute feeding it comes in over the wall, not through it.
  */
 export function bowl(
   hole: number,
@@ -185,7 +185,6 @@ export function bowl(
   wall: number,
   into = new MeshBuilder(),
   centre: V3 = [0, 0, 0],
-  gap: readonly [number, number] | null = null,
 ): MeshBuilder {
   const b = into;
   const [cx, cy, cz] = centre;
@@ -213,16 +212,13 @@ export function bowl(
       const a = base + k * row + j;
       b.quad(a, a + 1, a + row + 1, a + row);
     }
-  // the rim wall, round the top edge: its inside, its top and its outside, and open where the chute comes in
+  // the rim wall, round the top edge: its inside, its top and its outside
   const z = cz + height(rim),
     out = rim + 0.18;
-  const round = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-  const open = (a: number) => gap !== null && round(a - gap[0]) < round(gap[1] - gap[0]);
   const fine = sides * 2;
   for (let j = 0; j < fine; j++) {
     const a0 = (j / fine) * Math.PI * 2,
       a1 = ((j + 1) / fine) * Math.PI * 2;
-    if (open((a0 + a1) / 2)) continue;
     const p = (a: number, r: number, h: number): V3 => [cx + Math.cos(a) * r, cy + Math.sin(a) * r, h];
     face(b, p(a1, rim, z), p(a0, rim, z), p(a0, rim, z + wall), p(a1, rim, z + wall));
     face(b, p(a1, rim, z + wall), p(a0, rim, z + wall), p(a0, out, z + wall), p(a1, out, z + wall));

@@ -397,7 +397,7 @@ describe('the track', () => {
       expect(track.slots).toBeGreaterThanOrEqual(3);
     });
 
-    it('gives a funnel a bowl a level below where it is entered, the run in to it on its rim and the way out below', () => {
+    it('gives a funnel a bowl a level below where it is entered, a run in that ends over it, and the way out below', () => {
       const seg = track.segments.find((s) => s.funnel)!;
       const bowl = seg.funnel!;
       const runIn = track.segments[track.segments.indexOf(seg) - 1];
@@ -406,10 +406,13 @@ describe('the track', () => {
       expect(bowl).toBeTruthy();
       expect(bowl.hole).toBeGreaterThan(MARBLE / 2);
       expect(bowl.rim).toBeGreaterThan(bowl.hole * 3);
-      expect(Math.hypot(seg.points[0] - bowl.x, seg.points[1] - bowl.y), 'the entry is on the rim').toBeCloseTo(
-        bowl.rim,
-        4,
-      );
+      // the run in ends at a lip over the bowl, wall to wall inside its rim and clear of its hole, so that whatever
+      // comes off it drops into the bowl: ended on the rim, half of it was outside the bowl
+      expect(runIn.flies, 'the run in ends at a lip').toBe(true);
+      const lip = runIn.points.length - 3;
+      const r = Math.hypot(runIn.points[lip] - bowl.x, runIn.points[lip + 1] - bowl.y);
+      expect(r + HALF_WIDTH, 'the lip is inside the rim').toBeLessThan(bowl.rim);
+      expect(r - HALF_WIDTH, 'and outside the hole').toBeGreaterThan(bowl.hole);
       const out = track.segments[seg.next];
       expect(Math.hypot(out.points[0] - bowl.x, out.points[1] - bowl.y), 'the way out is under the hole').toBeLessThan(
         bowl.hole,
@@ -420,6 +423,34 @@ describe('the track', () => {
       expect(bowlHeight(bowl, bowl.hole)).toBeCloseTo(-bowl.depth, 6);
       for (let r = bowl.hole; r < bowl.rim; r += 0.25)
         expect(bowlHeight(bowl, r + 0.25)).toBeGreaterThan(bowlHeight(bowl, r));
+    });
+
+    it('stands the run in to a funnel clear above anything going round the bowl under it', () => {
+      const seg = track.segments.find((s) => s.funnel)!;
+      const bowl = seg.funnel!;
+      const runIn = track.segments[track.segments.indexOf(seg) - 1];
+      // a marble going round under the run in, and the run in's own floor under where it rolls, with room to spare:
+      // the rim's wall is lower than a marble, so a run in clear of a marble at the rim is clear of the wall too
+      const room = RADIUS * 2 + 0.3;
+      let over = 0;
+      for (let k = 0; k < runIn.arc.length; k++) {
+        const o = k * 3;
+        // across the run in, wall to wall and a skin beyond, to the right of the way it goes
+        const tx = runIn.tangents[o],
+          ty = runIn.tangents[o + 1];
+        const tl = Math.hypot(tx, ty);
+        for (let c = -1; c <= 1; c += 0.25) {
+          const across = c * (HALF_WIDTH + 0.2);
+          const x = runIn.points[o] + (ty / tl) * across,
+            y = runIn.points[o + 1] - (tx / tl) * across;
+          const r = Math.hypot(x - bowl.x, y - bowl.y);
+          if (r > bowl.rim + 0.2) continue;
+          over++;
+          const under = bowl.z + bowlHeight(bowl, Math.min(r, bowl.rim));
+          expect(runIn.points[o + 2] - under, `sample ${k}, ${across.toFixed(2)} across`).toBeGreaterThan(room);
+        }
+      }
+      expect(over, 'some of the run in is over the bowl').toBeGreaterThan(0);
     });
   });
 

@@ -136,7 +136,9 @@ What to copy the shape of, when building something new:
   each its own segment, so that it joins whatever is either side of it: a
   jump is its run-up, which `flies` off a lip after `felt` that brings any
   marble to the same pace, and its own landing board beyond the air; a
-  funnel is a run in down a level, and then its bowl. A board is the same
+  funnel is a run in that `flies` off a lip over its bowl, and then the
+  bowl, whose rim's wall stands as high as the lip, so that whatever comes
+  off it at whatever speed comes down inside. A board is the same
   plus `width`; pegs and moving parts are `obstacles`, each with a
   `Motion` that `pose` turns into where it is at a moment, from a phase the
   race draws from its seed; a funnel is `bowl`; lumps in a floor are
@@ -288,7 +290,8 @@ For anything new in the run, check what it does:
 - **in the way of it:** a peg hit dead on, and a marble rolled square on to
   one's crown; a moving part met at every point of its turn (the phase is
   the seed's), and one that would crush a marble against a wall; a marble
-  dropping out of a funnel on to one below it
+  dropping out of a funnel on to one below it, and one dropping into a bowl
+  on to one going round under the lip
 - **stuck:** a marble that settles on it, wedges against it, or circles it
   for ever — a bowl's patience is `BOWL_PATIENCE`, a channel's `PATIENCE`. A
   run that cannot finish has to be noticed and said, not waited on

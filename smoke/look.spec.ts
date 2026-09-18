@@ -96,6 +96,28 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test("the field dropping off the funnel's lip into its bowl, and going round under it", async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const state = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(2);
+      g.release();
+      g.follow(false);
+      g.step(524);
+      // from beside the run in, where it comes over the rim to its lip: when it ended on the rim, a marble left it
+      // off the side and was next seen inside the rim
+      g.look(24, 4.5, -39.5, { azimuth: -0.4, polar: 1.05, radius: 20 });
+      g.step(1);
+      return g.state();
+    });
+    expect(state.flying, 'a marble in the air off the lip, or it is not this picture').toBeGreaterThan(0);
+    expect(state.swirling, 'and some already going round').toBeGreaterThan(0);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('drop.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the chute, with the field in the pen and the gate across it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

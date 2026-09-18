@@ -297,7 +297,9 @@ export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
  * cone and half the bell of a trumpet: steep enough at the rim that a marble
  * which has slowed is pulled in off it, and steeper still toward the hole,
  * so that the last laps are quick and tight. A trumpet alone is too flat at
- * the rim, and a marble crept round it for eight seconds.
+ * the rim, and a marble crept round it for eight seconds. Its rim's wall
+ * stands `wall` high, which is as high as anything dropped into it comes
+ * from, so that however fast a marble comes off the lip, the wall stops it.
  */
 export interface Bowl {
   x: number;
@@ -306,10 +308,11 @@ export interface Bowl {
   rim: number;
   hole: number;
   depth: number;
+  wall: number;
 }
 
 /** How far below its rim a bowl is at `r` from its middle: nothing at the rim, all of its depth at the hole. */
-export function bowlHeight(bowl: Bowl, r: number): number {
+export function bowlHeight(bowl: Pick<Bowl, 'rim' | 'hole' | 'depth'>, r: number): number {
   const at = Math.min(Math.max(r, bowl.hole), bowl.rim);
   const cone = (bowl.rim - at) / (bowl.rim - bowl.hole);
   const trumpet = (bowl.rim / at - 1) / (bowl.rim / bowl.hole - 1);
@@ -360,7 +363,7 @@ interface Part {
   /** What is in its way, in its own terms: `u` is how far along it, as a share of its length. */
   obstacles?: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[];
   /** A bowl in place of a channel: its rim through the part's start, its middle `rim` to the left. */
-  bowl?: { rim: number; hole: number; depth: number };
+  bowl?: { rim: number; hole: number; depth: number; wall: number };
   /** Lumps in its floor, in its own terms: `u` is how far along it, as a share of its length. */
   mounds?: (Omit<Mound, 'along'> & { u: number })[];
   /** Felt over its first `upto` share, which brings whatever marble crosses it to `speed`, whatever it came in at. */
@@ -606,18 +609,47 @@ function funnelCurve(t: number, out: number[]): void {
   const dphi = Math.PI * 2.5;
   out[0] = r * Math.cos(phi);
   out[1] = rim + r * Math.sin(phi);
-  out[2] = bowlHeight({ x: 0, y: 0, z: 0, rim, hole, depth: FUNNEL_DEPTH }, r);
+  out[2] = bowlHeight({ rim, hole, depth: FUNNEL_DEPTH }, r);
   out[3] = dr * Math.cos(phi) - r * Math.sin(phi) * dphi;
   out[4] = dr * Math.sin(phi) + r * Math.cos(phi) * dphi;
   // how fast it falls with t: the bowl's own slope times how fast it closes in
   const eps = 1e-4;
-  const h = (x: number) => bowlHeight({ x: 0, y: 0, z: 0, rim, hole, depth: FUNNEL_DEPTH }, x);
+  const h = (x: number) => bowlHeight({ rim, hole, depth: FUNNEL_DEPTH }, x);
   out[5] = ((h(r + eps) - h(r - eps)) / (2 * eps)) * dr;
 }
 
 /** A funnel's hole, big enough for a marble with room to spare, and how far below the rim it is. */
 const FUNNEL_HOLE = 1;
 const FUNNEL_DEPTH = 2.2;
+
+/**
+ * How far a funnel's run in bends in over its bowl, and how far down it goes
+ * to its lip. The lip is far enough in that a marble anywhere across it is
+ * over the bowl, and high enough that one going round under it passes clear
+ * beneath, the rim's wall too. The wall stands as high as the lip: a marble
+ * off the lip only ever falls, so however fast it comes off, it meets the
+ * wall and not the air over it.
+ */
+const FUNNEL_IN = 2.2;
+const FUNNEL_DROP = 2.6;
+const FUNNEL_WALL = LEVEL - FUNNEL_DROP;
+
+/**
+ * A funnel's run in: a cell along, bending left over the bowl and back so
+ * that it ends heading round the bowl the way a field goes round it, and
+ * easing down to a level lip, so that a marble leaves it going across the
+ * ground and drops straight into the bowl.
+ */
+function funnelInCurve(t: number, out: number[]): void {
+  const ease = (1 - Math.cos(Math.PI * t)) / 2,
+    slope = (Math.PI * Math.sin(Math.PI * t)) / 2;
+  out[0] = CELL * t;
+  out[1] = FUNNEL_IN * ease;
+  out[2] = -FUNNEL_DROP * ease;
+  out[3] = CELL;
+  out[4] = FUNNEL_IN * slope;
+  out[5] = -FUNNEL_DROP * slope;
+}
 
 /** Every kind of piece there is. A new kind is a line here, and every path over the kinds gets it for nothing. */
 const SHAPES: Record<Kind, Shape> = {
@@ -734,17 +766,21 @@ const SHAPES: Record<Kind, Shape> = {
       motion: { kind: 'paddle' as const, period: WHEEL.period, turn, axle: WHEEL.axle, arm: WHEEL.arm },
     })),
   },
-  // down a level to its rim, and then the bowl: a bowl level with its entry lay over whatever came in from the
-  // left, a turn to the left most of all, whose arc is the bowl's own rim. A level down, nothing comes near it
+  // a run in that ends at a lip over the bowl, and then the bowl a level down: a bowl level with its entry lay over
+  // whatever came in from the left, a turn to the left most of all, whose arc is the bowl's own rim. The run in
+  // once came down to the rim and ended on it, half outside the bowl, and a marble coming off it was set down
+  // inside the rim where it had never been; its end stood in the way of everything going round. Over the bowl,
+  // each drops in where it comes off, at whatever pace it came, and those going round pass under it
   funnel: {
     exit: { x: 1, y: 1, z: -2, turn: 0 },
-    rough: Math.hypot(CELL, LEVEL) * 1.1,
-    curve: rampCurve,
+    rough: CELL * 1.2,
+    curve: funnelInCurve,
+    flies: true,
     then: {
       at: { x: 1, y: 0, z: -1 },
       rough: Math.PI * 2.5 * CELL * 0.7,
       curve: funnelCurve,
-      bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH },
+      bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH, wall: FUNNEL_WALL },
     },
   },
   // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to
