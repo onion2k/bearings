@@ -24,8 +24,17 @@ import { start, watch } from './game';
 const BASELINE = 'smoke/perf-baseline.json';
 /** What the game may cost at all, on this machine, whatever it cost before. */
 export const BUDGET = { bootMs: 3000, frameMs: 8, bundleKb: 400 };
-/** How far a figure may move from the baseline before it is a change: a share, and a slack for the noisy ones. */
-const TOLERANCE = { bootMs: [0.35, 250], frameMs: [0.3, 0.6], bundleKb: [0.1, 2] } as const;
+/**
+ * How far a figure may move from the baseline before it is a change: a share,
+ * and a slack for the noisy ones. A slack has to be as wide as the whole of a
+ * figure's wobble, not half of it, because `perf:update` writes one run and
+ * that run can land anywhere in the spread; a narrower slack holds only if
+ * the baseline happened to land near the middle. The frame here, a little
+ * under a millisecond of a machine that draws this scene with ease, has run
+ * anywhere from 0.3 to 1.3 ms with nothing changed, over some thirty runs
+ * across a day, so its slack is that spread: 1 ms, against a budget of 8.
+ */
+const TOLERANCE = { bootMs: [0.35, 250], frameMs: [0.3, 1], bundleKb: [0.1, 2] } as const;
 
 interface Figures {
   bootMs: number;
