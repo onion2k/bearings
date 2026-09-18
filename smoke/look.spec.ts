@@ -84,8 +84,9 @@ test.describe('what it looks like', () => {
       g.pick(2);
       g.release();
       g.follow(false);
-      g.step(560);
-      g.look(18, 6, -37, { azimuth: 0.9, polar: 0.7, radius: 24 });
+      g.step(689);
+      // the bowl, a level below the run in to it at the foot of the tower
+      g.look(24, 6, -41, { azimuth: 0.9, polar: 0.7, radius: 24 });
       g.step(1);
       return g.state().swirling;
     });
@@ -121,19 +122,19 @@ test.describe('what it looks like', () => {
       g.pick(4);
       g.release();
       g.follow(false);
-      g.step(639);
+      g.step(584);
       // looking down its pen, so the wheel is seen right across it from wall to wall, with the field at it
       g.look(13.25, -28.05, -25.5, { azimuth: -Math.PI / 2, polar: 0.75, radius: 14 });
       g.step(1);
       return g.marbles().filter((m) => m.segment === 8).length;
     });
-    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(4);
+    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(6);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('wheel.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('the leap, with five marbles in the air over the first gap', async ({ page }) => {
+  test('the leap, with five marbles in the air off its first jump', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const flying = await page.evaluate(() => {
@@ -141,9 +142,9 @@ test.describe('what it looks like', () => {
       g.pick(3);
       g.release();
       g.follow(false);
-      g.step(289);
-      // side on to the first jump, from its lip to the board it lands on
-      g.look(35.4, 0, -15.2, { azimuth: -1.2, polar: 1.1, radius: 22 });
+      g.step(284);
+      // side on to the first jump, from its lip to its own landing
+      g.look(33, 0, -14.5, { azimuth: -1.2, polar: 1.1, radius: 22 });
       g.step(1);
       return g.state().flying;
     });
@@ -158,7 +159,7 @@ test.describe('what it looks like', () => {
     await start(page, { seed: 11, paused: true });
     await page.evaluate(() => {
       const g = window.game!;
-      // on this seed Amethyst, marble 5, wins, and the second player has it
+      // on this seed Cobalt, marble 4, wins, and the first player has it
       g.claim(4);
       g.claim(5);
       g.claim(1);

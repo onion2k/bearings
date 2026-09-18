@@ -49,7 +49,9 @@ The catalog shows every kind of piece on its own, named and said what it
 does, and each can be raced by itself. Besides those on the runs, there are
 shallow straights at a chute's width and opening to two and three times it,
 a narrow section that squeezes the field to single file, and a bumpy board
-whose mounds turn a marble aside as it rolls over one. The game remembers which run you last played and your best on
+whose mounds turn a marble aside as it rolls over one. Any piece can follow
+any other: a jump carries its own felt, lip and landing, and a funnel its
+own run down to its bowl, so every pair joins, and every pair is raced. The game remembers which run you last played and your best on
 each. Still to come, a feature at a time through `/feature`: building a run
 of your own, and patterns on the marbles. `CLAUDE.md` says how the code is
 made and what is open.

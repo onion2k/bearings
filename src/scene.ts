@@ -64,6 +64,12 @@ const PROFILE: readonly (readonly [number, number])[] = [
   [-HALF_WIDTH, WALL],
 ];
 
+/** A jump's felt in section: a strip over the floor, wall to wall, a hair above it so it is not lost in it. */
+const FELT: readonly (readonly [number, number])[] = [
+  [HALF_WIDTH, 0.015],
+  [-HALF_WIDTH, 0.015],
+];
+
 /** A moving part, and the piece it is on. */
 interface Part {
   segment: number;
@@ -104,6 +110,7 @@ export class Scene {
   static(track: Track): GameGroup[] {
     const channel = new MeshBuilder();
     const bowls = new MeshBuilder();
+    const felt = new MeshBuilder();
     const pegs: number[] = [];
     const posts: number[] = [];
     const mounds: number[] = [];
@@ -140,6 +147,12 @@ export class Scene {
           [entry - opening - 0.05, entry + 0.02],
         );
       } else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
+      // a jump's felt, laid over the floor of its run-up as far as it goes
+      if (seg.felt) {
+        let to = 1;
+        while (to < seg.arc.length - 1 && seg.arc[to] < seg.felt.upto) to++;
+        sweep(seg.points, seg.tangents, seg.ups, to + 1, FELT, felt, seg.width, HALF_WIDTH);
+      }
       for (const m of seg.mounds) mounds.push(s, m.along, m.across);
       for (const ob of seg.obstacles) {
         if (ob.motion.kind === 'fixed') pegs.push(s, ob.along, ob.across);
@@ -191,6 +204,8 @@ export class Scene {
       { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
       { mesh: bar((LANE + SKIN) * 2, 0.24, WALL + 0.08), matrices: stopAt, albedo: [0.25, 0.25, 0.28], roughness: 0.5 },
     ];
+    if (felt.vertexCount > 0)
+      groups.push({ mesh: felt.build(), matrices: one, albedo: [0.12, 0.3, 0.16], roughness: 0.95 });
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)
       groups.push({ mesh: bowls.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.6 });

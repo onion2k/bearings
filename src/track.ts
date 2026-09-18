@@ -29,6 +29,8 @@ export const HALF_WIDTH = 1.2;
 export const SAMPLE_EVERY = 0.25;
 /** The most pieces a run may have, and the most samples a track may come to. */
 export const MAX_PIECES = 100;
+/** The most segments a track may come to: a piece is at most two parts. */
+export const MAX_SEGMENTS = MAX_PIECES * 2;
 /**
  * The most sweepers, gates or wheels a run may have of each, which is as many
  * as the scene has room to draw: a run with one more would race a part nobody
@@ -113,6 +115,8 @@ export interface Segment {
   funnel: Bowl | null;
   /** Low rounded lumps in its floor, which a marble rolls up over and is turned aside by. */
   mounds: Mound[];
+  /** Felt from its start to `upto` along it, bringing any marble on it to `speed`; null where there is none. */
+  felt: { upto: number; speed: number } | null;
   /** How far along the whole run the segment begins: what orders one marble against another. */
   start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
@@ -340,20 +344,33 @@ export function spot(): Spot {
  * at the exit, with the direction of travel beside it. `rough` is only how
  * long it is about, to decide how many samples to take.
  */
-interface Shape {
-  exit: { x: number; y: number; z: number; turn: number } | null;
+/**
+ * A stretch of one piece: the curve it follows, and what it has. Most pieces
+ * are one part; a jump is its run-up and, past the air, its own landing, and
+ * a funnel is the run in to its bowl and then the bowl, so that each joins
+ * the pieces either side of it like any other piece does.
+ */
+interface Part {
   rough: number;
   curve(t: number, out: number[]): void;
-  /** It ends at a lip rather than a join: its exit is where a marble comes down, across a gap. */
+  /** It ends at a lip rather than a join: a marble comes down on the part or piece after it, across a gap. */
   flies?: boolean;
   /** How far across it reaches from its middle, from t=0 to t=1; a chute's width where there is none. */
   width?(t: number): number;
   /** What is in its way, in its own terms: `u` is how far along it, as a share of its length. */
   obstacles?: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[];
-  /** A bowl in place of a channel: its rim through the entry, its middle `rim` to the left. */
+  /** A bowl in place of a channel: its rim through the part's start, its middle `rim` to the left. */
   bowl?: { rim: number; hole: number; depth: number };
   /** Lumps in its floor, in its own terms: `u` is how far along it, as a share of its length. */
   mounds?: (Omit<Mound, 'along'> & { u: number })[];
+  /** Felt over its first `upto` share, which brings whatever marble crosses it to `speed`, whatever it came in at. */
+  felt?: { upto: number; speed: number };
+}
+
+interface Shape extends Part {
+  exit: { x: number; y: number; z: number; turn: number } | null;
+  /** A second part of the same piece, begun `at` cells along, cells to the left and levels up from the piece's entry. */
+  then?: Part & { at: { x: number; y: number; z: number } };
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
@@ -437,6 +454,32 @@ function spiralCurve(side: number, t: number, out: number[]): void {
   out[4] = side * SPIRAL_RADIUS * Math.PI * 2 * Math.sin(phi);
   out[5] = -LEVEL * Math.PI * Math.sin(Math.PI * t);
 }
+
+/**
+ * The run up to a jump's lip: a cell down a level, eased like a ramp, then the
+ * dip and the lip, so it leaves a level cell ahead and a quarter level lower
+ * again, pointing up.
+ */
+function runUpCurve(t: number, out: number[]): void {
+  if (t <= 0.5) rampCurve(t * 2, out);
+  else {
+    jumpCurve(t * 2 - 1, out);
+    out[0] += CELL;
+    out[2] -= LEVEL;
+  }
+  // each half is run at twice the pace of the whole
+  out[3] *= 2;
+  out[4] *= 2;
+  out[5] *= 2;
+}
+
+/**
+ * The pace a jump's felt brings a marble to, and how hard it grips: whatever
+ * came before the jump, a marble leaves the felt at this, reaches the lip at
+ * a pace of its own, and comes down on the landing beyond it.
+ */
+export const FELT_SPEED = 15;
+export const FELT_GRIP = 6;
 
 /** How steeply a jump's lip throws a marble up, in radians: enough to clear the gap, not to go over the moon. */
 const LIP = 0.35;
@@ -526,9 +569,15 @@ export const PEG = 0.22;
  * pen is either side of the middle; how far its paddles reach across, which
  * is the pen less a paddle's own thickness, so no marble gets round an end;
  * how thick a paddle is, how high the axle stands above a marble's middle,
- * how long a paddle is, and how long the wheel takes to go round.
+ * how long a paddle is, and how long the wheel takes to go round. The axle's
+ * height sets how far apart two paddles are along the pen while both are
+ * down: at 1 they were 2.0 apart, and a whole field could not fit between
+ * them in two rows, so the one coming down pressed marbles into each other.
+ * At 1.1 they are 2.2 apart, and a paddle only just long enough to dip to the
+ * floor is still down for more than a quarter of a turn, so there is never a
+ * moment with none down for a marble to slip under.
  */
-export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1, arm: 1.45, period: 4.8 };
+export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.1, arm: 1.56, period: 4.8 };
 
 /**
  * Rows of pegs, each row shifted half a gap from the one before, so that a
@@ -608,7 +657,23 @@ const SHAPES: Record<Kind, Shape> = {
     rough: Math.hypot(Math.PI * 2 * SPIRAL_RADIUS, LEVEL * 2) * 1.1,
     curve: (t, out) => spiralCurve(-1, t, out),
   },
-  jump: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 1.2, curve: jumpCurve, flies: true },
+  // a jump that carries its own landing, so it joins whatever is before and after it: felt down a level that
+  // brings any marble to the same pace whatever it came in at, the lip, a cell of air, and a board beyond to come
+  // down on. Off a lip left to the piece before it, the field fell short off a slow one and flew over one that
+  // was fed fast, and came down only on a level piece: off a drop, a spiral or the narrow, every marble was lost
+  jump: {
+    exit: { x: 5, y: 0, z: -3, turn: 0 },
+    rough: CELL * 2.3,
+    curve: runUpCurve,
+    flies: true,
+    felt: { upto: 0.5, speed: FELT_SPEED },
+    then: {
+      at: { x: 3, y: 0, z: -2 },
+      rough: CELL * 2.1,
+      curve: boardCurve,
+      width: opening(HALF_WIDTH * 2, 0.1, 0.85),
+    },
+  },
   pegs: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
     rough: CELL * 2.1,
@@ -658,9 +723,8 @@ const SHAPES: Record<Kind, Shape> = {
     // four paddles, one down in the chute at a time for 1.2 s: a marble that catches one up is held behind it
     // until it lifts out, and one that arrives as a paddle lifts runs on under the wheel. A wheel turning twice as
     // fast held only one marble at a time, and handed a field on in the order it came; this one gathers those
-    // that come close together behind a paddle, abreast across the pen, and lets them all go at once. The axle
-    // stands low enough that a paddle's tip clears the chute's floor at the bottom of its turn, so the wheel the
-    // marbles meet is the wheel that is drawn
+    // that come close together behind a paddle, abreast across the pen, and lets them all go at once. A paddle's
+    // tip comes to the chute's floor at the bottom of its turn, so the wheel the marbles meet is the wheel drawn
     obstacles: [0, 0.25, 0.5, 0.75].map((turn) => ({
       u: 0.5,
       across: 0,
@@ -670,11 +734,18 @@ const SHAPES: Record<Kind, Shape> = {
       motion: { kind: 'paddle' as const, period: WHEEL.period, turn, axle: WHEEL.axle, arm: WHEEL.arm },
     })),
   },
+  // down a level to its rim, and then the bowl: a bowl level with its entry lay over whatever came in from the
+  // left, a turn to the left most of all, whose arc is the bowl's own rim. A level down, nothing comes near it
   funnel: {
-    exit: { x: 0, y: 1, z: -1, turn: 0 },
-    rough: Math.PI * 2.5 * CELL * 0.7,
-    curve: funnelCurve,
-    bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH },
+    exit: { x: 1, y: 1, z: -2, turn: 0 },
+    rough: Math.hypot(CELL, LEVEL) * 1.1,
+    curve: rampCurve,
+    then: {
+      at: { x: 1, y: 0, z: -1 },
+      rough: Math.PI * 2.5 * CELL * 0.7,
+      curve: funnelCurve,
+      bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH },
+    },
   },
   // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to
   // two chutes and three in its middle, where a field spreads out and finds its own lines
@@ -756,19 +827,29 @@ function portalKey(x: number, y: number, z: number, facing: Facing): string {
 }
 
 /** One piece sampled into a segment, in the world's own units. */
-function sample(piece: Placed, index: number): Segment {
+/** A piece's parts, each worked out into a segment of its own, in the order a marble meets them. */
+function sample(piece: Placed, index: number): Segment[] {
   const shape = SHAPES[piece.kind];
+  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 })];
+  if (shape.then) out.push(samplePart(piece, index, shape.then, shape.then.at));
+  return out;
+}
+
+/** One part of a piece, begun `at` cells along and to the left and levels up from the piece's entry. */
+function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; y: number; z: number }): Segment {
   const n = Math.max(8, Math.ceil(shape.rough / SAMPLE_EVERY)) + 1;
   const points = new Float32Array(n * 3),
     tangents = new Float32Array(n * 3),
     ups = new Float32Array(n * 3),
     arc = new Float32Array(n),
     width = new Float32Array(n);
-  const ox = piece.x * CELL,
-    oy = piece.y * CELL,
-    oz = piece.z * LEVEL;
   const local: number[] = [0, 0, 0, 0, 0, 0];
   const turned: number[] = [0, 0];
+  // where the part begins: its piece's entry, moved on by `at` in the piece's own frame
+  turnBy(piece.facing, at.x * CELL, at.y * CELL, turned);
+  const ox = piece.x * CELL + turned[0],
+    oy = piece.y * CELL + turned[1],
+    oz = (piece.z + at.z) * LEVEL;
   for (let i = 0; i < n; i++) {
     shape.curve(i / (n - 1), local);
     width[i] = shape.width ? shape.width(i / (n - 1)) : HALF_WIDTH;
@@ -837,6 +918,7 @@ function sample(piece: Placed, index: number): Segment {
     obstacles,
     funnel,
     mounds,
+    felt: shape.felt ? { upto: shape.felt.upto * length, speed: shape.felt.speed } : null,
   };
 }
 
@@ -856,30 +938,34 @@ export function compile(run: Run): Track {
   });
   let index = run.pieces.findIndex((p) => p.kind === 'start');
   const seen = new Set<number>();
-  while (index >= 0 && !seen.has(index) && track.segments.length < MAX_PIECES) {
+  while (index >= 0 && !seen.has(index) && seen.size < MAX_PIECES) {
     seen.add(index);
-    const segment = sample(run.pieces[index], index);
-    // off a lip there is air before this one begins, and it counts towards how far along the run it is
-    const before = track.segments[track.segments.length - 1] as Segment | undefined;
-    if (before?.flies || before?.funnel) {
-      const last = before.points.length - 3;
-      before.gap = Math.hypot(segment.points[0] - before.points[last], segment.points[1] - before.points[last + 1]);
-      track.length += before.gap;
-    }
-    segment.start = track.length;
-    // everything that moves on a piece keeps one time, so a wheel's paddles turn together
-    if (segment.obstacles.some((o) => o.motion.kind !== 'fixed')) {
-      for (const o of segment.obstacles) if (o.motion.kind !== 'fixed') o.slot = track.slots;
-      track.slots++;
-    }
-    if (track.segments.length > 0) track.segments[track.segments.length - 1].next = track.segments.length;
-    track.segments.push(segment);
-    track.length += segment.length;
-    track.samples += segment.arc.length;
+    for (const segment of sample(run.pieces[index], index)) join(track, segment);
     const out = exitOf(run.pieces[index]);
     index = out ? (entries.get(portalKey(out.x, out.y, out.z, out.facing)) ?? -1) : -1;
   }
   return track;
+}
+
+/** A segment added to the end of a track: joined to the one before, air and all, and counted. */
+function join(track: Track, segment: Segment) {
+  // off a lip there is air before this one begins, and it counts towards how far along the run it is
+  const before = track.segments[track.segments.length - 1] as Segment | undefined;
+  if (before?.flies || before?.funnel) {
+    const last = before.points.length - 3;
+    before.gap = Math.hypot(segment.points[0] - before.points[last], segment.points[1] - before.points[last + 1]);
+    track.length += before.gap;
+  }
+  segment.start = track.length;
+  // everything that moves on a piece keeps one time, so a wheel's paddles turn together
+  if (segment.obstacles.some((o) => o.motion.kind !== 'fixed')) {
+    for (const o of segment.obstacles) if (o.motion.kind !== 'fixed') o.slot = track.slots;
+    track.slots++;
+  }
+  if (track.segments.length > 0) track.segments[track.segments.length - 1].next = track.segments.length;
+  track.segments.push(segment);
+  track.length += segment.length;
+  track.samples += segment.arc.length;
 }
 
 /** Where along the track a distance falls: the sample at or before it. */
@@ -1006,7 +1092,52 @@ export function check(run: Run): string[] {
     problems.push('there is no finish for a marble to stop in');
   }
 
+  // a run that walks clean can still pass through itself, where two parts that do not join come to the same place
+  if (problems.length === 0) problems.push(...clashes(run, compile(run)));
   return problems;
+}
+
+/**
+ * How near two parts of a run that do not join may come across the ground,
+ * wall to wall, and how far one must pass over the other in height to be
+ * clear of it whatever: a marble and a wall's height, and a skin under the one
+ * above.
+ */
+const CLEAR = 0.3,
+  OVER = 1.6;
+
+/**
+ * Where two parts of a run that do not join run through each other: the same
+ * place at the same height, as a funnel's bowl level with its entry did over
+ * a turn to the left before it, whose arc was the bowl's own rim. Asked of
+ * every pair of segments that are not neighbours, a sample in two; checked
+ * once when a run is laid out, and never as it is raced, which is why it is
+ * here and not in `checkTrack`.
+ */
+function clashes(run: Run, track: Track): string[] {
+  const out: string[] = [];
+  const { segments } = track;
+  for (let a = 0; a < segments.length; a++)
+    for (let b = a + 2; b < segments.length; b++) {
+      const A = segments[a],
+        B = segments[b];
+      if (A.piece === B.piece) continue;
+      let near = Infinity;
+      for (let i = 0; i < A.arc.length && near >= CLEAR; i += 2)
+        for (let j = 0; j < B.arc.length; j += 2) {
+          if (Math.abs(A.points[i * 3 + 2] - B.points[j * 3 + 2]) > OVER) continue;
+          const apart =
+            Math.hypot(A.points[i * 3] - B.points[j * 3], A.points[i * 3 + 1] - B.points[j * 3 + 1]) -
+            A.width[i] -
+            B.width[j];
+          near = Math.min(near, apart);
+        }
+      if (near < CLEAR)
+        out.push(
+          `pieces ${A.piece} and ${B.piece}, a ${run.pieces[A.piece].kind} and a ${run.pieces[B.piece].kind}, run through each other`,
+        );
+    }
+  return out;
 }
 
 /**

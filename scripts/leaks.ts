@@ -20,7 +20,7 @@ import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MARBLES } from '../src/marbles';
 import { RUNS } from '../src/runs';
-import { MAX_PIECES, MAX_SAMPLES } from '../src/track';
+import { MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 
@@ -33,7 +33,7 @@ const DT = 1 / 60;
  */
 export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }>> = {
   marbles: { ceiling: MARBLES },
-  segments: { ceiling: MAX_PIECES },
+  segments: { ceiling: MAX_SEGMENTS },
   samples: { ceiling: MAX_SAMPLES },
   // the save is three fields and has to stay three, however long it is played
   'save fields': { ceiling: 3 },

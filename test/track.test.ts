@@ -4,6 +4,7 @@ import { FIRST } from '../src/runs';
 import {
   HALF_WIDTH,
   LANE,
+  LEVEL,
   MAX_SAMPLES,
   MOVING_MOST,
   NARROW,
@@ -217,14 +218,17 @@ describe('the track', () => {
       // a spiral goes right round, so it comes out where it went in, two levels down and going the same way
       for (const kind of ['spiralLeft', 'spiralRight'] as const)
         expect(exitOf({ kind, x: 3, y: -2, z: 0, facing: 2 }), kind).toEqual({ x: 3, y: -2, z: -2, facing: 2 });
-      // a jump lands two along and a level down, the cell between left empty for the air
-      expect(exitOf({ kind: 'jump', x: 0, y: 0, z: 0, facing: 3 })).toEqual({ x: 0, y: -2, z: -1, facing: 3 });
+      // a jump carries its own landing: its felt and lip, a cell of air, and the board it comes down on, five
+      // cells along and three levels down in all
+      expect(exitOf({ kind: 'jump', x: 0, y: 0, z: 0, facing: 3 })).toEqual({ x: 0, y: -5, z: -3, facing: 3 });
     });
 
     it('works a run of them out clean', () => {
       expect(check(run)).toEqual([]);
       const track = compile(run);
-      expect(track.segments.length).toBe(run.pieces.length);
+      // one segment to a piece, but a jump's landing is a second part of it
+      expect(track.segments.length).toBe(run.pieces.length + 1);
+      expect(track.segments.filter((s) => s.piece === 4).length).toBe(2);
       expect(checkTrack(track)).toEqual([]);
     });
 
@@ -239,8 +243,9 @@ describe('the track', () => {
           seg.points[last + 1] - to.points[1],
           seg.points[last + 2] - to.points[2],
         );
-        if (run.pieces[seg.piece].kind === 'jump') {
-          expect(seg.flies).toBe(true);
+        if (seg.flies) {
+          expect(run.pieces[seg.piece].kind).toBe('jump');
+          expect(to.piece, 'and it comes down on its own landing').toBe(seg.piece);
           expect(gap, 'there is air between the lip and the landing').toBeGreaterThan(3);
           continue;
         }
@@ -306,8 +311,9 @@ describe('the track', () => {
         expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 0 }), kind).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
       for (const kind of ['gate', 'wheel'] as const)
         expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 1 }), kind).toEqual({ x: 0, y: 1, z: -1, facing: 1 });
-      // a funnel lets them out of its middle, a level down and under the bowl, going the way they came in
-      expect(exitOf({ kind: 'funnel', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 0, y: 1, z: -1, facing: 0 });
+      // a funnel runs in a cell and down a level to its bowl, and lets them out of the bowl's middle a level
+      // lower again and under it, going the way they came in
+      expect(exitOf({ kind: 'funnel', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 1, y: 1, z: -2, facing: 0 });
     });
 
     it("works out clean, with the chute's own width wherever it meets another piece", () => {
@@ -391,9 +397,12 @@ describe('the track', () => {
       expect(track.slots).toBeGreaterThanOrEqual(3);
     });
 
-    it('gives a funnel a bowl, with the entry on its rim and the way out below its middle', () => {
-      const seg = track.segments[5];
+    it('gives a funnel a bowl a level below where it is entered, the run in to it on its rim and the way out below', () => {
+      const seg = track.segments.find((s) => s.funnel)!;
       const bowl = seg.funnel!;
+      const runIn = track.segments[track.segments.indexOf(seg) - 1];
+      expect(runIn.piece, 'the run in is the funnel too').toBe(seg.piece);
+      expect(bowl.z, 'a level below where the piece is entered').toBeCloseTo(runIn.points[2] - LEVEL, 4);
       expect(bowl).toBeTruthy();
       expect(bowl.hole).toBeGreaterThan(MARBLE / 2);
       expect(bowl.rim).toBeGreaterThan(bowl.hole * 3);
@@ -471,6 +480,14 @@ describe('the track', () => {
       expect((LANE - RADIUS) * 2, 'single file').toBeLessThan(RADIUS * 2);
       const lane = end.arc.filter((_, k) => end.width[k] <= LANE + 1e-6);
       expect(lane[lane.length - 1] - lane[0], 'room for eight').toBeGreaterThan(RADIUS * 2 * MARBLES);
+    });
+
+    it('says two parts of a run that run through each other are wrong with it', () => {
+      // a funnel after a left turn once had its bowl lying on the turn's own arc; a level down, it is clear
+      expect(check(chain(['start', 'curveLeft', 'funnel', 'straight', 'finish']))).toEqual([]);
+      // three turns to the left after a peg board bring the end of the run back round across the board
+      const crossing = chain(['start', 'straight', 'pegs', 'curveLeft', 'curveLeft', 'curveLeft', 'finish']);
+      expect(check(crossing).join('\n')).toMatch(/run through each other/);
     });
 
     it('says a piece narrower than single file is wrong with a run', () => {

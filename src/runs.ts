@@ -52,13 +52,14 @@ export const SHORT: Run = {
 
 /**
  * Held at a gate, then three turns of a spiral stacked into a tower, and
- * into a funnel at its foot. The tower files the field on its outer wall in
- * the order the gate let it go, and the funnel keeps the fastest going round
- * longest, so the back of the field is as likely to come out first as the
- * front.
+ * down into a funnel at its foot. The tower files the field on its outer
+ * wall in the order the gate let it go, and the funnel keeps the fastest
+ * going round longest, so the field comes out of it nearly the other way
+ * round. Its funnel now sits a level below its entry, and it was rebuilt
+ * under a new id for it.
  */
 export const TOWER: Run = {
-  id: 'the-tower-2',
+  id: 'the-tower-3',
   name: 'The Tower',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -68,38 +69,32 @@ export const TOWER: Run = {
     { kind: 'spiralLeft', x: 3, y: 0, z: -5, facing: 0 },
     { kind: 'spiralLeft', x: 3, y: 0, z: -7, facing: 0 },
     { kind: 'funnel', x: 3, y: 0, z: -9, facing: 0 },
-    { kind: 'straight', x: 3, y: 1, z: -10, facing: 0 },
-    { kind: 'finish', x: 4, y: 1, z: -10, facing: 0 },
+    { kind: 'straight', x: 4, y: 1, z: -11, facing: 0 },
+    { kind: 'finish', x: 5, y: 1, z: -11, facing: 0 },
   ],
 };
 
 /**
- * A sweeper off the start, then two jumps. The first is off a ramp and comes
- * down on a peg board: marbles still jostling from the sweeper leave its lip
- * with some way across, and a chute to land on was missed three times in
- * five hundred races, where a board is wide enough to catch them. Off a drop
- * the field flew clean over the board's pegs and came down past them, and
- * the board mixed nothing; off a ramp it comes down among them, and off
- * anything slower it falls short of the board. The second is off a drop, on
- * to three straights for the fastest, and there is a gate before the cup.
+ * A sweeper off the start, then two jumps, each of which carries its own
+ * felt, lip and landing. The first comes down on to a peg board, which mixes
+ * a field still jostling from the sweeper; the second on to a straight, and
+ * there is a gate before the cup. A jump that left its landing to the piece
+ * after it lost the field off a slow run-in and over the wrong piece, and
+ * this one was rebuilt when the jump was made to join anything.
  */
 export const LEAP: Run = {
-  id: 'the-leap-3',
+  id: 'the-leap-4',
   name: 'The Leap',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'ramp', x: 3, y: 0, z: -2, facing: 0 },
-    { kind: 'jump', x: 4, y: 0, z: -3, facing: 0 },
-    { kind: 'pegs', x: 6, y: 0, z: -4, facing: 0 },
-    { kind: 'curveLeft', x: 8, y: 0, z: -5, facing: 0 },
-    { kind: 'drop', x: 9, y: 1, z: -5, facing: 1 },
-    { kind: 'jump', x: 9, y: 2, z: -7, facing: 1 },
-    { kind: 'straight', x: 9, y: 4, z: -8, facing: 1 },
-    { kind: 'straight', x: 9, y: 5, z: -8, facing: 1 },
-    { kind: 'straight', x: 9, y: 6, z: -8, facing: 1 },
-    { kind: 'gate', x: 9, y: 7, z: -8, facing: 1 },
-    { kind: 'finish', x: 9, y: 8, z: -9, facing: 1 },
+    { kind: 'jump', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'pegs', x: 8, y: 0, z: -5, facing: 0 },
+    { kind: 'curveLeft', x: 10, y: 0, z: -6, facing: 0 },
+    { kind: 'jump', x: 11, y: 1, z: -6, facing: 1 },
+    { kind: 'straight', x: 11, y: 6, z: -9, facing: 1 },
+    { kind: 'gate', x: 11, y: 7, z: -9, facing: 1 },
+    { kind: 'finish', x: 11, y: 8, z: -10, facing: 1 },
   ],
 };
 
@@ -140,7 +135,9 @@ export const SWITCHBACK: Run = {
  * its best under, so it never changes once a run has shipped; a run whose
  * layout changes is a new run with a new id, since a best set on the old
  * layout means nothing on the new one. Each was rebuilt once when the pegs
- * and the moving parts came in, and The Leap again when its first jump was
- * made to come down among its pegs; each carries the id of its latest layout.
+ * and the moving parts came in; The Leap twice more, when its first jump was
+ * made to come down among its pegs and when its jumps took their landings
+ * with them, and The Tower when its funnel went down a level. Each carries
+ * the id of its latest layout.
  */
 export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK];

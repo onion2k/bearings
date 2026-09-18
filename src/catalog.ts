@@ -65,8 +65,8 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   jump: {
     name: 'Jump',
-    about: 'A lip that throws the field into the air across a gap, here on to a peg board to catch it.',
-    among: ['start', 'drop', 'jump', 'pegs', 'finish'],
+    about: 'Felt that brings any marble to the same pace, a lip over a cell of air, and a board to land on.',
+    among: alone('jump'),
   },
   pegs: {
     name: 'Peg board',
@@ -90,8 +90,8 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   funnel: {
     name: 'Funnel',
-    about: 'A bowl the field goes round and round, each until it is slow enough to drop through.',
-    among: ['start', 'ramp', 'funnel', 'straight', 'finish'],
+    about: 'Down a level into a bowl the field goes round, each until it is slow enough to drop through.',
+    among: alone('funnel'),
   },
   shallow: {
     name: 'Shallow straight',

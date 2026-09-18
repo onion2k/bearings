@@ -23,6 +23,7 @@ import {
   type Segment,
   type Track,
   at,
+  FELT_GRIP,
   bowlHeight,
   moundHeight,
   moundSlope,
@@ -64,11 +65,15 @@ export const SPACING = 1.1;
 /**
  * The most passes a step takes to settle marbles pressed together. A clump of
  * three settles in two or three; a pile of five squeezed into the neck where
- * a gate's pen closes back to a chute took more than six, and was left a
- * little inside itself. Most steps need none, and stop at the first pass
- * that parts nothing, so the ceiling costs nothing until a pile needs it.
+ * a gate's pen closes back to a chute took more than six, and a field
+ * crowding into the narrowing at the end of the run, or out of a wheel's pen,
+ * more than sixteen. Most steps need none, and stop at the first pass that
+ * moves nothing by more than `MOVED`, so the ceiling costs nothing until a
+ * pile needs it. Until that was the test, a marble merely touching a peg or
+ * a paddle counted as moved, and a field at rest ran every pass there was.
  */
-export const SETTLE = 16;
+export const SETTLE = 48;
+export const MOVED = 1e-4;
 
 /** What a marble is doing. */
 export const WAITING = 0,
@@ -394,8 +399,11 @@ export class Marbles {
       const pull = GRAVITY * (LEAN - this.here.tz) * ROLLING;
       const drag = DRAG * this.friction * this.speed[i] * Math.abs(this.speed[i]);
       this.speed[i] += (pull - drag) * dt;
-      // up a mound's side a marble is pulled back down it, which turns it away from the middle of the mound
       const seg = track.segments[this.segment[i]];
+      // felt takes a fast marble down to its pace and lets gravity bring a slow one up to it
+      if (seg.felt && this.along[i] < seg.felt.upto)
+        this.speed[i] += (seg.felt.speed - this.speed[i]) * Math.min(1, FELT_GRIP * dt);
+      // up a mound's side a marble is pulled back down it, which turns it away from the middle of the mound
       if (seg.mounds.length > 0) {
         moundSlope(seg, this.along[i], this.across[i], this.slope);
         this.speed[i] -= GRAVITY * ROLLING * this.slope[0] * dt;
@@ -469,9 +477,11 @@ export class Marbles {
         }
       }
     }
-    this.placeFinishers();
     this.touching();
     this.jostle();
+    // once everything has moved, pushes and all, since a marble pushed over the line has crossed it as surely as
+    // one that rolled over it
+    this.placeFinishers();
     this.write();
   }
 
@@ -544,7 +554,8 @@ export class Marbles {
    * Whatever is in the way on the marble's piece, met in the piece's own
    * along-and-across: set out of it, and — when `bounce` — sent off it,
    * with the thing's own movement counted, so a sweeper throws what it hits
-   * and a wheel's paddle carries what it catches up. Whether it met anything.
+   * and a wheel's paddle carries what it catches up. Whether it had to move
+   * the marble, by more than a settled field does.
    */
   private knock(i: number, bounce: boolean): boolean {
     const seg = this.track.segments[this.segment[i]];
@@ -561,7 +572,6 @@ export class Marbles {
       const d = Math.hypot(qa, qc);
       const reach = ob.radius + RADIUS;
       if (d >= reach) continue;
-      hit = true;
       let na = d > 1e-6 ? qa / d : -1,
         nc = d > 1e-6 ? qc / d : 0;
       // square on to a peg there is no side to roll off by, and on a slope it would sit on the peg's crown for
@@ -574,6 +584,8 @@ export class Marbles {
         nc /= l;
       }
       const out = reach - d;
+      // touching is not a push: only one that moves a marble on counts, so a settled field stops settling
+      if (out > MOVED) hit = true;
       this.along[i] = Math.min(Math.max(this.along[i] + na * out, 0), seg.length);
       this.across[i] += nc * out;
       // pushed out sideways into a wall, a marble has nowhere to go and the two stay inside each other: a paddle
@@ -1022,7 +1034,7 @@ export class Marbles {
     const da = this.far(b) - this.far(a),
       dc = this.across[b] - this.across[a];
     const d2 = da * da + dc * dc;
-    if (d2 >= touch * touch - 1e-9) return false;
+    if (d2 >= (touch - MOVED) * (touch - MOVED)) return false;
     const wallA = widthAt(this.track, this.segment[a], this.along[a]) - RADIUS,
       wallB = widthAt(this.track, this.segment[b], this.along[b]) - RADIUS;
     const d = Math.sqrt(d2);
@@ -1063,13 +1075,15 @@ export class Marbles {
         this.segment[i]--;
         this.along[i] += track.segments[this.segment[i]].length;
       } else if (this.along[i] > seg.length) {
-        // and a push does not carry a marble over the line: only rolling over it finishes a race
-        if (seg.next < 0 || seg.flies || track.segments[seg.next].funnel || track.segments[seg.next].next < 0) {
+        if (seg.next < 0 || seg.flies || track.segments[seg.next].funnel) {
           this.along[i] = seg.length;
           return;
         }
         this.along[i] -= seg.length;
         this.segment[i] = seg.next;
+        // pushed over the line is over it: held short of it instead, a crowd squeezing into the last of a run was
+        // pressed inside one another against it
+        if (this.state[i] === RACING && track.segments[seg.next].next < 0) this.finish(i);
       } else return;
     }
   }

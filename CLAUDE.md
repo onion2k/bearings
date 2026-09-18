@@ -132,16 +132,21 @@ What to copy the shape of, when building something new:
 - **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
   it hands a marble on, and the curve it follows — and every path over the
   kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
-  a switch anyone can forget to add to. A jump is the same plus `flies`: it
-  ends in the air, and the solver takes a marble off its lip. A board is the
-  same plus `width`; pegs and moving parts are `obstacles`, each with a
+  a switch anyone can forget to add to. A piece may be two parts (`then`),
+  each its own segment, so that it joins whatever is either side of it: a
+  jump is its run-up, which `flies` off a lip after `felt` that brings any
+  marble to the same pace, and its own landing board beyond the air; a
+  funnel is a run in down a level, and then its bowl. A board is the same
+  plus `width`; pegs and moving parts are `obstacles`, each with a
   `Motion` that `pose` turns into where it is at a moment, from a phase the
   race draws from its seed; a funnel is `bowl`; lumps in a floor are
   `mounds`. A width may pinch below a chute's, down to single file
   (`NARROW`), but is a chute's wherever one piece meets another. A new kind
-  needs an entry in `CATALOG` too, which the compiler insists on, and the
-  catalog's test then races it by itself. Copy that shape for anything the
-  game has several of.
+  needs an entry in `CATALOG` too, which the compiler insists on; the
+  catalog's test then races it by itself, and `test/joins.test.ts` races it
+  after and before every other kind there is. `check` refuses a run whose
+  parts pass through each other. Copy that shape for anything the game has
+  several of.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
@@ -202,11 +207,15 @@ belonging with those:
 - **Marbles stay on the track over a crest.** Only a jump's lip lets one
   leave it; a fast marble over the top of a drop would, in life, fly.
 - **Overlap is a solver's business.** Two marbles are parted across the
-  channel and then along it for whatever a wall refuses, over sixteen
-  passes (`SETTLE`), and a marble a moving part would crush against a wall
-  is let out along the piece instead. A marble cannot drop out of a funnel
-  on to one sat under the hole; it waits in the hole. A new piece that
-  pinches the channel meets all of this first.
+  channel and then along it for whatever a wall refuses, over as many as
+  48 passes (`SETTLE`), which stop as soon as nothing moves by more than
+  `MOVED`: a marble merely touching a peg once counted as moved, and a
+  settled field ran every pass. A marble a moving part would crush against
+  a wall is let out along the piece instead, and one pushed over the line
+  has crossed it. A marble cannot drop out of a funnel on to one sat under
+  the hole; it waits in the hole. A new piece that pinches the channel
+  meets all of this first, and racing every pair is what found each of
+  these.
 - **Nothing is quite level.** A straight or a curve leans down by a
   twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
   always drains; a truly level piece let a crowd come to rest on it.
@@ -287,7 +296,9 @@ For anything new in the run, check what it does:
   channel, short of the landing or beyond everything the lip can reach; it is
   lost, told of, given no place, and the race still ends
 - **building:** placed, moved, turned and taken away; placed overlapping
-  what is already there, and placed with nothing underneath it
+  what is already there, and placed with nothing underneath it; any piece
+  after any other, which `test/joins.test.ts` races for every pair, and two
+  parts that pass through each other, which `check` refuses
 - **let go and again:** the run released, stopped part way down, and
   released again from the same seed to the same result, marble for marble
 - **save:** saved, reloaded, and loaded from an old save without the field

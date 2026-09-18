@@ -239,7 +239,7 @@ export function createApi(host: DebugHost): GameApi {
       runs: RUNS.map((r) => r.name),
       catalog: PIECES.map((p) => p.name),
       length: game.track.length,
-      pieces: game.track.segments.length,
+      pieces: game.current.pieces.length,
       marbles: game.marbles.count,
     }),
     events() {
