@@ -7,11 +7,15 @@
  * keep a note of it. Nothing here waits on anything there, so the same game
  * runs in the page and in Node, and what the tests try is what is played.
  *
- * Nothing the player does reaches a marble once it is let go. That is the
- * game — the run decides it — and it is also what makes a race exactly
- * repeatable from its seed, which every replay and every baseline rests on.
+ * Up to eight players each pick a marble before the off, and whoever picked
+ * the winner wins. The marbles are all the same, and where each starts is
+ * drawn as the gate opens, after the picks, so every pick is one chance in
+ * eight whatever the run favours; the pegs, gates and paddles along the way
+ * decide the rest. Nothing a player does reaches a marble once it is let go.
+ * That is the game, and it is also what makes a race exactly repeatable from
+ * its seed, which every replay and every baseline rests on.
  */
-import { LOST, Marbles, STALLED, WAITING } from './marbles';
+import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
 import { RUNS } from './runs';
@@ -31,6 +35,8 @@ export interface GameEvents {
   lost?(marble: number, seconds: number): void;
   /** The race is done with: who won, and in what time. -1 where nothing finished at all. */
   over?(winner: number, seconds: number): void;
+  /** A marble picked by a player, or let go by one: 0 where it is nobody's now. */
+  claimed?(marble: number, player: number): void;
 }
 
 export interface GameOptions {
@@ -49,6 +55,13 @@ export class Game {
   marbles!: Marbles;
   /** Whether the race that is on has been counted into the save yet. */
   private counted = true;
+  /**
+   * Which player has each marble, from 1, and 0 for nobody's. Kept from one
+   * race to the next and from one run to another, as a colour is in a board
+   * game, until a player lets theirs go; never saved, since a table of
+   * players is only ever the people round the screen.
+   */
+  readonly players = new Int8Array(MARBLES);
 
   constructor(
     readonly progress: Progress,
@@ -92,16 +105,53 @@ export class Game {
     this.events.picked?.(this.run, this.track.name);
   }
 
-  /** The field back on the start gate, with a fresh draw for the grid. */
+  /** The field back on the start gate, to wait for the next off. */
   reset() {
-    this.marbles.draw(() => this.random());
     this.marbles.reset();
     this.counted = false;
   }
 
-  /** Let them go. */
+  /**
+   * Let them go. Where each starts is drawn now, as the gate opens, and not
+   * before: the players have picked by then, and a slot a run favours —
+   * and some favour one slot in two races of five — is no use to anyone.
+   */
   release() {
+    if (this.away) return;
+    this.marbles.draw(() => this.random());
+    this.marbles.reset();
     this.marbles.release();
+  }
+
+  /** Whether they have been let go, in the race that is on. */
+  get away(): boolean {
+    for (let i = 0; i < this.marbles.count; i++) if (this.marbles.state[i] !== WAITING) return true;
+    return false;
+  }
+
+  /**
+   * A marble picked: given to the first player without one, or let go again
+   * if a player has it already. Only before the off. Which player has it now,
+   * or 0 for nobody.
+   */
+  claim(marble: number): number {
+    if (!Number.isInteger(marble) || marble < 0 || marble >= this.players.length) return 0;
+    if (this.away) return this.players[marble];
+    if (this.players[marble] > 0) this.players[marble] = 0;
+    else {
+      let player = 1;
+      while (this.players.includes(player)) player++;
+      this.players[marble] = player;
+    }
+    this.events.claimed?.(marble, this.players[marble]);
+    return this.players[marble];
+  }
+
+  /** The player whose marble won the race that is over; 0 where no player had it, or nothing finished; -1 before it is over. */
+  champion(): number {
+    if (!this.over) return -1;
+    const won = this.standing().find((i) => this.marbles.place[i] === 1);
+    return won === undefined ? 0 : this.players[won];
   }
 
   /** The best winning time on the run that is on, or 0 before it has one. */
@@ -117,15 +167,17 @@ export class Game {
   /**
    * Who is winning, or who won: every marble in the order it stands. Those
    * home first in the order they came, then those still going with the one
-   * furthest on in front, then those still on the gate in the order they
-   * will leave it, and last anything that stopped short. A board is worth
-   * having before the off as well as after it.
+   * furthest on in front, then those still on the gate in their own order —
+   * where each starts is not drawn until the off, so a board of them in the
+   * order they stand would tell of a draw that means nothing — and last
+   * anything that stopped short. A board is worth having before the off as
+   * well as after it.
    */
   standing(): number[] {
     const { marbles } = this;
     const all = [...Array(marbles.count).keys()];
     const home = all.filter((i) => marbles.place[i] > 0).sort((a, b) => marbles.place[a] - marbles.place[b]);
-    const waiting = all.filter((i) => marbles.state[i] === WAITING).sort((a, b) => marbles.grid[a] - marbles.grid[b]);
+    const waiting = all.filter((i) => marbles.state[i] === WAITING);
     const stopped = all.filter((i) => marbles.state[i] === STALLED || marbles.state[i] === LOST);
     return [...home, ...marbles.running(), ...waiting, ...stopped];
   }

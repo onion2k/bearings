@@ -7,7 +7,8 @@
  * not inside another marble, and doing exactly one thing, with the tallies
  * agreeing — all of that is the marbles' own rules, in `checkMarbles`. The
  * places given out are 1, 2, 3 and so on with none repeated, and only to
- * marbles that got there. The save only ever grew.
+ * marbles that got there. No player has two marbles, nor any marble two
+ * players. The save only ever grew.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
@@ -48,6 +49,18 @@ export function checkInvariants(game: Game): string[] {
     places.set(place, i);
   }
   report('the places', wrong);
+
+  // each marble is nobody's or one player's, and no player has two
+  const seated = new Map<number, number>();
+  const players: string[] = [];
+  game.players.forEach((player, marble) => {
+    if (player === 0) return;
+    if (player < 1 || player > game.players.length) players.push(`marble ${marble} is had by player ${player}`);
+    const other = seated.get(player);
+    if (other !== undefined) players.push(`player ${player} has marbles ${other} and ${marble}`);
+    seated.set(player, marble);
+  });
+  report('the players', players);
 
   // the run on is one of the runs there are, and it is the one the save says, or the save says none yet
   if (!Number.isInteger(game.run) || game.run < 0 || game.run >= RUNS.length)

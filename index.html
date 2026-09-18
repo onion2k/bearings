@@ -104,13 +104,38 @@
     list-style: none;
     counter-reset: place;
   }
+  /* a row is picked by a tap, so it takes the pointer back from the canvas like the picker's arrows */
   #order li {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     counter-increment: place;
     color: var(--dim);
     line-height: 1.7;
+    margin: 0 -6px;
+    padding: 0 6px;
+    border-radius: 6px;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  #order li:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+  /* who has the marble: a player's number, or an empty place the same width so the names line up */
+  #order li i {
+    width: 24px;
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    border-radius: 5px;
+    background: var(--gold);
+    color: #19150a;
+  }
+  #order li i.none {
+    background: transparent;
   }
   #order li::before {
     content: counter(place) '.';
@@ -127,6 +152,18 @@
   }
   #order span {
     font-variant-numeric: tabular-nums;
+  }
+  /* as wide as the board's rows and no wider: a long line wraps rather than stretching the board */
+  #verdict {
+    max-width: 168px;
+    margin: 6px auto 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gold);
+  }
+  #verdict:empty {
+    display: none;
   }
   #stats {
     top: 16px;
@@ -178,10 +215,12 @@
   </div>
   <div id="best"></div>
   <ol id="order"></ol>
+  <div id="verdict"></div>
 </div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="help" hidden>
-  <span>space</span> let them go · <span>R</span> again · drag to orbit, wheel to zoom
+  <span>1</span>–<span>8</span> pick a marble · <span>space</span> let them go · <span>R</span> again · drag to orbit,
+  wheel to zoom
 </div>
 <div id="boot">
   <p id="bootMsg">starting WebGPU…</p>

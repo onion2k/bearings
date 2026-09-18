@@ -13,7 +13,19 @@ import {
 } from '../src/marbles';
 import { seeded } from '../src/random';
 import { FIRST, RUNS } from '../src/runs';
-import { type Facing, type Placed, type Run, at, compile, exitOf, pose, pose0, spot, widthAt } from '../src/track';
+import {
+  HALF_WIDTH,
+  type Facing,
+  type Placed,
+  type Run,
+  at,
+  compile,
+  exitOf,
+  pose,
+  pose0,
+  spot,
+  widthAt,
+} from '../src/track';
 
 const DT = 1 / 60;
 
@@ -228,6 +240,29 @@ describe('the marbles', () => {
     expect(onTheBend).toBeGreaterThan(0.1);
   });
 
+  it('treats every marble alike: two swapped on the gate swap places at the finish, and nobody else moves', () => {
+    for (const [run, seed] of [
+      [FIRST, 3],
+      [RUNS.find((r) => r.name === 'Switchback')!, 5],
+      [RUNS.find((r) => r.name === 'The Tower')!, 7],
+    ] as const) {
+      const once = fieldOn(run, seed).marbles;
+      race(once);
+      const swapped = fieldOn(run, seed).marbles;
+      // the same race in every way, but for which marble stands where the other did
+      const a = [...Array(swapped.count).keys()].find((i) => swapped.grid[i] === 0)!;
+      const b = [...Array(swapped.count).keys()].find((i) => swapped.grid[i] === 5)!;
+      swapped.grid[a] = 5;
+      swapped.grid[b] = 0;
+      swapped.reset();
+      race(swapped);
+      for (let i = 0; i < once.count; i++) {
+        const stood = i === a ? b : i === b ? a : i;
+        expect(swapped.place[i], `${run.name}, seed ${seed}: marble ${i}`).toBe(once.place[stood]);
+      }
+    }
+  });
+
   it('is a race: the marble on pole does not always win it', () => {
     let poleWins = 0;
     const seeds = 24;
@@ -252,7 +287,6 @@ describe('the marbles', () => {
       marbles.along[i] = 0;
       marbles.speed[i] = 9;
       marbles.drift[i] = 0;
-      marbles.form[i] = 1;
     }
     marbles.across[0] = -wall;
     marbles.across[1] = wall;
@@ -262,8 +296,8 @@ describe('the marbles', () => {
 
   it('calls a marble that has stopped, rather than waiting on it for ever', () => {
     const { marbles, told } = field(1, 1);
-    // stood still on a level bend, and a marble so poor a roller that the run's lean cannot start it again
-    marbles.form[0] = 0.001;
+    // stood still on a level bend, on a surface so rough that the run's lean cannot start it again
+    marbles.friction = 1000;
     marbles.state[0] = RACING;
     marbles.segment[0] = 3;
     marbles.along[0] = 1;
@@ -638,8 +672,8 @@ describe('the marbles', () => {
       it('calls a marble that would go round a bowl for ever, rather than waiting on it', () => {
         const { marbles, told } = setOn(FUNNEL, 1, 0, 0, 12);
         marbles.along[0] = marbles.track.segments[1].length - 0.01;
-        // a marble that loses nothing to anything: its orbit never closes
-        marbles.form[0] = 1e9;
+        // a bowl that takes nothing from a marble going round it: its orbit never closes
+        marbles.friction = 0;
         for (let f = 0; f < 30 * 60 && !marbles.over; f++) marbles.step(DT);
         expect(marbles.state[0]).toBe(STALLED);
         expect(marbles.over, 'and the race is over, not waiting on it').toBe(true);
@@ -651,11 +685,13 @@ describe('the marbles', () => {
         marbles.along[0] = marbles.track.segments[1].length - 0.01;
         for (let f = 0; f < 60 && marbles.state[0] !== SWIRLING; f++) marbles.step(DT);
         expect(marbles.state[0]).toBe(SWIRLING);
-        // a marble so rough that what slows it outweighs everything that drives it
-        marbles.form[0] = 0.001;
+        // a bowl so rough that what slows a marble outweighs everything that drives it
+        marbles.friction = 1000;
         for (let f = 0; f < 2 * 60; f++) marbles.step(DT);
         expect(marbles.state[0]).toBe(SWIRLING);
-        expect(Math.hypot(marbles.vx[0], marbles.vy[0]), 'at rest').toBeLessThan(0.05);
+        // at rest but for what the bowl's slope starts it with in one frame, a tenth or so; friction taken as a push
+        // the other way would throw it back at ten times that
+        expect(Math.hypot(marbles.vx[0], marbles.vy[0]), 'at rest').toBeLessThan(0.2);
       });
 
       it('waits in the hole for a marble sat under it to roll clear, rather than dropping on to it', () => {
@@ -664,20 +700,29 @@ describe('the marbles', () => {
           const { marbles } = setOn(FUNNEL, 1, 0, 0, speed, 2);
           marbles.along[0] = marbles.track.segments[1].length - 0.01;
           const bowl = marbles.track.segments[2].funnel!;
-          // the other sits still right under the hole, and nothing moves it until the test does
+          // the other sits still right under the hole, held by a bar across the chute until the test takes it away
+          const below = marbles.track.segments[3];
+          below.obstacles.push({
+            along: RADIUS * 2 + 0.25,
+            across: 0,
+            half: HALF_WIDTH,
+            angle: Math.PI / 2,
+            radius: 0.2,
+            motion: { kind: 'fixed' },
+            slot: -1,
+          });
           marbles.state[1] = RACING;
           marbles.segment[1] = 3;
           marbles.along[1] = RADIUS;
           marbles.across[1] = 0;
           marbles.speed[1] = 0;
-          marbles.form[1] = 1e-9;
           let here = 0;
           for (let f = 0; f < 14 * 60 && marbles.segment[0] !== 3; f++) {
             marbles.step(DT);
             expect(checkMarbles(marbles), `speed ${speed} frame ${f}`).toEqual([]);
             if (marbles.state[0] === SWIRLING && marbles.bowlRadius(0) < bowl.hole) here++;
-            // and after a while it is moved on out of the way
-            if (here === 30) marbles.along[1] = 4;
+            // and after a while the bar is taken away, and it rolls on out of the way
+            if (here === 30) below.obstacles.pop();
           }
           waited += here;
           expect(marbles.segment[0], `speed ${speed}: out of the bowl in the end`).toBe(3);

@@ -1,6 +1,7 @@
 # Bearing: working on it
 
-A marble run game: eight marbles let go down a run, and the run decides it.
+A marble run game: up to eight players each pick one of eight marbles, the
+field is let go down a run, and whoever picked the winner wins.
 TypeScript, Vite, and WebGPU through
 [artshape-render](https://github.com/onion2k/artshape-render). The README
 says what the game is; this file says how it is made. The house rules in
@@ -77,7 +78,9 @@ change meant to move it, and the commit says why. Look at every picture.
 ## How the code is laid out
 
 - `src/game.ts` is the game without the picture: a run put on, a field on
-  its gate, and the race, a step at a time. It tells what happened through
+  its gate, the players' picks, and the race, a step at a time. Where each
+  marble starts is drawn at the off, after the picks, so a pick is one in
+  eight whatever the run favours. It tells what happened through
   `GameEvents`, and knows nothing of the renderer or the page.
 - `src/marbles.ts` is the race itself: every marble as how far along its
   segment it is and how far across the channel, with gravity taken along the
@@ -133,6 +136,11 @@ What to copy the shape of, when building something new:
   `Motion` that `pose` turns into where it is at a moment, from a phase the
   race draws from its seed; a funnel is `bowl`. Copy that shape for anything
   the game has several of.
+- **The players:** `Game.players`, a player number for each marble, picked
+  by `claim` before the off and read by `champion` after it; kept from race
+  to race and never saved. Ruled on in `invariants.ts`, read by `marbles()`
+  and `state()` in `debug.ts`, done by the fuzzer's `claim`, shown on the
+  board by `main.ts`, and pictured in `board.png` and `won.png`.
 - **A run:** a list of placements with an id, in `src/runs.ts`. Every run is
   held by `test/runs.test.ts` — sound; raced on 24 seeds with every marble
   home, none lost, none stopped, and none fast enough to step through another
@@ -151,20 +159,33 @@ What to copy the shape of, when building something new:
   `test/fuzz-reload.test.ts`, since a correct save never makes it fire.
 - **Test helpers:** `newGame(seed)` and `race(game)` in `test/helpers.ts`,
   and `memoryStore` in `src/progress.ts` for a save that is not the player's.
+  `Marbles.friction` is the solver's lever for a test that wants a marble
+  that never slows (0) or cannot move (a thousand); it is 1 in every race.
 
 ## What comes next
 
-Five runs race, and the player picks between them. Still to come, each
-through `/feature`: the bet, the designer, and patterns on the marbles, which
+Five runs race, and up to eight players pick a marble each. Still to come,
+each through `/feature`: the designer, and patterns on the marbles, which
 want a change to artshape-render since it has no textures. Open, and
 belonging with those:
 
-- **Where on the grid still counts for something.** Over sixty races each,
-  pole wins 7% on The Tower, 12% on First Drop, 15% on The Chute, 18% on
-  Switchback and 22% on The Leap, down from 27% to 85% before the pegs, pens
-  and funnel; and the back half of the grid wins 70% on The Tower, whose
-  gate lets the back of a pen go first as often as the front. The bet prices
-  this with odds, run by run.
+- **The marbles are all the same, and are treated so.** No marble has form
+  or any other property of its own. The field is stepped and parted in the
+  order of the grid (`bySlot`), and a peg's tie is broken by slot: taken by
+  marble number, the float arithmetic alone gave a marble an edge. A test
+  swaps two marbles on the gate and holds them to swapping places at the
+  finish, bit for bit.
+- **The chance is in the things in the way.** A strike on a peg, paddle,
+  gate or wheel comes off up to `RATTLE` (0.3 rad) off true, by the race's
+  own seeded draw, taken in slot order. Without it, identical marbles
+  finished in whatever order the grid and the moving parts' starts put
+  them: on First Drop only four slots ever won.
+- **Where on the grid still counts for something**, though a pick cannot
+  use it, being made before the draw. Over 400 races, slots win 4% to 25%:
+  the front of the grid more often on The Chute and The Leap, whose sweeper
+  is straight off the start; the back more often on The Tower. The Chute's
+  back half wins 12 of its 60 judged races, exactly the fifth the runs test
+  allows, where over 400 it is 29%.
 - **Marbles stay on the track over a crest.** Only a jump's lip lets one
   leave it; a fast marble over the top of a drop would, in life, fly.
 - **Overlap is a solver's business.** Two marbles are parted across the
@@ -253,6 +274,10 @@ For anything new in the run, check what it does:
 - **another run:** put on part way through a race, and the one before it
   thrown away cleanly; framed to fit the screen, whatever its shape; and put
   back on after a reload
+- **the players:** a pick before the off, one tried once they are away and
+  refused, one let go and its number taken by the next to pick; picks kept
+  through a reset and another run; the winner named, or nobody where no
+  player had the winning marble or nothing finished
 
 ## Verifying in a browser
 

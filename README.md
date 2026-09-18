@@ -1,10 +1,12 @@
 # Bearing
 
-A marble run game. Eight marbles wait on the gate at the top of a run; you
-let them go, and the run decides it. Once they are rolling nobody touches
-them — gravity and the shape of the run are the whole of it — so what a
-player brings is the choice of run and, to come, the marble they back and
-the runs they build themselves.
+A marble run game for up to eight players. Eight marbles wait on the gate at
+the top of a run; each player picks one, you let them go, and whoever picked
+the winner wins. It is a roll of a die and not a bet: the marbles are all
+the same, and where each starts is drawn as the gate opens, after the picks,
+so every pick is one chance in eight on every run. Once they are rolling
+nobody touches them, and the pegs, gates and paddles on the way decide it.
+To come: the runs you build yourselves.
 
 Built on [artshape-render](https://github.com/onion2k/artshape-render):
 TypeScript, Vite and WebGPU, in the browser, on the machine's own GPU. The
@@ -14,7 +16,11 @@ is and how far across.
 
 ## Playing it
 
-**Space** lets the field go, and **R** puts it back on the gate. The arrows
+Tap a marble on the board, or press its number, **1** to **8**, to pick it
+for the next player without one: the first to pick is P1, the next P2. Pick
+it again to let it go. **Space** lets the field go, and the board says who
+won; **R** puts it back on the gate, and everyone keeps their marble for the
+next race until they change it. The arrows
 either side of the run's name on the board choose another run, as does
 **N**, and under the name is your best on it. Drag to go round the run, and
 the wheel to go nearer. The board keeps the order as it stands, and the
@@ -36,9 +42,9 @@ turns of a spiral and a funnel at its foot; **The Leap**, two jumps, the
 first on to a peg board; and **Switchback**, twenty pieces of drops, turns,
 pegs and a wheel. Where a marble starts on the grid tells little of where it
 finishes. The game remembers which run you last played and your best on
-each. Still to come, a feature at a time through `/feature`: backing a
-marble, building a run of your own, and patterns on the marbles. `CLAUDE.md`
-says how the code is made and what is open.
+each. Still to come, a feature at a time through `/feature`: building a run
+of your own, and patterns on the marbles. `CLAUDE.md` says how the code is
+made and what is open.
 
 ## What is here
 

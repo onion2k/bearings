@@ -89,7 +89,7 @@ test.describe('what it looks like', () => {
       g.step(1);
       return g.state().swirling;
     });
-    expect(swirling, 'the picture is of marbles in the bowl, or it is not this picture').toBe(6);
+    expect(swirling, 'the picture is of marbles in the bowl, or it is not this picture').toBe(8);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('funnel.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -121,19 +121,19 @@ test.describe('what it looks like', () => {
       g.pick(4);
       g.release();
       g.follow(false);
-      g.step(719);
+      g.step(639);
       // looking down its pen, so the wheel is seen right across it from wall to wall, with the field at it
       g.look(13.25, -28.05, -25.5, { azimuth: -Math.PI / 2, polar: 0.75, radius: 14 });
       g.step(1);
       return g.marbles().filter((m) => m.segment === 8).length;
     });
-    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(6);
+    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(4);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('wheel.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('the leap, with six marbles in the air over the first gap', async ({ page }) => {
+  test('the leap, with five marbles in the air over the first gap', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const flying = await page.evaluate(() => {
@@ -141,15 +141,38 @@ test.describe('what it looks like', () => {
       g.pick(3);
       g.release();
       g.follow(false);
-      g.step(231);
+      g.step(289);
       // side on to the first jump, from its lip to the board it lands on
-      g.look(33.5, 0, -18.5, { azimuth: -1.2, polar: 1.1, radius: 20 });
+      g.look(35.4, 0, -15.2, { azimuth: -1.2, polar: 1.1, radius: 22 });
       g.step(1);
       return g.state().flying;
     });
-    expect(flying, 'the picture is of marbles in the air, or it is not this picture').toBe(6);
+    expect(flying, 'the picture is of marbles in the air, or it is not this picture').toBe(5);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('leap.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the board, with three players picked before the off, and who won after it', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      // on this seed Amethyst, marble 5, wins, and the second player has it
+      g.claim(4);
+      g.claim(5);
+      g.claim(1);
+      g.step(1);
+    });
+    await expect(page.locator('#board')).toHaveScreenshot('board.png', TOLERANCE);
+    const champion = await page.evaluate(() => {
+      const g = window.game!;
+      g.release();
+      g.settle(120);
+      return g.state().champion;
+    });
+    expect(champion, 'the picture is of a race some player won, or it is not this picture').toBeGreaterThan(0);
+    await expect(page.locator('#board')).toHaveScreenshot('won.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
@@ -158,7 +181,12 @@ test.describe('what it looks like', () => {
     test('the board and the run, at the width of a phone', async ({ page }) => {
       const problems = watch(page);
       await start(page, { seed: 11, paused: true });
-      await page.evaluate(() => window.game!.step(1));
+      await page.evaluate(() => {
+        const g = window.game!;
+        g.claim(2);
+        g.claim(5);
+        g.step(1);
+      });
       await expect(page).toHaveScreenshot('phone.png', TOLERANCE);
       expect(problems).toEqual([]);
     });

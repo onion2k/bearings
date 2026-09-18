@@ -29,7 +29,7 @@ import {
   spot,
   widthAt,
 } from './track';
-import type { Random } from './random';
+import { type Random, seeded } from './random';
 
 /** How many marbles race. */
 export const MARBLES = 8;
@@ -85,6 +85,15 @@ export const WAITING = 0,
  * the more speed it loses, so a fast one circles longest.
  */
 export const KNOCK = 0.5;
+/**
+ * How far off true a strike on something in the way may come away, either
+ * way, in radians. Nothing on a real run is quite true, a peg or a paddle
+ * least of all, and it is the pegs, gates and paddles that decide a race:
+ * marbles that are all the same, struck by things that send each exactly the
+ * same way, would finish in whatever order the grid and the moving parts'
+ * starts put them, race after race.
+ */
+export const RATTLE = 0.3;
 export const GRIP = 0.1;
 export const DROP = 3;
 /**
@@ -166,11 +175,13 @@ export class Marbles {
   /** Which place it came, from 1; 0 until it finishes. */
   readonly place: Int32Array;
   /**
-   * How freely each runs, a little either side of one. Marbles that are all
-   * the same would race the same way every time, and there would be nothing
-   * to tell one from another or to back.
+   * How much of the usual friction and drag the marbles meet: 1 in every
+   * race. It is the same for every marble, as everything about them is —
+   * which one wins is the draw of the grid and the run, and a pick is a roll
+   * of a die — and it is here for the tests, which turn it off for a marble
+   * that never slows, or right up for one that cannot move.
    */
-  readonly form: Float32Array;
+  friction = 1;
   /**
    * In the air: how fast each is going through it, where it left the lip,
    * and how long it has been up. Only a marble off a jump uses these; on the
@@ -209,6 +220,22 @@ export class Marbles {
   private readonly order: Int32Array;
   /** Which slot on the start each marble drew. */
   readonly grid: Int32Array;
+  /**
+   * The field in the order of its slots on the grid, which is the order it
+   * is stepped and parted in. Taken by marble instead, the lower-numbered of
+   * two marbles level with each other was always the one parted forward, and
+   * the one moved first; in the float arithmetic even the order two are
+   * worked through in shows, and a marble won or lost races for being the
+   * marble it was. By slot, a marble is only where it drew.
+   */
+  private readonly bySlot: Int32Array;
+  /**
+   * The race's own chance, for which way each strike on something in the way
+   * comes off: started again from the same point whenever the field is set
+   * up, so a race set up again without a fresh draw runs exactly as before.
+   */
+  private rattle: Random = () => 0.5;
+  private rattleFrom = 0;
 
   constructor(
     readonly track: Track,
@@ -230,7 +257,6 @@ export class Marbles {
     this.state = new Uint8Array(n);
     this.took = new Float32Array(n);
     this.place = new Int32Array(n);
-    this.form = new Float32Array(n);
     this.order = new Int32Array(n);
     this.crawling = new Float32Array(n);
     this.vx = new Float32Array(n);
@@ -246,17 +272,19 @@ export class Marbles {
     for (const seg of track.segments)
       for (let k = 2; k < seg.points.length; k += 3) bottom = Math.min(bottom, seg.points[k]);
     this.bottom = bottom;
-    for (let i = 0; i < n; i++) this.form[i] = 0.82 + random() * 0.36;
     this.grid = new Int32Array(n);
+    this.bySlot = new Int32Array(n);
     this.draw(random);
     this.reset();
   }
 
   /**
-   * The grid drawn again. It is drawn rather than handed out in order,
-   * because the same marble on pole every race would be no race at all; and
-   * it is drawn afresh for each one, while a marble keeps the form it was
-   * born with.
+   * The race drawn again: which slot each marble starts from, where each
+   * moving piece begins its turn, and the race's own chance for how strikes
+   * come off. The grid is drawn rather than handed out in order, because the
+   * same marble on pole every race would be no race at all, and it is drawn
+   * afresh for each race; the game draws it as the gate opens, after the
+   * players have picked.
    */
   draw(random: Random) {
     const n = this.count;
@@ -268,11 +296,13 @@ export class Marbles {
       this.grid[j] = swap;
     }
     for (let s = 0; s < this.phase.length; s++) this.phase[s] = random();
+    this.rattleFrom = Math.floor(random() * 4294967296);
   }
 
   /** Everything back on the start, waiting, with the race not yet run. */
   reset() {
     this.t = 0;
+    this.rattle = seeded(this.rattleFrom);
     this.finishers = 0;
     this.stalled = 0;
     this.lost = 0;
@@ -296,8 +326,14 @@ export class Marbles {
       this.state[i] = WAITING;
       this.took[i] = -1;
       this.place[i] = 0;
+      this.bySlot[slot] = i;
     }
     this.write();
+  }
+
+  /** Whether a marble is on the track and rolling, as it is now. */
+  private stillRacing(i: number): boolean {
+    return this.state[i] === RACING;
   }
 
   /** Let them go. */
@@ -320,7 +356,8 @@ export class Marbles {
   step(dt: number) {
     this.t += dt;
     const { track } = this;
-    for (let i = 0; i < this.count; i++) {
+    for (let k = 0; k < this.count; k++) {
+      const i = this.bySlot[k];
       if (this.state[i] === FLYING) {
         this.fly(i, dt);
         continue;
@@ -332,13 +369,13 @@ export class Marbles {
       if (this.state[i] !== RACING) continue;
       at(track, this.segment[i], this.along[i], this.here);
       // gravity along the track: down its own slope, less the share that goes into the marble's spin
-      const pull = GRAVITY * (LEAN - this.here.tz) * ROLLING * this.form[i];
-      const drag = (DRAG / this.form[i]) * this.speed[i] * Math.abs(this.speed[i]);
+      const pull = GRAVITY * (LEAN - this.here.tz) * ROLLING;
+      const drag = DRAG * this.friction * this.speed[i] * Math.abs(this.speed[i]);
       this.speed[i] += (pull - drag) * dt;
       // rolling resistance only ever slows a marble to a stop, never past it: taken as a push the other way it
       // could be bigger than the speed it was slowing, throwing a marble back and forth, and a marble that
       // should have stuck fast was jittered all the way to the cup
-      const resist = (RESIST / this.form[i]) * dt;
+      const resist = RESIST * this.friction * dt;
       this.speed[i] = Math.abs(this.speed[i]) <= resist ? 0 : this.speed[i] - resist * Math.sign(this.speed[i]);
       // going round a bend throws a marble at the outer wall, and the wall holds it in
       const bend = this.bend(this.segment[i], this.along[i]);
@@ -377,7 +414,9 @@ export class Marbles {
           break;
         }
       }
-      if (this.state[i] !== RACING) continue;
+      // over a join it may have finished, or gone into a bowl: asked afresh, since the type checker takes the
+      // state it was in at the top of the step to hold through the calls that change it
+      if (!this.stillRacing(i)) continue;
 
       // barely moving for long enough means it is not going to arrive
       if (Math.abs(this.speed[i]) < CRAWL) {
@@ -447,9 +486,10 @@ export class Marbles {
       let na = d > 1e-6 ? qa / d : -1,
         nc = d > 1e-6 ? qc / d : 0;
       // square on to a peg there is no side to roll off by, and on a slope it would sit on the peg's crown for
-      // ever; it is given a side, by its own number, so that the same race does the same thing every time
+      // ever; it is given a side by the slot it drew on the grid, so the same race does the same thing every
+      // time, and no marble is sent one way more often than another for being the marble it is
       if (ob.half === 0 && Math.abs(nc) < 0.05) {
-        nc += i % 2 === 0 ? 0.08 : -0.08;
+        nc += this.grid[i] % 2 === 0 ? 0.08 : -0.08;
         const l = Math.hypot(na, nc);
         na /= l;
         nc /= l;
@@ -470,8 +510,16 @@ export class Marbles {
       if (!bounce) continue;
       const rv = (this.speed[i] - p.va) * na + (this.drift[i] - p.vc) * nc;
       if (rv < 0) {
-        this.speed[i] -= (1 + KNOCK) * rv * na;
-        this.drift[i] -= (1 + KNOCK) * rv * nc;
+        // it comes away a little to one side or the other of true, by the race's own draw, which is taken in the
+        // order of the grid so no marble is dealt a better share of it than another. Only the way it comes away
+        // is turned, and not how hard: the blow is as hard as it was square on, so a gate sliding sideways past
+        // a marble lends it none of that sideways speed. Turned by so little, it still sends the marble clear.
+        const a = (this.rattle() * 2 - 1) * RATTLE;
+        const c = Math.cos(a),
+          s = Math.sin(a);
+        const give = -(1 + KNOCK) * rv;
+        this.speed[i] += give * (na * c - nc * s);
+        this.drift[i] += give * (na * s + nc * c);
       }
     }
     return hit;
@@ -540,11 +588,11 @@ export class Marbles {
     // the pull down the bowl's own slope, less the share that goes into a rolling marble's spin
     const eps = 1e-3;
     const slope = (bowlHeight(bowl, r + eps) - bowlHeight(bowl, r - eps)) / (2 * eps);
-    const inward = GRAVITY * ROLLING * this.form[i] * Math.sin(Math.atan(slope));
+    const inward = GRAVITY * ROLLING * Math.sin(Math.atan(slope));
     const v = Math.hypot(this.vx[i], this.vy[i]);
     // what slows it only ever slows it, to a stop at most and never on round the other way
     if (v > 1e-6) {
-      const slow = (RESIST / this.form[i] + (DRAG / this.form[i]) * v * v + (BOWL_DRAG / this.form[i]) * v) * dt;
+      const slow = (RESIST + DRAG * v * v + BOWL_DRAG * v) * this.friction * dt;
       const keep = Math.max(0, v - slow) / v;
       this.vx[i] *= keep;
       this.vy[i] *= keep;
@@ -640,9 +688,11 @@ export class Marbles {
   private jostle() {
     const touch = RADIUS * 2;
     // first the speed, once for each touch
-    for (let a = 0; a < this.count; a++) {
+    for (let ka = 0; ka < this.count; ka++) {
+      const a = this.bySlot[ka];
       if (this.state[a] !== SWIRLING) continue;
-      for (let b = a + 1; b < this.count; b++) {
+      for (let kb = ka + 1; kb < this.count; kb++) {
+        const b = this.bySlot[kb];
         if (this.state[b] !== SWIRLING || this.segment[b] !== this.segment[a]) continue;
         const dx = this.bowlX[b] - this.bowlX[a],
           dy = this.bowlY[b] - this.bowlY[a];
@@ -662,9 +712,11 @@ export class Marbles {
     // then where they are, until nothing in any bowl is inside anything else
     for (let pass = 0; pass < SETTLE; pass++) {
       let parted = false;
-      for (let a = 0; a < this.count; a++) {
+      for (let ka = 0; ka < this.count; ka++) {
+        const a = this.bySlot[ka];
         if (this.state[a] !== SWIRLING) continue;
-        for (let b = a + 1; b < this.count; b++) {
+        for (let kb = ka + 1; kb < this.count; kb++) {
+          const b = this.bySlot[kb];
           if (this.state[b] !== SWIRLING || this.segment[b] !== this.segment[a]) continue;
           const dx = this.bowlX[b] - this.bowlX[a],
             dy = this.bowlY[b] - this.bowlY[a];
@@ -843,7 +895,7 @@ export class Marbles {
    */
   private touching() {
     let n = 0;
-    for (let i = 0; i < this.count; i++) if (this.state[i] === RACING) this.order[n++] = i;
+    for (let k = 0; k < this.count; k++) if (this.state[this.bySlot[k]] === RACING) this.order[n++] = this.bySlot[k];
     const runs = this.order;
     const touch = RADIUS * 2;
     // first the speed: what two marbles closing on each other give each other, once for each touch

@@ -48,6 +48,8 @@ export interface GameState {
   over: boolean;
   /** Who is leading, or who won; -1 with nothing to say. */
   leader: number;
+  /** The player whose marble won: 0 where no player had it, -1 before the race is over. */
+  champion: number;
 }
 
 /** A marble, as a test sees it. */
@@ -67,6 +69,8 @@ export interface Marble {
   state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'flying' | 'lost' | 'swirling';
   place: number;
   took: number;
+  /** Which player has it, from 1; 0 where it is nobody's. */
+  player: number;
 }
 
 /** What the run is, for setting a scene without importing the game's source. */
@@ -102,10 +106,12 @@ export interface GameApi {
 
   /** Put a run on, by its number. */
   pick(run: number): void;
-  /** Let them go. */
+  /** Let them go: where each starts is drawn now. */
   release(): void;
-  /** The field back on the start gate, drawn again. */
+  /** The field back on the start gate. */
   reset(): void;
+  /** A marble picked for the next player without one, or let go if it is had already; who has it now, 0 for nobody. */
+  claim(marble: number): number;
   /** A marble put where a test wants it, still: how far along which piece, and how far across. */
   place(marble: number, segment: number, along: number, across?: number): void;
   /** Play until the race is over or `seconds` of game time have gone by; how long it took. */
@@ -197,6 +203,7 @@ export function createApi(host: DebugHost): GameApi {
         swirling,
         over: game.over,
         leader: standing.length > 0 ? standing[0] : -1,
+        champion: game.champion(),
       };
     },
     marbles() {
@@ -216,6 +223,7 @@ export function createApi(host: DebugHost): GameApi {
           state: NAMES[marbles.state[i]] ?? 'waiting',
           place: marbles.place[i],
           took: marbles.took[i],
+          player: game.players[i] ?? 0,
         });
       return out;
     },
@@ -236,6 +244,7 @@ export function createApi(host: DebugHost): GameApi {
     },
     release: () => game.release(),
     reset: () => game.reset(),
+    claim: (marble) => game.claim(marble),
     place(marble, segment, along, across = 0) {
       const { marbles } = game;
       if (marble < 0 || marble >= marbles.count) return;

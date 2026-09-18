@@ -44,6 +44,23 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
     expect(Math.abs(m.across)).toBeLessThanOrEqual(1);
   }
 
+  // ---- the players pick, by a tap on a row and by the number keys ----
+  // before the off the board lists the field in its own order, so row n is marble n - 1
+  const rows = page.locator('#order li');
+  await expect(page.locator('#verdict')).toContainText('pick it');
+  await rows.nth(0).click();
+  await page.keyboard.press('3');
+  await rows.nth(5).click();
+  await rows.nth(0).click();
+  await page.keyboard.press('8');
+  const picked = await page.evaluate(() => window.game!.marbles().map((m) => m.player));
+  // the first let go again, so the next to pick takes the number it left
+  expect(picked).toEqual([0, 0, 2, 0, 0, 3, 0, 1]);
+  await expect(rows.nth(2).locator('i')).toHaveText('P2');
+  await expect(rows.nth(7).locator('i')).toHaveText('P1');
+  await expect(page.locator('#verdict'), 'nothing to say once they have picked').toBeEmpty();
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+
   // ---- let go ----
   await page.evaluate(() => window.game!.release());
   await play(page, 60, 'the off');
@@ -70,10 +87,15 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   const said = await page.evaluate(() => window.game!.events());
   expect(said.filter((l) => l.startsWith('finished')).length).toBeGreaterThan(0);
   expect(said.some((l) => l.startsWith('over'))).toBe(true);
-  const rows = page.locator('#order li');
   await expect(rows).toHaveCount(content.marbles);
   await expect(rows.first()).toHaveClass(/won/);
   await expect(rows.first()).toContainText(/\d+\.\d\ds/);
+  // and who won: the player whose marble came first, or the marble alone where nobody had it
+  const champion = done.champion;
+  expect(champion, 'the race is over, so somebody or nobody won it').toBeGreaterThanOrEqual(0);
+  await expect(page.locator('#verdict')).toHaveText(
+    champion > 0 ? new RegExp(`^P${champion} wins, with `) : /nobody had it/,
+  );
 
   // ---- and again ----
   await page.evaluate(() => window.game!.reset());
@@ -82,6 +104,10 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   expect(again.waiting).toBe(content.marbles);
   expect(again.over).toBe(false);
   expect(again.races, 'what was run is kept').toBe(1);
+  expect(
+    await page.evaluate(() => window.game!.marbles().map((m) => m.player)),
+    'and so is who has which marble',
+  ).toEqual([0, 0, 2, 0, 0, 3, 0, 1]);
 
   // what was just won stands as the best on this run, on the board
   await expect(page.locator('#best')).toHaveText(`best ${done.best.toFixed(2)}s`);

@@ -114,11 +114,34 @@ describe('the game', () => {
     expect(game.run).toBe(RUNS.length - 1);
   });
 
-  it('lists the whole field on the gate before the off, in the order they will leave it', () => {
+  it('lists the whole field before the off in its own order, since where each starts is not drawn until the off', () => {
     const { game } = newGame(10);
-    const standing = game.standing();
-    expect(standing.length).toBe(game.marbles.count);
-    expect(standing.map((i) => game.marbles.grid[i])).toEqual([...Array(game.marbles.count).keys()]);
+    expect(game.standing()).toEqual([...Array(game.marbles.count).keys()]);
+    race(game);
+    game.reset();
+    expect(game.standing(), 'and again after a race').toEqual([...Array(game.marbles.count).keys()]);
+  });
+
+  it('draws the grid at the off, so the gate a player sees before it tells nothing of where a marble starts', () => {
+    let kept = 0,
+      seen = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const { game } = newGame(seed);
+      const before = [...game.marbles.grid];
+      game.release();
+      for (let i = 0; i < game.marbles.count; i++, seen++) if (game.marbles.grid[i] === before[i]) kept++;
+      expect(checkInvariants(game)).toEqual([]);
+    }
+    // one in eight would keep its slot by chance alone: 40 of 320
+    expect(kept / seen, 'no more often than chance keeps a marble where it stood').toBeLessThan(0.25);
+  });
+
+  it('draws the same grid at the off from the same seed', () => {
+    const one = newGame(12).game,
+      two = newGame(12).game;
+    one.release();
+    two.release();
+    expect([...one.marbles.grid]).toEqual([...two.marbles.grid]);
   });
 
   it('gives the standing with the finishers first, in the order they came', () => {
@@ -137,5 +160,68 @@ describe('the game', () => {
     game.step(DT);
     expect(game.marbles.far(0)).not.toBe(was);
     expect(checkInvariants(game)).toEqual([]);
+  });
+
+  describe('the players', () => {
+    it('gives a marble to the first player without one, and frees it when it is picked again', () => {
+      const { game, told } = newGame(1);
+      expect(game.claim(3)).toBe(1);
+      expect(game.claim(5)).toBe(2);
+      expect(game.claim(0)).toBe(3);
+      expect([...game.players]).toEqual([3, 0, 0, 1, 0, 2, 0, 0]);
+      expect(game.claim(5), 'picked again, it is let go').toBe(0);
+      expect(game.claim(6), 'and the next to pick takes the lowest number free').toBe(2);
+      expect(told.filter((l) => l.startsWith('claimed')).length).toBe(5);
+      expect(checkInvariants(game)).toEqual([]);
+    });
+
+    it('seats as many players as there are marbles, and no more', () => {
+      const { game } = newGame(1);
+      for (let i = 0; i < game.marbles.count; i++) expect(game.claim(i)).toBe(i + 1);
+      expect(new Set(game.players).size).toBe(game.marbles.count);
+      expect(checkInvariants(game)).toEqual([]);
+    });
+
+    it('holds the claims fast once they are away, and frees them again for the next race', () => {
+      const { game } = newGame(2);
+      game.claim(1);
+      game.release();
+      expect(game.claim(4), 'nothing is picked once they are away').toBe(0);
+      expect(game.claim(1), 'nor let go').toBe(1);
+      for (let f = 0; f < 120 * 60 && !game.over; f++) game.step(DT);
+      game.reset();
+      expect(game.claim(4)).toBe(2);
+    });
+
+    it('keeps who has which marble through a race, a reset and another run', () => {
+      const { game } = newGame(3);
+      game.claim(2);
+      game.claim(7);
+      race(game);
+      game.reset();
+      expect([...game.players]).toEqual([0, 0, 1, 0, 0, 0, 0, 2]);
+      game.pick(1);
+      expect([...game.players]).toEqual([0, 0, 1, 0, 0, 0, 0, 2]);
+      expect(checkInvariants(game)).toEqual([]);
+    });
+
+    it('names the player whose marble won, and nobody where no player had it', () => {
+      let named = 0,
+        nobody = 0;
+      for (let seed = 1; seed <= 12; seed++) {
+        const { game } = newGame(seed);
+        expect(game.champion(), 'nobody has won before the race is run').toBe(-1);
+        game.claim(0);
+        game.claim(1);
+        game.claim(2);
+        race(game);
+        const won = [...Array(game.marbles.count).keys()].find((i) => game.marbles.place[i] === 1)!;
+        expect(game.champion(), `seed ${seed}`).toBe(game.players[won]);
+        if (game.champion() > 0) named++;
+        else nobody++;
+      }
+      expect(named, 'three players of eight win some of the time').toBeGreaterThan(0);
+      expect(nobody, 'and some of the time nobody had the winner').toBeGreaterThan(0);
+    });
   });
 });

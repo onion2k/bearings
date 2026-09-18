@@ -74,30 +74,32 @@ export const TOWER: Run = {
 };
 
 /**
- * A sweeper off the start, then two jumps, each off a drop so the slowest
- * marble still clears the gap. The first comes down on a peg board: marbles
- * still jostling from the sweeper leave its lip with some way across, and
- * one landing on a chute came down beside it three times in five hundred
- * races; a board is wide enough to catch them. The second lands on three
- * straights, for the fastest, and there is a gate before the cup.
+ * A sweeper off the start, then two jumps. The first is off a ramp and comes
+ * down on a peg board: marbles still jostling from the sweeper leave its lip
+ * with some way across, and a chute to land on was missed three times in
+ * five hundred races, where a board is wide enough to catch them. Off a drop
+ * the field flew clean over the board's pegs and came down past them, and
+ * the board mixed nothing; off a ramp it comes down among them, and off
+ * anything slower it falls short of the board. The second is off a drop, on
+ * to three straights for the fastest, and there is a gate before the cup.
  */
 export const LEAP: Run = {
-  id: 'the-leap-2',
+  id: 'the-leap-3',
   name: 'The Leap',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
-    { kind: 'drop', x: 3, y: 0, z: -2, facing: 0 },
-    { kind: 'jump', x: 4, y: 0, z: -4, facing: 0 },
-    { kind: 'pegs', x: 6, y: 0, z: -5, facing: 0 },
-    { kind: 'curveLeft', x: 8, y: 0, z: -6, facing: 0 },
-    { kind: 'drop', x: 9, y: 1, z: -6, facing: 1 },
-    { kind: 'jump', x: 9, y: 2, z: -8, facing: 1 },
-    { kind: 'straight', x: 9, y: 4, z: -9, facing: 1 },
-    { kind: 'straight', x: 9, y: 5, z: -9, facing: 1 },
-    { kind: 'straight', x: 9, y: 6, z: -9, facing: 1 },
-    { kind: 'gate', x: 9, y: 7, z: -9, facing: 1 },
-    { kind: 'finish', x: 9, y: 8, z: -10, facing: 1 },
+    { kind: 'ramp', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'jump', x: 4, y: 0, z: -3, facing: 0 },
+    { kind: 'pegs', x: 6, y: 0, z: -4, facing: 0 },
+    { kind: 'curveLeft', x: 8, y: 0, z: -5, facing: 0 },
+    { kind: 'drop', x: 9, y: 1, z: -5, facing: 1 },
+    { kind: 'jump', x: 9, y: 2, z: -7, facing: 1 },
+    { kind: 'straight', x: 9, y: 4, z: -8, facing: 1 },
+    { kind: 'straight', x: 9, y: 5, z: -8, facing: 1 },
+    { kind: 'straight', x: 9, y: 6, z: -8, facing: 1 },
+    { kind: 'gate', x: 9, y: 7, z: -8, facing: 1 },
+    { kind: 'finish', x: 9, y: 8, z: -9, facing: 1 },
   ],
 };
 
@@ -137,7 +139,8 @@ export const SWITCHBACK: Run = {
  * first is the one a new player starts on. A run's id is what a save keeps
  * its best under, so it never changes once a run has shipped; a run whose
  * layout changes is a new run with a new id, since a best set on the old
- * layout means nothing on the new one. Each of these was rebuilt once, and
- * carries its second id.
+ * layout means nothing on the new one. Each was rebuilt once when the pegs
+ * and the moving parts came in, and The Leap again when its first jump was
+ * made to come down among its pegs; each carries the id of its latest layout.
  */
 export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK];

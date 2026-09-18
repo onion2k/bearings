@@ -1,7 +1,8 @@
 /**
  * The marbles themselves: what each is called and what it looks like.
- * Content, not logic — the race does not care which is which, but a player
- * backing one has to be able to tell it from the other seven at a glance,
+ * Content, not logic — the race does not care which is which, and nothing
+ * about a marble but its look and its name sets it apart, but a player who
+ * picked one has to be able to tell it from the other seven at a glance,
  * across a whole run, at speed.
  *
  * Colour and roughness are all there is to tell them apart with: the

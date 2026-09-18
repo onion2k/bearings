@@ -112,6 +112,19 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        2,
+        () => {
+          // a marble picked or let go by a player, which only counts before the off; tried whenever, as a player
+          // at the screen might, and a pick while they are away has to change nothing
+          const marble = Math.floor(random() * game.marbles.count);
+          const had = game.players[marble];
+          const now = game.claim(marble);
+          if (game.away && now !== had) throw new Error(`marble ${marble} changed hands during a race`);
+          busy = Math.floor(between(5, 40));
+          did('claim');
+        },
+      ],
+      [
         1,
         () => {
           // saved, and loaded again into a new game as a reload would: what was run must be kept

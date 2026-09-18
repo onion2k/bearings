@@ -68,4 +68,13 @@ describe('what must always hold', () => {
     game.run = 99;
     expect(checkInvariants(game).join('\n')).toMatch(/run 99 is on/);
   });
+
+  it('reports a marble with a player that is not one, and a player with two marbles', () => {
+    const { game } = newGame(1);
+    game.players[0] = 9;
+    expect(checkInvariants(game).join('\n')).toMatch(/player 9/);
+    game.players[0] = 1;
+    game.players[3] = 1;
+    expect(checkInvariants(game).join('\n')).toMatch(/player 1 has marbles 0 and 3/);
+  });
 });

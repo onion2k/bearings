@@ -45,6 +45,7 @@ const bestLine = document.getElementById('best')!;
 const prev = document.getElementById('prev')!;
 const next = document.getElementById('next')!;
 const order = document.getElementById('order')!;
+const verdict = document.getElementById('verdict')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
 
@@ -113,6 +114,10 @@ async function main() {
     },
     over(winner, seconds) {
       log(`over ${winner} ${seconds.toFixed(2)}`);
+      refresh();
+    },
+    claimed(marble, player) {
+      log(`claimed ${marble} ${player}`);
       refresh();
     },
   };
@@ -253,7 +258,7 @@ async function main() {
     return cost;
   }
 
-  /** The order of the race as it stands, for the board. */
+  /** The order of the race as it stands, for the board, with who has which marble and who has won. */
   function showOrder() {
     const { marbles } = game;
     const best = game.best();
@@ -263,6 +268,7 @@ async function main() {
       .map((i) => {
         const place = marbles.place[i];
         const state = marbles.state[i];
+        const player = game.players[i];
         const when =
           marbles.took[i] > 0
             ? `${marbles.took[i].toFixed(2)}s`
@@ -271,10 +277,27 @@ async function main() {
               : state === LOST
                 ? 'lost'
                 : '';
-        return `<li${place === 1 ? ' class="won"' : ''}><b>${nameOf(i)}</b><span>${when}</span></li>`;
+        const who = player > 0 ? `<i>P${player}</i>` : '<i class="none"></i>';
+        return `<li data-marble="${i}"${place === 1 ? ' class="won"' : ''}>${who}<b>${nameOf(i)}</b><span>${when}</span></li>`;
       })
       .join('');
     order.innerHTML = rows;
+    verdict.textContent = sayWho();
+  }
+
+  /** The line under the board: how to pick before anyone has, and who won once it is over. */
+  function sayWho(): string {
+    const champion = game.champion();
+    if (champion > 0) {
+      const won = game.players.indexOf(champion);
+      return `P${champion} wins, with ${nameOf(won)}`;
+    }
+    if (champion === 0) {
+      const won = game.standing().find((i) => game.marbles.place[i] === 1);
+      return won === undefined ? 'nobody got home' : `${nameOf(won)} wins, and nobody had it`;
+    }
+    if (game.away) return '';
+    return game.players.some((p) => p > 0) ? '' : 'tap a marble to pick it';
   }
 
   await renderer.ready;
@@ -323,10 +346,18 @@ async function main() {
   };
   prev.addEventListener('click', () => step(-1));
   next.addEventListener('click', () => step(1));
+  // a row of the board picked by a tap or a click, for the next player without a marble, or let go again
+  order.addEventListener('click', (e) => {
+    const row = (e.target as HTMLElement).closest('li');
+    if (row?.dataset.marble !== undefined) game.claim(Number(row.dataset.marble));
+  });
   new Input((intent) => {
     if (intent === 'release') game.release();
     else if (intent === 'reset') game.reset();
-    else step(1);
+    else if (intent === 'next') step(1);
+    else {
+      if (intent.pick < game.marbles.count) game.claim(game.standing()[intent.pick]);
+    }
     showOrder();
   });
 
