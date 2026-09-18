@@ -31,21 +31,58 @@ describe('the game', () => {
     expect(store.json).toBe(null);
     race(game);
     expect(game.progress.save.races).toBe(1);
-    expect(game.progress.save.best).toBeGreaterThan(0);
+    expect(game.best()).toBeGreaterThan(0);
     expect(store.json, 'and it is written out').toBe(JSON.stringify(game.progress.save));
     // playing on does not count it twice
     settle(game, 300);
     expect(game.progress.save.races).toBe(1);
   });
 
-  it('keeps the best time it has seen, and only betters it', () => {
+  it('keeps the best time on the run that is on, and only betters it', () => {
     const { game } = newGame(4);
     race(game);
-    const first = game.progress.save.best;
+    const first = game.best();
+    expect(first).toBeGreaterThan(0);
     game.reset();
     race(game);
     expect(game.progress.save.races).toBe(2);
-    expect(game.progress.save.best).toBeLessThanOrEqual(first);
+    expect(game.best()).toBeLessThanOrEqual(first);
+  });
+
+  it('keeps a best for each run, and never lets one stand for another', () => {
+    const { game } = newGame(11);
+    game.pick(1);
+    race(game);
+    const chute = game.best();
+    game.pick(0);
+    expect(game.best(), 'nothing yet on a run not raced').toBe(0);
+    race(game);
+    expect(game.best(), "the long run's own time, not the short one's").toBeGreaterThan(chute);
+    game.pick(1);
+    expect(game.best()).toBe(chute);
+  });
+
+  it('puts the run last put on back on when it is loaded again', () => {
+    const { game, store } = newGame(12);
+    game.pick(2);
+    const again = newGame(12, store.json).game;
+    expect(again.run).toBe(2);
+    expect(again.track.name).toBe(RUNS[2].name);
+  });
+
+  it('starts on the first run from a save that names none, or one there is not', () => {
+    expect(newGame(13, JSON.stringify({ races: 4 })).game.run).toBe(0);
+    const gone = newGame(13, JSON.stringify({ races: 4, run: 'a-run-long-gone', bests: {} })).game;
+    expect(gone.run).toBe(0);
+    expect(gone.progress.save.run, 'and does not keep a name for a run it cannot put on').toBe('');
+    expect(checkInvariants(gone)).toEqual([]);
+  });
+
+  it('writes the save when a run is picked, and not for being loaded', () => {
+    const { game, store } = newGame(14, JSON.stringify({ races: 1, run: 'the-chute', bests: {} }));
+    expect(store.json, 'loading alone writes nothing').toBe(JSON.stringify({ races: 1, run: 'the-chute', bests: {} }));
+    game.pick(3);
+    expect((JSON.parse(store.json!) as { run: string }).run).toBe(RUNS[3].id);
   });
 
   it('sets up again with the field back on the gate', () => {

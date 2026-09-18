@@ -57,4 +57,45 @@ test.describe('what it looks like', () => {
     await expect(page.locator('#view')).toHaveScreenshot('racing.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
+  test('the tower, as a player first sees it', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    // put on the way a player puts a run on, so framed the way the page frames it and not by hand
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(2);
+      g.step(1);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('tower.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the leap, with six marbles in the air over the first gap', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const flying = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(3);
+      g.release();
+      g.follow(false);
+      g.step(134);
+      return g.state().flying;
+    });
+    expect(flying, 'the picture is of marbles in the air, or it is not this picture').toBe(6);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('leap.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
+    test('the board and the run, at the width of a phone', async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true });
+      await page.evaluate(() => window.game!.step(1));
+      await expect(page).toHaveScreenshot('phone.png', TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+  });
 });

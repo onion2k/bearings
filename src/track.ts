@@ -38,7 +38,17 @@ export const MAX_SAMPLES = 6000;
 export type Facing = 0 | 1 | 2 | 3;
 
 /** The kinds of piece there are. A new kind is a line in `SHAPES` and nothing else. */
-export type Kind = 'start' | 'straight' | 'ramp' | 'curveLeft' | 'curveRight' | 'finish';
+export type Kind =
+  | 'start'
+  | 'straight'
+  | 'ramp'
+  | 'drop'
+  | 'curveLeft'
+  | 'curveRight'
+  | 'spiralLeft'
+  | 'spiralRight'
+  | 'jump'
+  | 'finish';
 
 /** A piece as it was placed: which kind, which lattice point it enters at, and which way it faces. */
 export interface Placed {
@@ -52,6 +62,8 @@ export interface Placed {
 
 /** A run: a name and the pieces it is made of. Predefined runs and the player's own are the same shape. */
 export interface Run {
+  /** What a save knows it by: never changed once a run is out, whatever it is called or wherever it is listed. */
+  id: string;
   name: string;
   pieces: Placed[];
 }
@@ -70,6 +82,13 @@ export interface Segment {
   arc: Float32Array;
   /** How long the segment is. */
   length: number;
+  /**
+   * Whether it ends in the air: the lip of a jump, where a marble leaves the
+   * track and has to come down on the next segment. `gap` is how far there is
+   * to go through the air, across the ground, to where the next one begins.
+   */
+  flies: boolean;
+  gap: number;
   /** How far along the whole run the segment begins: what orders one marble against another. */
   start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
@@ -116,6 +135,8 @@ interface Shape {
   exit: { x: number; y: number; z: number; turn: number } | null;
   rough: number;
   curve(t: number, out: number[]): void;
+  /** It ends at a lip rather than a join: its exit is where a marble comes down, across a gap. */
+  flies?: boolean;
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
@@ -172,6 +193,56 @@ function rampCurve(t: number, out: number[]): void {
   out[5] = (-LEVEL * Math.PI * Math.sin(Math.PI * t)) / 2;
 }
 
+/** A drop: two levels down in one cell, eased at both ends like a ramp but twice as steep in the middle. */
+function dropCurve(t: number, out: number[]): void {
+  out[0] = CELL * t;
+  out[1] = 0;
+  out[2] = -LEVEL * (1 - Math.cos(Math.PI * t));
+  out[3] = CELL;
+  out[4] = 0;
+  out[5] = -LEVEL * Math.PI * Math.sin(Math.PI * t);
+}
+
+/** How far across a spiral's circle is from its middle: half a cell, so the whole tower stands in one. */
+const SPIRAL_RADIUS = CELL / 2;
+
+/**
+ * A spiral: once right round while it falls two levels, coming out where it
+ * went in and going the same way, so a spiral stacks on a spiral into a
+ * tower. The fall is eased like a ramp's, so it leaves and joins level.
+ */
+function spiralCurve(side: number, t: number, out: number[]): void {
+  const phi = Math.PI * 2 * t;
+  out[0] = SPIRAL_RADIUS * Math.sin(phi);
+  out[1] = side * SPIRAL_RADIUS * (1 - Math.cos(phi));
+  out[2] = -LEVEL * (1 - Math.cos(Math.PI * t));
+  out[3] = SPIRAL_RADIUS * Math.PI * 2 * Math.cos(phi);
+  out[4] = side * SPIRAL_RADIUS * Math.PI * 2 * Math.sin(phi);
+  out[5] = -LEVEL * Math.PI * Math.sin(Math.PI * t);
+}
+
+/** How steeply a jump's lip throws a marble up, in radians: enough to clear the gap, not to go over the moon. */
+const LIP = 0.35;
+
+/**
+ * A jump's take-off: in level, down into a dip, and up to a lip a quarter of
+ * a level below where it came in, rising at `LIP` as it ends. A cubic with no
+ * slope at its start, so it joins the piece before without a kink; the
+ * marble carries on through the air from the lip to the piece two cells on.
+ */
+function jumpCurve(t: number, out: number[]): void {
+  const h = -LEVEL / 4,
+    s = Math.tan(LIP) * CELL;
+  const b = s - 2 * h,
+    a = h - b;
+  out[0] = CELL * t;
+  out[1] = 0;
+  out[2] = a * t * t + b * t * t * t;
+  out[3] = CELL;
+  out[4] = 0;
+  out[5] = 2 * a * t + 3 * b * t * t;
+}
+
 /** Every kind of piece there is. A new kind is a line here, and every path over the kinds gets it for nothing. */
 const SHAPES: Record<Kind, Shape> = {
   start: {
@@ -195,6 +266,22 @@ const SHAPES: Record<Kind, Shape> = {
     rough: (Math.PI / 2) * CELL,
     curve: (t, out) => turnCurve(-1, t, out),
   },
+  drop: {
+    exit: { x: 1, y: 0, z: -2, turn: 0 },
+    rough: Math.hypot(CELL, LEVEL * 2) * 1.1,
+    curve: dropCurve,
+  },
+  spiralLeft: {
+    exit: { x: 0, y: 0, z: -2, turn: 0 },
+    rough: Math.hypot(Math.PI * 2 * SPIRAL_RADIUS, LEVEL * 2) * 1.1,
+    curve: (t, out) => spiralCurve(1, t, out),
+  },
+  spiralRight: {
+    exit: { x: 0, y: 0, z: -2, turn: 0 },
+    rough: Math.hypot(Math.PI * 2 * SPIRAL_RADIUS, LEVEL * 2) * 1.1,
+    curve: (t, out) => spiralCurve(-1, t, out),
+  },
+  jump: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 1.2, curve: jumpCurve, flies: true },
   finish: { exit: null, rough: CELL, curve: straightCurve },
 };
 
@@ -290,7 +377,18 @@ function sample(piece: Placed, index: number): Segment {
         arc[i - 1] +
         Math.hypot(points[o] - points[o - 3], points[o + 1] - points[o - 2], points[o + 2] - points[o - 1]);
   }
-  return { piece: index, points, tangents, ups, arc, length: arc[n - 1], start: 0, next: -1 };
+  return {
+    piece: index,
+    points,
+    tangents,
+    ups,
+    arc,
+    length: arc[n - 1],
+    start: 0,
+    next: -1,
+    flies: !!shape.flies,
+    gap: 0,
+  };
 }
 
 /**
@@ -312,6 +410,13 @@ export function compile(run: Run): Track {
   while (index >= 0 && !seen.has(index) && track.segments.length < MAX_PIECES) {
     seen.add(index);
     const segment = sample(run.pieces[index], index);
+    // off a lip there is air before this one begins, and it counts towards how far along the run it is
+    const before = track.segments[track.segments.length - 1] as Segment | undefined;
+    if (before?.flies) {
+      const last = before.points.length - 3;
+      before.gap = Math.hypot(segment.points[0] - before.points[last], segment.points[1] - before.points[last + 1]);
+      track.length += before.gap;
+    }
     segment.start = track.length;
     if (track.segments.length > 0) track.segments[track.segments.length - 1].next = track.segments.length;
     track.segments.push(segment);
@@ -447,7 +552,10 @@ export function checkTrack(track: Track): string[] {
     if (seg.next !== -1 && (seg.next < 0 || seg.next >= track.segments.length))
       problems.push(`segment ${i} goes on to ${seg.next}, which is not a segment`);
     if (!(seg.length > 0)) problems.push(`segment ${i} is ${seg.length} long`);
-    const before = i === 0 ? 0 : track.segments[i - 1].start + track.segments[i - 1].length;
+    const prev = i === 0 ? null : track.segments[i - 1];
+    const before = prev ? prev.start + prev.length + prev.gap : 0;
+    if (seg.flies !== seg.gap > 0 && seg.next >= 0)
+      problems.push(`segment ${i} has a gap of ${seg.gap} and flies ${seg.flies}`);
     if (Math.abs(seg.start - before) > 1e-4)
       problems.push(`segment ${i} begins ${seg.start} along, and the one before ends ${before}`);
     if (seg.arc[0] !== 0) problems.push(`segment ${i} starts ${seg.arc[0]} along itself`);
@@ -475,7 +583,7 @@ export function checkTrack(track: Track): string[] {
         break;
       }
     }
-    if (seg.next >= 0 && seg.next < track.segments.length) {
+    if (!seg.flies && seg.next >= 0 && seg.next < track.segments.length) {
       const to = track.segments[seg.next];
       const last = seg.points.length - 3;
       const gap = Math.hypot(

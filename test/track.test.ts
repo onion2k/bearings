@@ -23,7 +23,7 @@ function chain(kinds: Placed['kind'][], from = { x: 0, y: 0, z: 0, facing: 0 as 
     const out = exitOf(piece);
     if (out) here = out;
   }
-  return { name: 'made up', pieces };
+  return { id: 'made-up', name: 'made up', pieces };
 }
 
 /** The angle between two unit vectors, for asking whether a join has a kink in it. */
@@ -191,6 +191,93 @@ describe('the track', () => {
 
     it('the cup a marble stops in has no way out', () => {
       expect(exitOf({ kind: 'finish', x: 0, y: 0, z: 0, facing: 0 })).toBe(null);
+    });
+  });
+
+  describe('the pieces that fall, turn round and leap', () => {
+    const run = chain(['start', 'drop', 'spiralLeft', 'spiralRight', 'jump', 'straight', 'finish']);
+
+    it('hands a marble on where the lattice says', () => {
+      expect(exitOf({ kind: 'drop', x: 0, y: 0, z: 0, facing: 1 })).toEqual({ x: 0, y: 1, z: -2, facing: 1 });
+      // a spiral goes right round, so it comes out where it went in, two levels down and going the same way
+      for (const kind of ['spiralLeft', 'spiralRight'] as const)
+        expect(exitOf({ kind, x: 3, y: -2, z: 0, facing: 2 }), kind).toEqual({ x: 3, y: -2, z: -2, facing: 2 });
+      // a jump lands two along and a level down, the cell between left empty for the air
+      expect(exitOf({ kind: 'jump', x: 0, y: 0, z: 0, facing: 3 })).toEqual({ x: 0, y: -2, z: -1, facing: 3 });
+    });
+
+    it('works a run of them out clean', () => {
+      expect(check(run)).toEqual([]);
+      const track = compile(run);
+      expect(track.segments.length).toBe(run.pieces.length);
+      expect(checkTrack(track)).toEqual([]);
+    });
+
+    it('joins without a gap or a kink everywhere but off the lip of a jump', () => {
+      const track = compile(run);
+      for (const seg of track.segments) {
+        if (seg.next < 0) continue;
+        const to = track.segments[seg.next];
+        const last = seg.points.length - 3;
+        const gap = Math.hypot(
+          seg.points[last] - to.points[0],
+          seg.points[last + 1] - to.points[1],
+          seg.points[last + 2] - to.points[2],
+        );
+        if (run.pieces[seg.piece].kind === 'jump') {
+          expect(seg.flies).toBe(true);
+          expect(gap, 'there is air between the lip and the landing').toBeGreaterThan(3);
+          continue;
+        }
+        expect(seg.flies).toBe(false);
+        expect(gap, `piece ${seg.piece} to ${to.piece}`).toBeLessThan(1e-6);
+        const out = [seg.tangents[last], seg.tangents[last + 1], seg.tangents[last + 2]];
+        const into = [to.tangents[0], to.tangents[1], to.tangents[2]];
+        expect(angle(out, into), `piece ${seg.piece} to ${to.piece}`).toBeLessThan(1e-3);
+      }
+    });
+
+    it('counts the air after a jump into how far along the run the landing is', () => {
+      const track = compile(run);
+      const jump = track.segments.findIndex((s) => s.flies);
+      const landing = track.segments[track.segments[jump].next];
+      expect(track.segments[jump].gap).toBeGreaterThan(0);
+      expect(landing.start).toBeCloseTo(
+        track.segments[jump].start + track.segments[jump].length + track.segments[jump].gap,
+        4,
+      );
+    });
+
+    it('turns a spiral right round, one way or the other', () => {
+      const track = compile(run);
+      for (const [index, side] of [
+        [2, 1],
+        [3, -1],
+      ] as const) {
+        const seg = track.segments[index];
+        let turned = 0;
+        for (let i = 1; i < seg.arc.length; i++) {
+          const a = Math.atan2(seg.tangents[(i - 1) * 3 + 1], seg.tangents[(i - 1) * 3]);
+          const b = Math.atan2(seg.tangents[i * 3 + 1], seg.tangents[i * 3]);
+          turned += Math.atan2(Math.sin(b - a), Math.cos(b - a));
+        }
+        expect(turned, `piece ${index}`).toBeCloseTo(side * Math.PI * 2, 2);
+      }
+    });
+
+    it('falls harder on a drop than on a ramp', () => {
+      const steepest = (kind: 'ramp' | 'drop') => {
+        const seg = compile(chain(['start', kind, 'finish'])).segments[1];
+        let most = 0;
+        for (let i = 0; i < seg.arc.length; i++) most = Math.max(most, -seg.tangents[i * 3 + 2]);
+        return most;
+      };
+      expect(steepest('drop')).toBeGreaterThan(steepest('ramp') + 0.1);
+    });
+
+    it('throws a marble up off the lip of a jump', () => {
+      const seg = compile(run).segments[4];
+      expect(seg.tangents[seg.tangents.length - 1], 'the last of it rises').toBeGreaterThan(0.2);
     });
   });
 

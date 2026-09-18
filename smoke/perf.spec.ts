@@ -55,6 +55,26 @@ function bundleKb(): number {
   return Math.round(bytes / 102.4) / 10;
 }
 
+test('draws every run within budget, whole, with the field racing down it', async ({ page }) => {
+  test.setTimeout(180_000);
+  const problems = watch(page);
+  await start(page, { seed: 11, paused: true });
+  const content = await page.evaluate(() => window.game!.content());
+  for (let i = 0; i < content.runs.length; i++) {
+    // put on as a player puts it on, so framed as a player first sees it, then let go and part way down
+    const frame = await page.evaluate(async (n) => {
+      const g = window.game!;
+      g.pick(n);
+      g.release();
+      g.step(120);
+      return g.measureFrame();
+    }, i);
+    console.log(`perf: ${content.runs[i]}, frame ${Math.round(frame * 100) / 100} ms`);
+    expect(frame, `${content.runs[i]} within budget`).toBeLessThanOrEqual(BUDGET.frameMs);
+  }
+  expect(problems).toEqual([]);
+});
+
 test('boots, draws and downloads within budget, and as it did before', async ({ page }, info) => {
   test.setTimeout(180_000);
   const problems = watch(page);

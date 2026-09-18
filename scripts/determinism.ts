@@ -71,12 +71,16 @@ export function hashGame(game: Game): string {
     eat(marbles.x[i]);
     eat(marbles.y[i]);
     eat(marbles.z[i]);
+    eat(marbles.vx[i]);
+    eat(marbles.vy[i]);
+    eat(marbles.vz[i]);
     eat(marbles.state[i]);
     eat(marbles.place[i]);
     eat(marbles.form[i]);
   }
   eat(marbles.finishers);
   eat(marbles.stalled);
+  eat(marbles.lost);
   eat(game.t);
   for (const c of JSON.stringify(game.progress.save)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
   return (h >>> 0).toString(16).padStart(8, '0');

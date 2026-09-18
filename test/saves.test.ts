@@ -21,8 +21,10 @@ const read = (file: string) => readFileSync(new URL(file, DIR), 'utf8');
 /** What each save was worth when it was written, and what loading it must keep. */
 const KEPT: Record<string, Record<string, unknown>> = {
   // written when a save held what had been banked, before the game was a race at all
-  '01-first.json': { races: 0, best: 0 },
-  '02-race.json': { races: 12, best: 5.21 },
+  '01-first.json': { races: 0, run: '', bests: {} },
+  // written when there was one best for the whole game: nobody can say which run it was set on, so it goes
+  '02-race.json': { races: 12, run: '', bests: {} },
+  '03-runs.json': { races: 30, run: 'the-tower', bests: { 'first-drop': 5.02, 'the-tower': 5.61 } },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -58,11 +60,12 @@ describe('saves from every shape the game has written', () => {
   }
 
   it('takes defaults for what an old save lacks, and shrugs at what it cannot read', () => {
-    expect(new Progress(memoryStore('{"races": 3}')).save).toEqual({ races: 3, best: 0 });
-    expect(new Progress(memoryStore('not json')).save).toEqual({ races: 0, best: 0 });
-    expect(new Progress(memoryStore('{"races": "lots"}')).save).toEqual({ races: 0, best: 0 });
+    const none = { races: 0, run: '', bests: {} };
+    expect(new Progress(memoryStore('{"races": 3}')).save).toEqual({ ...none, races: 3 });
+    expect(new Progress(memoryStore('not json')).save).toEqual(none);
+    expect(new Progress(memoryStore('{"races": "lots"}')).save).toEqual(none);
     // the shape before this game was a race at all: nothing it held means anything now, and it opens anyway
-    expect(new Progress(memoryStore('{"bank": 7, "banked": 7}')).save).toEqual({ races: 0, best: 0 });
+    expect(new Progress(memoryStore('{"bank": 7, "banked": 7}')).save).toEqual(none);
   });
 
   it('has the shape the game writes now: a new field means a new file here', () => {

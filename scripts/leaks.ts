@@ -19,6 +19,7 @@
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MARBLES } from '../src/marbles';
+import { RUNS } from '../src/runs';
 import { MAX_PIECES, MAX_SAMPLES } from '../src/track';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
@@ -34,7 +35,10 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   marbles: { ceiling: MARBLES },
   segments: { ceiling: MAX_PIECES },
   samples: { ceiling: MAX_SAMPLES },
-  'events kept': { ceiling: 4 },
+  // the save is three fields and has to stay three, however long it is played
+  'save fields': { ceiling: 3 },
+  // a best for each run there is, and never one for a run there is not
+  'bests kept': { ceiling: RUNS.length },
   'save bytes': { ceiling: 2_000 },
   // the catch-all for what is leaking and has no name here; noisy, so it is given a lot of room
   'heap MB': { ceiling: 300, steady: true },
@@ -47,8 +51,8 @@ export function sizes(game: Game): Record<string, number> {
     marbles: marbles.count,
     segments: track.segments.length,
     samples: track.samples,
-    // the save holds two numbers and must go on holding two, however many races are run
-    'events kept': Object.keys(progress.save).length,
+    'save fields': Object.keys(progress.save).length,
+    'bests kept': Object.keys(progress.save.bests).length,
     'save bytes': JSON.stringify(progress.save).length,
     'heap MB': Math.round(process.memoryUsage().heapUsed / 1e5) / 10,
   };

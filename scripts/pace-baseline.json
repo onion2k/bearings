@@ -1,3 +1,7 @@
 {
-  "minutes": 1.36
+  "first-drop": 1.36,
+  "the-chute": 0.84,
+  "the-tower": 1.37,
+  "the-leap": 1.54,
+  "switchback": 2.34
 }

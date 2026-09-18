@@ -33,7 +33,7 @@ describe('the same seed gives the same game', () => {
     one.marbles.across[0] += 1e-6;
     expect(hashGame(one)).not.toBe(hash);
     one.marbles.across[0] -= 1e-6;
-    one.progress.ran(3);
+    one.progress.ran('first-drop', 3);
     expect(hashGame(one)).not.toBe(hash);
   });
 

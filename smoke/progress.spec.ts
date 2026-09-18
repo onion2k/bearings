@@ -83,13 +83,39 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   expect(again.over).toBe(false);
   expect(again.races, 'what was run is kept').toBe(1);
 
-  // ---- another run ----
-  await page.evaluate(() => window.game!.pick(1));
-  await play(page, 30, 'another run on');
+  // what was just won stands as the best on this run, on the board
+  await expect(page.locator('#best')).toHaveText(`best ${done.best.toFixed(2)}s`);
+
+  // ---- another run, by the arrows on the board, as a player picks one ----
+  await page.locator('#next').click();
+  await play(page, 30, 'the next run on');
   const next = await page.evaluate(() => window.game!.state());
   expect(next.run).toBe(1);
   expect(next.runName).toBe(content.runs[1]);
+  expect(next.waiting, 'a fresh field on its gate').toBe(content.marbles);
   await expect(page.locator('#title')).toHaveText(content.runs[1]);
+  await expect(page.locator('#best'), "no best of its own yet, and not the last run's").toHaveText('no best yet');
+
+  // back past the first, which comes round to the last
+  await page.locator('#prev').click();
+  await page.locator('#prev').click();
+  await play(page, 30, 'round to the last run');
+  const last = await page.evaluate(() => window.game!.state());
+  expect(last.run).toBe(content.runs.length - 1);
+  await expect(page.locator('#title')).toHaveText(content.runs[content.runs.length - 1]);
+
+  // every run can be put on and raced through the page, with nothing broken
+  for (let i = 0; i < content.runs.length; i++) {
+    await page.evaluate((n) => window.game!.pick(n), i);
+    await page.evaluate(() => window.game!.release());
+    const raced = await page.evaluate(() => {
+      const g = window.game!;
+      g.settle(120);
+      return [g.state(), g.invariants()] as const;
+    });
+    expect(raced[1], `invariants after racing ${content.runs[i]}`).toEqual([]);
+    expect(raced[0].finished, `every marble home on ${content.runs[i]}`).toBe(content.marbles);
+  }
 
   await info.attach('the board', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);

@@ -14,7 +14,7 @@
  */
 import type { Game } from './game';
 import { checkInvariants } from './invariants';
-import { FINISHED, RACING, STALLED, WAITING } from './marbles';
+import { FINISHED, FLYING, LOST, RACING, STALLED, WAITING } from './marbles';
 import { seeded } from './random';
 import { RUNS } from './runs';
 
@@ -29,17 +29,20 @@ export interface GameState {
   t: number;
   frame: number;
   paused: boolean;
-  /** How many races have been run, and the best winning time seen. */
+  /** How many races have been run, and the best winning time on the run that is on; 0 before it has one. */
   races: number;
   best: number;
-  /** Which run is on, and what it is called. */
+  /** Which run is on, what it is called, and the id the save knows it by. */
   run: number;
   runName: string;
+  runId: string;
   /** How the race that is on stands. */
   waiting: number;
   racing: number;
   finished: number;
   stalled: number;
+  flying: number;
+  lost: number;
   over: boolean;
   /** Who is leading, or who won; -1 with nothing to say. */
   leader: number;
@@ -59,7 +62,7 @@ export interface Marble {
   speed: number;
   /** How far along the whole run it has got. */
   far: number;
-  state: 'waiting' | 'racing' | 'finished' | 'stalled';
+  state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'flying' | 'lost';
   place: number;
   took: number;
 }
@@ -139,7 +142,7 @@ export interface DebugHost {
   events: string[];
 }
 
-const NAMES = ['waiting', 'racing', 'finished', 'stalled'] as const;
+const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'flying', 'lost'] as const;
 
 export function createApi(host: DebugHost): GameApi {
   const { game } = host;
@@ -164,10 +167,12 @@ export function createApi(host: DebugHost): GameApi {
     state() {
       const { marbles } = game;
       let waiting = 0,
-        racing = 0;
+        racing = 0,
+        flying = 0;
       for (let i = 0; i < marbles.count; i++) {
         if (marbles.state[i] === WAITING) waiting++;
         else if (marbles.state[i] === RACING) racing++;
+        else if (marbles.state[i] === FLYING) flying++;
       }
       const standing = game.standing();
       return {
@@ -175,13 +180,16 @@ export function createApi(host: DebugHost): GameApi {
         frame: host.frame(),
         paused: host.paused(),
         races: game.progress.save.races,
-        best: game.progress.save.best,
+        best: game.best(),
         run: game.run,
         runName: game.track.name,
+        runId: RUNS[game.run].id,
         waiting,
         racing,
         finished: marbles.finishers,
         stalled: marbles.stalled,
+        flying,
+        lost: marbles.lost,
         over: game.over,
         leader: standing.length > 0 ? standing[0] : -1,
       };
@@ -251,4 +259,4 @@ export function createApi(host: DebugHost): GameApi {
   };
 }
 
-export { FINISHED, RACING, STALLED, WAITING };
+export { FINISHED, FLYING, LOST, RACING, STALLED, WAITING };

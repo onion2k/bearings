@@ -1,17 +1,17 @@
 /**
- * How the game paces, played by the autopilot: how many game minutes it
- * takes to see a number of races through, over a few seeds, held to a baseline
- * both ways. Quicker is as much a change as slower: a ball that banks
- * itself is a bug the same as one that will not go in.
+ * How each run paces, played by the autopilot: how many game minutes it takes
+ * to see ten races through on it, over a few seeds, held to a baseline both
+ * ways and run by run. Quicker is as much a change as slower: a run that got
+ * faster has changed as surely as one that got slower, and on a different
+ * run from the one anybody was working on is exactly where it goes unseen.
  *
-
  * `pace-check.ts` runs it: `npm run pace` for the figures, `npm run
  * pace:check` to hold them, `-- --update` to write the baseline again.
  *
- * The figure is a median over the seeds, so one odd run does not move it,
- * and the tolerance is a fifth: wide enough for the autopilot's own
- * wobble, which was measured before the tolerance was chosen, and tight
- * enough to catch a ball made twice as easy to push.
+ * Each figure is a median over the seeds, so one odd race does not move it,
+ * and the tolerance is a fifth: wide enough for the wobble between seeds,
+ * which was measured before it was chosen, and tight enough to catch a run
+ * made twice as fast.
  */
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
@@ -30,9 +30,11 @@ export interface PaceRun {
   finished: boolean;
 }
 
-/** One game from a seed, played until the races are run or the time is up. */
-export function paceRun(seed: number, races = CHECK.races, capMinutes = CHECK.capMinutes): PaceRun {
+/** One game from a seed, on the run given, played until the races are run or the time is up. */
+export function paceRun(seed: number, races = CHECK.races, capMinutes = CHECK.capMinutes, run = 0): PaceRun {
   const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
+  // the first run is on already; putting it on again would draw its field twice, and change every seed's race
+  if (run !== game.run) game.pick(run);
   const pilot = new Autopilot(game);
   const frames = capMinutes * 3600;
   for (let f = 0; f < frames; f++) {

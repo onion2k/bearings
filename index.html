@@ -59,10 +59,43 @@
     min-width: 168px;
     font-size: 13px;
   }
+  #picker {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: -4px -6px 0;
+  }
+  /* the panels let the pointer through to the canvas, so the picker has to take it back */
+  #picker button {
+    pointer-events: auto;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  #picker button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--ink);
+  }
   #title {
+    flex: 1;
+    text-align: center;
     font-size: 15px;
     font-weight: 700;
     color: var(--gold);
+    white-space: nowrap;
+  }
+  #best {
+    text-align: center;
+    color: var(--dim);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
     margin-bottom: 6px;
   }
   #order {
@@ -138,12 +171,17 @@
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
 <div class="panel" id="board" hidden>
-  <div id="title"></div>
+  <div id="picker">
+    <button id="prev" type="button" aria-label="The run before">‹</button>
+    <div id="title"></div>
+    <button id="next" type="button" aria-label="The next run">›</button>
+  </div>
+  <div id="best"></div>
   <ol id="order"></ol>
 </div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="help" hidden>
-  <span>space</span> let them go · <span>R</span> again · <span>N</span> next run · drag to orbit, wheel to zoom
+  <span>space</span> let them go · <span>R</span> again · drag to orbit, wheel to zoom
 </div>
 <div id="boot">
   <p id="bootMsg">starting WebGPU…</p>

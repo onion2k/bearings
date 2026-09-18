@@ -54,7 +54,18 @@ describe('what must always hold', () => {
     game.progress.save.races = -1;
     expect(checkInvariants(game).join('\n')).toMatch(/races have been run/);
     game.progress.save.races = 0;
-    game.progress.save.best = -1;
-    expect(checkInvariants(game).join('\n')).toMatch(/the best time is/);
+    game.progress.save.bests['first-drop'] = -1;
+    expect(checkInvariants(game).join('\n')).toMatch(/the best time on first-drop is/);
+  });
+
+  it('reports a run on that is not one of the runs, or not the one the save says', () => {
+    const { game } = newGame();
+    game.pick(2);
+    expect(checkInvariants(game)).toEqual([]);
+    game.progress.save.run = 'the-chute';
+    expect(checkInvariants(game).join('\n')).toMatch(/the save says the-chute is on/);
+    game.progress.save.run = '';
+    game.run = 99;
+    expect(checkInvariants(game).join('\n')).toMatch(/run 99 is on/);
   });
 });

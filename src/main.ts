@@ -13,10 +13,12 @@ import { createApi } from './debug';
 import { nameOf } from './field';
 import { frameCost } from './frame-cost';
 import { Game, type GameEvents } from './game';
+import { LOST, STALLED } from './marbles';
 import { Input } from './input';
 import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
+import { HALF_WIDTH } from './track';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -25,6 +27,12 @@ const LIGHT_CAPACITY = 16,
   PARTICLE_CAPACITY = 1024;
 /** How many of the game's events the test API keeps, before the oldest go. */
 const EVENTS_KEPT = 500;
+/**
+ * How much of the view a run is framed to fill, across and up: a little short
+ * of the edges, so the gate at the top and the cup at the bottom are never
+ * cut off, whatever shape the screen is.
+ */
+const FILL = 0.88;
 /** How closely the camera chases the leader: a share of the way there each frame. */
 const CHASE = 0.06;
 
@@ -33,6 +41,9 @@ const boot = document.getElementById('boot')!;
 const bootMsg = document.getElementById('bootMsg')!;
 const board = document.getElementById('board')!;
 const title = document.getElementById('title')!;
+const bestLine = document.getElementById('best')!;
+const prev = document.getElementById('prev')!;
+const next = document.getElementById('next')!;
 const order = document.getElementById('order')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
@@ -96,6 +107,10 @@ async function main() {
       log(`stalled ${marble} ${seconds.toFixed(2)}`);
       refresh();
     },
+    lost(marble, seconds) {
+      log(`lost ${marble} ${seconds.toFixed(2)}`);
+      refresh();
+    },
     over(winner, seconds) {
       log(`over ${winner} ${seconds.toFixed(2)}`);
       refresh();
@@ -110,9 +125,8 @@ async function main() {
 
   const scene = new Scene();
   let follow = true;
-  /** The middle of the run that is on, and how far back the whole of it is seen from. */
+  /** The middle of the run that is on. */
   const home: [number, number, number] = [0, 0, 0];
-  let across = 60;
   const rebuild = () => {
     renderer.setStatic(scene.static(game.track));
     const box = boxOf(game.track);
@@ -125,7 +139,6 @@ async function main() {
     home[0] = mid[0];
     home[1] = mid[1];
     home[2] = mid[2];
-    across = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
     lights.clear();
     lights.add({ position: [mid[0], mid[1], box.max[2] + 20], radius: 160, colour: [1, 0.9, 0.75], intensity: 60 });
     renderer.setLights(lights);
@@ -149,19 +162,46 @@ async function main() {
     inertia: 0.5,
   });
   /**
-   * The whole of the run in view, from off its shoulder, far enough back to
-   * take it all in: where the camera starts, and where it goes when another
-   * run is put on. A player opening the game sees the run before they see
-   * anything race down it.
+   * The whole of the run in view, from off its shoulder: where the camera
+   * starts, and where it goes when another run is put on, so a player sees a
+   * run before they see anything race down it. How far back is worked out
+   * rather than guessed: from the angle the camera looks at it, every point
+   * of the track has to fall inside the view both across and up. A guess from the run's size alone cut the top off a tall run, and on a
+   * phone, which is narrow, showed next to none of any of them.
    */
   const frameRun = () => {
     cam.target[0] = home[0];
     cam.target[1] = home[1];
     cam.target[2] = home[2];
-    orbit.setSpherical({ azimuth: 0.9, polar: 0.95, radius: across * 0.9 });
+    orbit.setSpherical({ azimuth: 0.9, polar: 0.95, radius: 60 });
+    for (let i = 0; i < 400; i++) orbit.update();
+    cam.update();
+    const dx = cam.position[0] - home[0],
+      dy = cam.position[1] - home[1],
+      dz = cam.position[2] - home[2];
+    const d = Math.hypot(dx, dy, dz) || 1;
+    const right = cam.right,
+      up = cam.up;
+    const tallest = Math.tan(((cam.fov / 2) * Math.PI) / 180) * FILL,
+      widest = tallest * cam.aspect;
+    // every point of the track itself, not the corners of a box round it: a run that goes diagonally leaves
+    // a box's corners empty, and framing those shrank the run to a third of a phone's screen
+    const pad = HALF_WIDTH + 1;
+    let need = 0;
+    for (const seg of game.track.segments)
+      for (let k = 0; k < seg.points.length; k += 3) {
+        const vx = seg.points[k] - home[0],
+          vy = seg.points[k + 1] - home[1],
+          vz = seg.points[k + 2] - home[2];
+        // a point nearer the camera is seen from closer, so it needs the camera further back to fit
+        const nearer = (vx * dx + vy * dy + vz * dz) / d;
+        const side = Math.abs(vx * right[0] + vy * right[1] + vz * right[2]) + pad;
+        const rise = Math.abs(vx * up[0] + vy * up[1] + vz * up[2]) + pad;
+        need = Math.max(need, nearer + side / widest, nearer + rise / tallest);
+      }
+    orbit.setSpherical({ radius: need });
     for (let i = 0; i < 400; i++) orbit.update();
   };
-  frameRun();
 
   let width = 1,
     height = 1;
@@ -174,8 +214,14 @@ async function main() {
     cam.aspect = width / height;
     renderer.resize(width, height);
   };
-  addEventListener('resize', resize);
+  // a screen that changes shape before the off is framed again for its new shape; once they race, the
+  // camera is the leader's
+  addEventListener('resize', () => {
+    resize();
+    if (follow && game.marbles.leader() < 0) frameRun();
+  });
   resize();
+  frameRun();
 
   function upload() {
     const n = scene.write(game.marbles);
@@ -205,11 +251,21 @@ async function main() {
   /** The order of the race as it stands, for the board. */
   function showOrder() {
     const { marbles } = game;
+    const best = game.best();
+    bestLine.textContent = best > 0 ? `best ${best.toFixed(2)}s` : 'no best yet';
     const rows = game
       .standing()
       .map((i) => {
         const place = marbles.place[i];
-        const when = marbles.took[i] > 0 ? `${marbles.took[i].toFixed(2)}s` : marbles.state[i] === 3 ? 'stopped' : '';
+        const state = marbles.state[i];
+        const when =
+          marbles.took[i] > 0
+            ? `${marbles.took[i].toFixed(2)}s`
+            : state === STALLED
+              ? 'stopped'
+              : state === LOST
+                ? 'lost'
+                : '';
         return `<li${place === 1 ? ' class="won"' : ''}><b>${nameOf(i)}</b><span>${when}</span></li>`;
       })
       .join('');
@@ -253,14 +309,19 @@ async function main() {
       stats.textContent = `${smoothed.toFixed(1)} ms · ${game.marbles.finishers} home · ${game.progress.save.races} races`;
   }
 
+  /** Another run put on, by the arrows or by N: built, framed, and the board redrawn for it. */
+  const step = (by: number) => {
+    game.pick(game.run + by);
+    rebuild();
+    frameRun();
+    showOrder();
+  };
+  prev.addEventListener('click', () => step(-1));
+  next.addEventListener('click', () => step(1));
   new Input((intent) => {
     if (intent === 'release') game.release();
     else if (intent === 'reset') game.reset();
-    else {
-      game.pick(game.run + 1);
-      rebuild();
-      frameRun();
-    }
+    else step(1);
     showOrder();
   });
 

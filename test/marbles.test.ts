@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FINISHED, Marbles, RACING, RADIUS, STALLED, WAITING, checkMarbles } from '../src/marbles';
+import { FINISHED, FLYING, LOST, Marbles, RACING, RADIUS, STALLED, WAITING, checkMarbles } from '../src/marbles';
 import { seeded } from '../src/random';
 import { FIRST } from '../src/runs';
-import { at, compile, spot } from '../src/track';
+import { type Facing, type Placed, type Run, at, compile, exitOf, spot } from '../src/track';
 
 const DT = 1 / 60;
 
@@ -19,6 +19,35 @@ function field(seed = 1, count = 8) {
   );
   return { marbles, told };
 }
+
+/** A run of pieces laid end to end from the start, each following the one before. */
+function chain(kinds: Placed['kind'][]): Run {
+  const pieces: Placed[] = [];
+  let here = { x: 0, y: 0, z: 0, facing: 0 as Facing };
+  for (const kind of kinds) {
+    pieces.push({ kind, ...here });
+    const out = exitOf({ kind, ...here });
+    if (out) here = out;
+  }
+  return { id: 'made-up', name: 'made up', pieces };
+}
+
+/** A field on a run of the test's own, told of what happens. */
+function fieldOn(run: Run, seed = 1, count = 8) {
+  const told: string[] = [];
+  const marbles = new Marbles(
+    compile(run),
+    {
+      finished: (m, place) => told.push(`finished ${m} ${place}`),
+      lost: (m) => told.push(`lost ${m}`),
+    },
+    { count, random: seeded(seed) },
+  );
+  return { marbles, told };
+}
+
+/** Over a gentle lip onto a long landing, which every marble should make. */
+const LEAP = chain(['start', 'ramp', 'jump', 'straight', 'ramp', 'straight', 'finish']);
 
 /** Play until every marble is in the cup, or give up after `cap` seconds of race. */
 function race(marbles: Marbles, cap = 120): boolean {
@@ -229,6 +258,8 @@ describe('the marbles', () => {
     expect(marbles.stalled).toBe(1);
     expect(marbles.over, 'a race nobody can finish is still over').toBe(true);
     expect(told.some((l) => l.startsWith('stalled'))).toBe(true);
+    // a stalled marble is a race ending, not a rule broken
+    expect(checkMarbles(marbles)).toEqual([]);
   });
 
   it('names the leader without making anything, and agrees with the running order', () => {
@@ -243,6 +274,148 @@ describe('the marbles', () => {
     expect(marbles.leader(), 'nor once they are all home').toBe(-1);
   });
 
+  describe('off the lip of a jump', () => {
+    it('flies, comes down on the piece beyond, and carries on to the cup', () => {
+      const { marbles } = fieldOn(LEAP, 1, 1);
+      marbles.release();
+      let flew = false,
+        landedOn = -1;
+      for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+        const was = marbles.state[0];
+        marbles.step(DT);
+        if (marbles.state[0] === FLYING) flew = true;
+        if (was === FLYING && marbles.state[0] === RACING) landedOn = marbles.segment[0];
+      }
+      expect(flew, 'it left the track').toBe(true);
+      expect(landedOn, 'and came down past the jump').toBeGreaterThan(2);
+      expect(marbles.state[0]).toBe(FINISHED);
+    });
+
+    it('falls under the whole of gravity in the air, and keeps its way across the ground', () => {
+      const { marbles } = fieldOn(LEAP, 1, 1);
+      marbles.release();
+      for (let f = 0; f < 60 * 60 && marbles.state[0] !== FLYING; f++) marbles.step(DT);
+      expect(marbles.state[0], 'it reached the lip and took off').toBe(FLYING);
+      const vx = marbles.vx[0],
+        vz = marbles.vz[0];
+      expect(vz, 'the lip throws it up').toBeGreaterThan(0);
+      marbles.step(DT);
+      if (marbles.state[0] === FLYING) {
+        expect(marbles.vx[0]).toBeCloseTo(vx, 6);
+        expect(marbles.vz[0]).toBeCloseTo(vz - 30 * DT, 4);
+      }
+    });
+
+    it('never has two marbles in the same place through a whole field going over', () => {
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const { marbles } = fieldOn(LEAP, seed);
+        marbles.release();
+        for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          if (f % 5 === 0) expect(checkMarbles(marbles), `seed ${seed} frame ${f}`).toEqual([]);
+        }
+        expect(marbles.over).toBe(true);
+        expect(marbles.lost, `seed ${seed}`).toBe(0);
+      }
+    });
+
+    it('loses a marble that overshoots everything, says so, and still ends the race', () => {
+      const { marbles, told } = fieldOn(LEAP, 1, 1);
+      // on the lip, going far too fast for anything beyond it to catch
+      marbles.state[0] = RACING;
+      marbles.segment[0] = 2;
+      marbles.along[0] = marbles.track.segments[2].length - 0.01;
+      marbles.speed[0] = 90;
+      for (let f = 0; f < 20 * 60 && !marbles.over; f++) marbles.step(DT);
+      expect(marbles.state[0]).toBe(LOST);
+      expect(marbles.lost).toBe(1);
+      expect(marbles.place[0], 'no place for a marble that did not get there').toBe(0);
+      expect(told).toContain('lost 0');
+      expect(marbles.over, 'a race with a marble lost is still over').toBe(true);
+      expect(checkMarbles(marbles)).toEqual([]);
+    });
+
+    it('never pushes a marble back over a gap onto the lip it flew from, nor on over one without flying', () => {
+      const { marbles } = fieldOn(LEAP, 1, 2);
+      const jump = 2,
+        landing = 3;
+      // two just down on the landing, one inside the other: parting them pushes the back one backwards
+      for (const i of [0, 1]) {
+        marbles.state[i] = RACING;
+        marbles.segment[i] = landing;
+        marbles.speed[i] = 0;
+        marbles.across[i] = 0;
+      }
+      marbles.along[0] = 0.05;
+      marbles.along[1] = 0.4;
+      marbles.step(DT);
+      expect(marbles.segment[0], 'still on the landing, not back on the jump').toBe(landing);
+      expect(marbles.along[0]).toBeGreaterThanOrEqual(0);
+      // and two on the lip, the front one pushed on: it goes over the lip and flies, it does not skip the gap
+      for (const i of [0, 1]) {
+        marbles.state[i] = RACING;
+        marbles.segment[i] = jump;
+        marbles.speed[i] = 0;
+        marbles.across[i] = 0;
+      }
+      const lip = marbles.track.segments[jump].length;
+      marbles.along[0] = lip - 0.4;
+      marbles.along[1] = lip - 0.05;
+      marbles.step(DT);
+      expect(marbles.segment[1] === jump || marbles.state[1] === FLYING, 'not across the gap on the ground').toBe(true);
+    });
+
+    /** A marble in the air over the middle of the landing, `wide` of its centre line and `up` above its floor, going `vz`. */
+    function over(wide: number, up: number, vz: number) {
+      const { marbles } = fieldOn(LEAP, 1, 1);
+      const landing = 3;
+      const seg = marbles.track.segments[landing];
+      const w = at(marbles.track, landing, seg.length / 2, spot());
+      const bx = w.ty * w.uz - w.tz * w.uy,
+        by = w.tz * w.ux - w.tx * w.uz,
+        bz = w.tx * w.uy - w.ty * w.ux;
+      marbles.state[0] = FLYING;
+      marbles.segment[0] = 2;
+      marbles.along[0] = marbles.track.segments[2].length;
+      marbles.x[0] = w.x + bx * wide + w.ux * up;
+      marbles.y[0] = w.y + by * wide + w.uy * up;
+      marbles.z[0] = w.z + bz * wide + w.uz * up;
+      marbles.vx[0] = marbles.vy[0] = 0;
+      marbles.vz[0] = vz;
+      return marbles;
+    }
+
+    it('comes down in the channel, and not on the ground beside it', () => {
+      const inside = over(0, 1, -2);
+      for (let f = 0; f < 60 && inside.state[0] === FLYING; f++) inside.step(DT);
+      expect(inside.state[0], 'dropped into the middle of the channel').toBe(RACING);
+      expect(inside.segment[0]).toBe(3);
+      const wide = over(2.5, 1, -2);
+      for (let f = 0; f < 5 * 60 && wide.state[0] === FLYING; f++) wide.step(DT);
+      expect(wide.state[0], 'dropped past the side of the channel, it falls on by and is lost').toBe(LOST);
+    });
+
+    it('only lands coming down, not on its way up through a piece', () => {
+      const rising = over(0, 0.2, 6);
+      rising.step(DT);
+      expect(rising.state[0], 'rising, it passes up through the height it would rest at').toBe(FLYING);
+      for (let f = 0; f < 3 * 60 && rising.state[0] === FLYING; f++) rising.step(DT);
+      expect(rising.state[0], 'and lands when it falls back').toBe(RACING);
+    });
+
+    it('counts a marble in the air as in the race, for who is leading', () => {
+      const { marbles } = fieldOn(LEAP, 1, 1);
+      marbles.release();
+      for (let f = 0; f < 60 * 60 && marbles.state[0] !== FLYING; f++) marbles.step(DT);
+      expect(marbles.state[0], 'it reached the lip and took off').toBe(FLYING);
+      expect(marbles.leader()).toBe(0);
+      const before = marbles.far(0);
+      marbles.step(DT);
+      if (marbles.state[0] === FLYING)
+        expect(marbles.far(0), 'and it gets further on in the air').toBeGreaterThan(before);
+    });
+  });
+
   it('says when a marble has gone somewhere it may not', () => {
     const { marbles } = field(1);
     marbles.along[0] = -99;
@@ -253,5 +426,10 @@ describe('the marbles', () => {
     marbles.across[0] = 0;
     marbles.speed[0] = NaN;
     expect(checkMarbles(marbles).join('\n')).toMatch(/not a number/);
+    marbles.speed[0] = 0;
+    // in the air off a piece with no lip to have flown from
+    marbles.state[0] = FLYING;
+    marbles.segment[0] = 0;
+    expect(checkMarbles(marbles).join('\n')).toMatch(/in the air off a piece with no lip/);
   });
 });

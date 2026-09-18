@@ -14,17 +14,23 @@ is and how far across.
 
 ## Playing it
 
-**Space** lets the field go, **R** puts it back on the gate, **N** puts the
-next run on. Drag to go round the run, and the wheel to go nearer. The board
-keeps the order as it stands, and the times once they are home.
+**Space** lets the field go, and **R** puts it back on the gate. The arrows
+either side of the run's name on the board choose another run, as does
+**N**, and under the name is your best on it. Drag to go round the run, and
+the wheel to go nearer. The board keeps the order as it stands, and the
+times once they are home.
 
 ## Where it is
 
-The race runs, on two runs: First Drop, six levels down with three turns,
-and The Chute, over in a few seconds. Still to come, a feature at a time
-through `/feature`: more runs and a way to choose them, backing a marble,
-building a run of your own, and patterns on the marbles. `CLAUDE.md` says
-how the code is made and what is open.
+Five runs, each its own kind of race: **First Drop**, six levels and three
+turns; **The Chute**, over in three seconds and anybody's; **The Tower**,
+three turns of a spiral where whoever leads in leads out; **The Leap**, two
+jumps with the field in the air over each gap; and **Switchback**, ten
+seconds of drops and turns, long enough for form to tell. The game remembers
+which you last played and your best on each. Still to come, a feature at a
+time through `/feature`: backing a marble, building a run of your own, and
+patterns on the marbles. `CLAUDE.md` says how the code is made and what is
+open.
 
 ## What is here
 
@@ -61,8 +67,9 @@ And every gate at n=1, the three properties among them:
 They came at the size of one thing each and have grown with the race: four
 things the fuzzer does, as a player can — let them go, set up again, put
 another run on, reload — the rules for the track, the marbles, the places
-and the save, two bench scenarios, two saved shapes in `test/saves/`, two
-pictures, and one play-through with a stage for everything a player reaches.
+and the save, two bench scenarios, a pace figure for every run, three saved shapes in
+`test/saves/`, five pictures, and one play-through with a stage for
+everything a player reaches.
 
 The line every change goes down is in `CLAUDE.md`: a spec agreed, tests
 seen failing, the change built, every gate run, the result looked at, a

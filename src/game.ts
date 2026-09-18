@@ -11,7 +11,7 @@
  * game — the run decides it — and it is also what makes a race exactly
  * repeatable from its seed, which every replay and every baseline rests on.
  */
-import { Marbles, STALLED, WAITING } from './marbles';
+import { LOST, Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
 import { RUNS } from './runs';
@@ -27,6 +27,8 @@ export interface GameEvents {
   finished?(marble: number, place: number, seconds: number): void;
   /** A marble came to rest short of the cup. */
   stalled?(marble: number, seconds: number): void;
+  /** A marble went off a jump and came down nowhere: off the run altogether. */
+  lost?(marble: number, seconds: number): void;
   /** The race is done with: who won, and in what time. -1 where nothing finished at all. */
   over?(winner: number, seconds: number): void;
 }
@@ -54,11 +56,22 @@ export class Game {
     options: GameOptions = {},
   ) {
     this.random = options.random ?? Math.random;
-    this.pick(0);
+    // the run last put on, if the save names one there is; loading alone writes nothing, so a name the
+    // game cannot put on is only forgotten in memory until the next thing that is written
+    const saved = RUNS.findIndex((r) => r.id === progress.save.run);
+    if (saved < 0) progress.save.run = '';
+    this.putOn(Math.max(saved, 0));
   }
 
-  /** Put a run on: it is worked out, and a field drawn for its start gate. */
+  /** Put a run on, and remember it was: the save is written, so the next visit starts on it. */
   pick(run: number) {
+    this.putOn(run);
+    this.progress.chose(RUNS[this.run].id);
+    this.persist();
+  }
+
+  /** A run worked out, and a field drawn for its start gate. */
+  private putOn(run: number) {
     this.run = ((run % RUNS.length) + RUNS.length) % RUNS.length;
     this.track = compile(RUNS[this.run]);
     this.marbles = new Marbles(
@@ -67,6 +80,7 @@ export class Game {
         released: (n) => this.events.released?.(n),
         finished: (m, place, s) => this.events.finished?.(m, place, s),
         stalled: (m, s) => this.events.stalled?.(m, s),
+        lost: (m, s) => this.events.lost?.(m, s),
       },
       { random: () => this.random() },
     );
@@ -86,6 +100,11 @@ export class Game {
     this.marbles.release();
   }
 
+  /** The best winning time on the run that is on, or 0 before it has one. */
+  best(): number {
+    return this.progress.best(RUNS[this.run].id);
+  }
+
   /** Whether the race that is on has been run. */
   get over(): boolean {
     return this.marbles.over;
@@ -103,7 +122,7 @@ export class Game {
     const all = [...Array(marbles.count).keys()];
     const home = all.filter((i) => marbles.place[i] > 0).sort((a, b) => marbles.place[a] - marbles.place[b]);
     const waiting = all.filter((i) => marbles.state[i] === WAITING).sort((a, b) => marbles.grid[a] - marbles.grid[b]);
-    const stopped = all.filter((i) => marbles.state[i] === STALLED);
+    const stopped = all.filter((i) => marbles.state[i] === STALLED || marbles.state[i] === LOST);
     return [...home, ...marbles.running(), ...waiting, ...stopped];
   }
 
@@ -116,7 +135,7 @@ export class Game {
       this.counted = true;
       const won = this.standing().find((i) => this.marbles.place[i] === 1) ?? -1;
       const seconds = won >= 0 ? this.marbles.took[won] : 0;
-      this.progress.ran(seconds);
+      this.progress.ran(RUNS[this.run].id, seconds);
       this.persist();
       this.events.over?.(won, seconds);
     }

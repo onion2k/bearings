@@ -16,7 +16,7 @@
  * cost nothing, and the answer is the same every time, which is what the
  * replays and every baseline rest on.
  */
-import { HALF_WIDTH, type Track, at, spot } from './track';
+import { HALF_WIDTH, LEVEL, type Track, at, spot } from './track';
 import type { Random } from './random';
 
 /** How many marbles race. */
@@ -49,7 +49,18 @@ export const SETTLE = 6;
 export const WAITING = 0,
   RACING = 1,
   FINISHED = 2,
-  STALLED = 3;
+  STALLED = 3,
+  FLYING = 4,
+  LOST = 5;
+
+/**
+ * How many pieces past a jump a marble in the air looks for somewhere to come
+ * down, and how long it may stay up before it is taken to have gone over the
+ * edge of everything. A marble that has missed its landing is lost, not left
+ * falling for ever.
+ */
+export const LANDING_LOOK = 3;
+export const AIR_TIME = 4;
 
 /**
  * How slowly a marble may be going, and for how long, before the run is
@@ -67,6 +78,8 @@ export interface RaceEvents {
   finished?(marble: number, place: number, seconds: number): void;
   /** A marble came to rest short of the cup, and is not going to get there. */
   stalled?(marble: number, seconds: number): void;
+  /** A marble off a jump came down nowhere it could land: off the run altogether. */
+  lost?(marble: number, seconds: number): void;
 }
 
 export interface MarblesOptions {
@@ -107,9 +120,23 @@ export class Marbles {
    * to tell one from another or to back.
    */
   readonly form: Float32Array;
-  /** How many have finished, how many stopped short, and the time of the race so far. */
+  /**
+   * In the air: how fast each is going through it, where it left the lip,
+   * and how long it has been up. Only a marble off a jump uses these; on the
+   * track, where it is comes from how far along it is.
+   */
+  readonly vx: Float32Array;
+  readonly vy: Float32Array;
+  readonly vz: Float32Array;
+  private readonly airX: Float32Array;
+  private readonly airY: Float32Array;
+  private readonly aloft: Float32Array;
+  /** How low the run goes: a marble fallen well below it has fallen off it. */
+  private readonly bottom: number;
+  /** How many have finished, how many stopped short, how many are lost, and the time of the race so far. */
   finishers = 0;
   stalled = 0;
+  lost = 0;
   t = 0;
 
   /** How long each has been barely moving, for telling a slow marble from a stopped one. */
@@ -144,6 +171,16 @@ export class Marbles {
     this.form = new Float32Array(n);
     this.order = new Int32Array(n);
     this.crawling = new Float32Array(n);
+    this.vx = new Float32Array(n);
+    this.vy = new Float32Array(n);
+    this.vz = new Float32Array(n);
+    this.airX = new Float32Array(n);
+    this.airY = new Float32Array(n);
+    this.aloft = new Float32Array(n);
+    let bottom = Infinity;
+    for (const seg of track.segments)
+      for (let k = 2; k < seg.points.length; k += 3) bottom = Math.min(bottom, seg.points[k]);
+    this.bottom = bottom;
     for (let i = 0; i < n; i++) this.form[i] = 0.82 + random() * 0.36;
     this.grid = new Int32Array(n);
     this.draw(random);
@@ -172,6 +209,7 @@ export class Marbles {
     this.t = 0;
     this.finishers = 0;
     this.stalled = 0;
+    this.lost = 0;
     // two abreast, so the grid is half as long and a marble has somewhere to go from the off
     const wall = HALF_WIDTH - RADIUS;
     const rows = Math.ceil(this.count / 2);
@@ -179,6 +217,8 @@ export class Marbles {
     const gap = rows > 1 ? Math.min(SPACING, room / (rows - 1)) : SPACING;
     for (let i = 0; i < this.count; i++) {
       this.crawling[i] = 0;
+      this.vx[i] = this.vy[i] = this.vz[i] = 0;
+      this.aloft[i] = 0;
       this.segment[i] = 0;
       // the one at the front of the grid is nearest the drop, and they alternate across the channel
       const slot = this.grid[i];
@@ -205,9 +245,9 @@ export class Marbles {
     if (let_go > 0) this.events.released?.(let_go);
   }
 
-  /** Whether the race is done with: everything either in the cup or stopped short of it. */
+  /** Whether the race is done with: everything in the cup, stopped short of it, or lost off the run. */
   get over(): boolean {
-    return this.finishers + this.stalled >= this.count;
+    return this.finishers + this.stalled + this.lost >= this.count;
   }
 
   /** One fixed step of the race. */
@@ -215,6 +255,10 @@ export class Marbles {
     this.t += dt;
     const { track } = this;
     for (let i = 0; i < this.count; i++) {
+      if (this.state[i] === FLYING) {
+        this.fly(i, dt);
+        continue;
+      }
       if (this.state[i] !== RACING) continue;
       at(track, this.segment[i], this.along[i], this.here);
       // gravity along the track: down its own slope, less the share that goes into the marble's spin
@@ -245,6 +289,11 @@ export class Marbles {
       // off the end of a piece and on to the next. Reaching the cup at all is finishing: a marble that
       // rolled to a halt inside it would otherwise never be called home.
       while (this.along[i] > track.segments[this.segment[i]].length) {
+        // off the lip of a jump there is no next piece to run on to, only air
+        if (track.segments[this.segment[i]].flies) {
+          this.takeOff(i);
+          break;
+        }
         const next = track.segments[this.segment[i]].next;
         if (next < 0) {
           this.finish(i);
@@ -269,10 +318,10 @@ export class Marbles {
           continue;
         }
       } else this.crawling[i] = 0;
-      // and never back off the start
+      // and never back off the start, nor back up over a gap into the air it came down out of
       if (this.along[i] < 0) {
         const seg0 = this.segment[i];
-        if (seg0 === 0) {
+        if (seg0 === 0 || track.segments[seg0 - 1].flies) {
           this.along[i] = 0;
           if (this.speed[i] < 0) this.speed[i] = 0;
         } else {
@@ -283,6 +332,109 @@ export class Marbles {
     }
     this.touching();
     this.write();
+  }
+
+  /** Off the lip: the speed it had along the track and across it becomes its way through the air. */
+  private takeOff(i: number) {
+    const seg = this.track.segments[this.segment[i]];
+    this.along[i] = seg.length;
+    at(this.track, this.segment[i], seg.length, this.here);
+    const h = this.here;
+    const bx = h.ty * h.uz - h.tz * h.uy,
+      by = h.tz * h.ux - h.tx * h.uz,
+      bz = h.tx * h.uy - h.ty * h.ux;
+    this.x[i] = h.x + bx * this.across[i] + h.ux * RADIUS;
+    this.y[i] = h.y + by * this.across[i] + h.uy * RADIUS;
+    this.z[i] = h.z + bz * this.across[i] + h.uz * RADIUS;
+    this.vx[i] = h.tx * this.speed[i] + bx * this.drift[i];
+    this.vy[i] = h.ty * this.speed[i] + by * this.drift[i];
+    this.vz[i] = h.tz * this.speed[i] + bz * this.drift[i];
+    this.airX[i] = this.x[i];
+    this.airY[i] = this.y[i];
+    this.aloft[i] = 0;
+    this.crawling[i] = 0;
+    this.state[i] = FLYING;
+  }
+
+  /**
+   * A step in the air: the whole of gravity, since nothing rolls in the air,
+   * and then a look for somewhere to come down on the next few pieces. Nothing
+   * touches a marble in the air; one that lands on another is parted from it
+   * with everything else on the track, since landing comes before that.
+   */
+  private fly(i: number, dt: number) {
+    this.aloft[i] += dt;
+    this.vz[i] -= GRAVITY * dt;
+    this.x[i] += this.vx[i] * dt;
+    this.y[i] += this.vy[i] * dt;
+    this.z[i] += this.vz[i] * dt;
+    this.rolled[i] += (Math.hypot(this.vx[i], this.vy[i]) * dt) / RADIUS;
+    let s = this.track.segments[this.segment[i]].next;
+    for (let k = 0; k < LANDING_LOOK && s >= 0; k++) {
+      if (this.land(i, s)) return;
+      s = this.track.segments[s].next;
+    }
+    if (this.aloft[i] > AIR_TIME || this.z[i] < this.bottom - LEVEL * 2) {
+      this.state[i] = LOST;
+      this.lost++;
+      this.events.lost?.(i, this.t);
+    }
+  }
+
+  /**
+   * Whether a marble in the air comes down on a segment this step, and if it
+   * does, puts it there: over the piece and not off either end of it, inside
+   * its channel, falling and not rising, and down at the height a marble rests
+   * at or just through it. It keeps the speed it had along the piece and
+   * across it; what it had into the piece is the landing, and goes.
+   */
+  private land(i: number, s: number): boolean {
+    const seg = this.track.segments[s];
+    const n = seg.arc.length;
+    let best = 0,
+      bd = Infinity;
+    for (let k = 0; k < n; k++) {
+      const o = k * 3;
+      const dx = this.x[i] - seg.points[o],
+        dy = this.y[i] - seg.points[o + 1],
+        dz = this.z[i] - seg.points[o + 2];
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) {
+        bd = d;
+        best = k;
+      }
+    }
+    const o = best * 3;
+    const tx = seg.tangents[o],
+      ty = seg.tangents[o + 1],
+      tz = seg.tangents[o + 2];
+    const ux = seg.ups[o],
+      uy = seg.ups[o + 1],
+      uz = seg.ups[o + 2];
+    const bx = ty * uz - tz * uy,
+      by = tz * ux - tx * uz,
+      bz = tx * uy - ty * ux;
+    const rx = this.x[i] - seg.points[o],
+      ry = this.y[i] - seg.points[o + 1],
+      rz = this.z[i] - seg.points[o + 2];
+    const along = rx * tx + ry * ty + rz * tz,
+      up = rx * ux + ry * uy + rz * uz,
+      across = rx * bx + ry * by + rz * bz;
+    if ((best === 0 && along < 0) || (best === n - 1 && along > 0)) return false;
+    if (Math.abs(across) > HALF_WIDTH) return false;
+    if (up > RADIUS || up < -RADIUS * 2) return false;
+    if (this.vx[i] * ux + this.vy[i] * uy + this.vz[i] * uz > 0) return false;
+    const wall = HALF_WIDTH - RADIUS;
+    this.segment[i] = s;
+    this.along[i] = Math.min(Math.max(seg.arc[best] + along, 0), seg.length);
+    this.across[i] = Math.min(Math.max(across, -wall), wall);
+    this.speed[i] = this.vx[i] * tx + this.vy[i] * ty + this.vz[i] * tz;
+    this.drift[i] = this.vx[i] * bx + this.vy[i] * by + this.vz[i] * bz;
+    this.vx[i] = this.vy[i] = this.vz[i] = 0;
+    this.aloft[i] = 0;
+    this.state[i] = RACING;
+    if (seg.next < 0) this.finish(i);
+    return true;
   }
 
   /** A marble in the cup: how long it took, and what place it came. */
@@ -403,15 +555,17 @@ export class Marbles {
     this.along[i] += by;
     for (;;) {
       const seg = track.segments[this.segment[i]];
+      // a push stops at the air either way: nothing is pushed back up onto the lip it flew from, nor on
+      // across a gap without flying it, since the ground does not go there
       if (this.along[i] < 0) {
-        if (this.segment[i] === 0) {
+        if (this.segment[i] === 0 || track.segments[this.segment[i] - 1].flies) {
           this.along[i] = 0;
           return;
         }
         this.segment[i]--;
         this.along[i] += track.segments[this.segment[i]].length;
       } else if (this.along[i] > seg.length) {
-        if (seg.next < 0) {
+        if (seg.next < 0 || seg.flies) {
           this.along[i] = seg.length;
           return;
         }
@@ -424,6 +578,8 @@ export class Marbles {
   /** Where every marble is, from where it is on the track and how far across it sits. */
   private write() {
     for (let i = 0; i < this.count; i++) {
+      // in the air or gone, a marble is where its flight put it, not anywhere on the track
+      if (this.state[i] === FLYING || this.state[i] === LOST) continue;
       at(this.track, this.segment[i], this.along[i], this.here);
       // across the channel, square to both the way it is going and the way up
       const bx = this.here.ty * this.here.uz - this.here.tz * this.here.uy;
@@ -437,7 +593,13 @@ export class Marbles {
 
   /** How far along the whole run a marble is: what places it against the others. */
   far(i: number): number {
-    return this.track.segments[this.segment[i]].start + this.along[i];
+    const seg = this.track.segments[this.segment[i]];
+    if (this.state[i] !== FLYING && this.state[i] !== LOST) return seg.start + this.along[i];
+    // in the air: the lip, and then as far as it has gone across the ground the way the lip pointed
+    const o = seg.tangents.length - 3;
+    const l = Math.hypot(seg.tangents[o], seg.tangents[o + 1]) || 1;
+    const flown = ((this.x[i] - this.airX[i]) * seg.tangents[o] + (this.y[i] - this.airY[i]) * seg.tangents[o + 1]) / l;
+    return seg.start + seg.length + flown;
   }
 
   /**
@@ -448,7 +610,7 @@ export class Marbles {
     let best = -1,
       far = -Infinity;
     for (let i = 0; i < this.count; i++) {
-      if (this.state[i] !== RACING) continue;
+      if (this.state[i] !== RACING && this.state[i] !== FLYING) continue;
       const d = this.far(i);
       if (d > far) {
         far = d;
@@ -461,7 +623,7 @@ export class Marbles {
   /** Who is winning: the marbles still racing, the one furthest on first. */
   running(): number[] {
     const racing: number[] = [];
-    for (let i = 0; i < this.count; i++) if (this.state[i] === RACING) racing.push(i);
+    for (let i = 0; i < this.count; i++) if (this.state[i] === RACING || this.state[i] === FLYING) racing.push(i);
     return racing.sort((a, b) => this.far(b) - this.far(a));
   }
 }
@@ -470,36 +632,49 @@ export class Marbles {
 export function checkMarbles(marbles: Marbles): string[] {
   const problems: string[] = [];
   const { track } = marbles;
-  let waiting = 0,
-    racing = 0,
-    finished = 0;
+  // how many are doing each thing there is to do, by the state's own number
+  const doing = [0, 0, 0, 0, 0, 0];
   for (let i = 0; i < marbles.count; i++) {
     const seg = marbles.segment[i];
     if (seg < 0 || seg >= track.segments.length) {
       problems.push(`marble ${i} is on segment ${seg}, which is not one`);
       continue;
     }
-    if (!Number.isFinite(marbles.along[i]) || !Number.isFinite(marbles.speed[i]) || !Number.isFinite(marbles.x[i]))
-      problems.push(`marble ${i} is not a number`);
+    const numbers = [
+      marbles.along[i],
+      marbles.speed[i],
+      marbles.x[i],
+      marbles.y[i],
+      marbles.z[i],
+      marbles.vx[i],
+      marbles.vy[i],
+      marbles.vz[i],
+    ];
+    if (!numbers.every(Number.isFinite)) problems.push(`marble ${i} is not a number`);
     const length = track.segments[seg].length;
     if (marbles.along[i] < -1e-3 || marbles.along[i] > length + 1e-3)
       problems.push(`marble ${i} is ${marbles.along[i]} along a segment ${length} long`);
     const wall = HALF_WIDTH - RADIUS;
     if (Math.abs(marbles.across[i]) > wall + 1e-3)
       problems.push(`marble ${i} is ${marbles.across[i]} across a channel it may be ${wall} across`);
-    if (marbles.state[i] === WAITING) waiting++;
-    else if (marbles.state[i] === RACING) racing++;
-    else finished++;
+    const state = marbles.state[i];
+    if (state > LOST) problems.push(`marble ${i} is doing ${state}, which is nothing a marble does`);
+    else doing[state]++;
+    if (state === FLYING && !track.segments[seg].flies)
+      problems.push(`marble ${i} is in the air off a piece with no lip`);
   }
-  if (waiting + racing + finished !== marbles.count)
-    problems.push(`${marbles.count} marbles, and ${waiting + racing + finished} of them doing something`);
-  if (finished !== marbles.finishers) problems.push(`${finished} marbles in the cup, and ${marbles.finishers} counted`);
-  // two marbles in the same place would be one passing through the other, across the channel as well as along it
-  const running = marbles.running();
-  for (let k = 0; k < running.length; k++)
-    for (let j = k + 1; j < running.length; j++) {
-      const a = running[k],
-        b = running[j];
+  if (doing.reduce((a, b) => a + b, 0) !== marbles.count)
+    problems.push(`${marbles.count} marbles, and ${doing.reduce((a, b) => a + b, 0)} of them doing something`);
+  if (doing[FINISHED] !== marbles.finishers)
+    problems.push(`${doing[FINISHED]} marbles in the cup, and ${marbles.finishers} counted`);
+  if (doing[STALLED] !== marbles.stalled)
+    problems.push(`${doing[STALLED]} marbles stopped short, and ${marbles.stalled} counted`);
+  if (doing[LOST] !== marbles.lost) problems.push(`${doing[LOST]} marbles lost, and ${marbles.lost} counted`);
+  // two marbles in the same place on the track would be one passing through the other, across the channel
+  // as well as along it; in the air nothing touches, so only those on the track are held to it
+  for (let a = 0; a < marbles.count; a++)
+    for (let b = a + 1; b < marbles.count; b++) {
+      if (marbles.state[a] !== RACING || marbles.state[b] !== RACING) continue;
       const apart = Math.hypot(marbles.far(b) - marbles.far(a), marbles.across[b] - marbles.across[a]);
       if (apart < RADIUS * 2 - 0.05)
         problems.push(`marbles ${a} and ${b} are ${apart.toFixed(3)} apart, inside each other`);

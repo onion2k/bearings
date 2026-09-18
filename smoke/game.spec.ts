@@ -80,9 +80,11 @@ test('lets them go with the keyboard, and sets up again', async ({ page }) => {
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
 });
 
-test('keeps what has been run across a reload', async ({ page }) => {
+test('keeps what has been run, and which run, across a reload', async ({ page }) => {
   const problems = watch(page);
   await start(page);
+  // a run other than the first, so coming back on it is something the save did
+  await page.locator('#next').click();
   const before = await page.evaluate(() => {
     const g = window.game!;
     g.pause();
@@ -97,7 +99,9 @@ test('keeps what has been run across a reload', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.game?.ready ?? false), { timeout: 60_000 }).toBe(true);
   const after = await page.evaluate(() => window.game!.state());
   expect(after.races).toBe(before.races);
-  expect(after.best).toBeCloseTo(before.best, 5);
+  expect(after.run, 'back on the run that was on').toBe(before.run);
+  expect(after.run).toBe(1);
+  expect(after.best, 'with its best').toBeCloseTo(before.best, 5);
   expect(problems).toEqual([]);
 });
 

@@ -41,14 +41,14 @@ The three properties, and what holds each:
 
 Numbers, held by gates, on this machine at 1280×800:
 
-| Property                                               | Budget                         | Held by      |
-| ------------------------------------------------------ | ------------------------------ | ------------ |
-| Boot, page start to the frame loop running             | 3000 ms                        | `perf`       |
-| Download, scripts and styles gzipped                   | 400 kB                         | `perf`       |
-| A frame drawn, lower quartile at the standard view     | 8 ms                           | `perf`       |
-| The race, a frame, against the reference arithmetic    | baseline ± 20%                 | `bench`      |
-| Pace, the autopilot's minutes to see ten races through | baseline ± 20%                 | `pace:check` |
-| Anything kept: marbles, track, save, heap              | ceilings in `scripts/leaks.ts` | `leaks`      |
+| Property                                            | Budget                         | Held by      |
+| --------------------------------------------------- | ------------------------------ | ------------ |
+| Boot, page start to the frame loop running          | 3000 ms                        | `perf`       |
+| Download, scripts and styles gzipped                | 400 kB                         | `perf`       |
+| A frame drawn, lower quartile, on every run         | 8 ms                           | `perf`       |
+| The race, a frame, against the reference arithmetic | baseline ± 20%                 | `bench`      |
+| Pace, each run's minutes to see ten races through   | baseline ± 20%, run by run     | `pace:check` |
+| Anything kept: marbles, track, save, heap           | ceilings in `scripts/leaks.ts` | `leaks`      |
 
 A budget is what the game may cost at all; a baseline is what it cost at
 the last commit, held both ways, so a step toward a budget is noticed as
@@ -64,7 +64,7 @@ headless boot and a GPU frame, and say so in the file.
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
     npm run leaks          an hour of play, watching what must stay bounded (10 min of it in check)
-    npm run pace           the autopilot's pace, seed by seed; pace:check holds it to its baseline
+    npm run pace           each run's pace, seed by seed; pace:check holds every run to its baseline
     npm run bench          the race's frame time held to scripts/bench-baseline.json
     npm run perf           boot, frame and download held to smoke/perf-baseline.json and the budget
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
@@ -85,16 +85,20 @@ change meant to move it, and the commit says why. Look at every picture.
   lattice, the kinds of piece, the segments with their frames, and what may
   be wrong with a run. Neither takes anything from the renderer, so the same
   run is drawn, raced and measured from one working out.
-- `src/main.ts` is the page. It turns events into words on the board and
-  draws the frame. There is no game logic here. `src/scene.ts` sweeps the
-  channel along the track's own samples and places the marbles.
+- `src/main.ts` is the page. It turns events into words on the board, puts
+  a run on from the arrows either side of its name, frames each run to fit
+  the screen whatever its shape, and draws the frame. There is no game logic
+  here. `src/scene.ts` sweeps the channel along the track's own samples and
+  places the marbles.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
 - Content is `src/runs.ts`, the runs that come with the game, and
-  `src/field.ts`, what the eight marbles are called and look like. A run the
-  player designs will be the same shape as one that comes with the game. The
-  save lives in `progress.ts`. Chance comes from `random.ts`, handed in.
+  `src/field.ts`, what the eight marbles are called and look like. A run's
+  `id` is what the save knows it by, and never changes once a run has
+  shipped; a run the player designs will be the same shape. The save lives
+  in `progress.ts`: the races run, the run last put on, and the best time on
+  each run. Chance comes from `random.ts`, handed in.
 
 ## Skills
 
@@ -116,8 +120,16 @@ What to copy the shape of, when building something new:
 - **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
   it hands a marble on, and the curve it follows — and every path over the
   kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
-  a switch anyone can forget to add to. Copy that shape for anything the game
-  has several of.
+  a switch anyone can forget to add to. A jump is the same plus `flies`: it
+  ends in the air, and the solver takes a marble off its lip. Copy that shape
+  for anything the game has several of.
+- **A run:** a list of placements with an id, in `src/runs.ts`. Every run is
+  held by `test/runs.test.ts` — sound, and raced on 24 seeds with every
+  marble home, none lost, none stopped, and none fast enough to step through
+  another in a frame — and paced on its own by `pace:check`. A new run is a
+  new entry and nothing else, and then the gates hold it. Lay one out with
+  `exitOf` and race it before shipping it: The Leap lost a third of its field
+  in the first gap until its approach was made a drop.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the pace gate
   (`scripts/pace.ts`). Each has unit tests of its own working parts, and the
   fuzzer's reload is tried against a save that forgets, in
@@ -127,15 +139,19 @@ What to copy the shape of, when building something new:
 
 ## What comes next
 
-The race runs; what makes it a game is still to come, each through
-`/feature`: more runs and a way to choose between them, the bet, the
-designer, and patterns on the marbles, which want a change to artshape-render
-since it has no textures. Two things are open and belong with those:
+Five runs race, and the player picks between them. Still to come, each
+through `/feature`: the bet, the designer, and patterns on the marbles, which
+want a change to artshape-render since it has no textures. Open, and
+belonging with those:
 
-- **Pole is strong.** The front of the grid wins about 63 races in 100 on
-  First Drop, because only the leader ever has clean air. A wider channel
-  makes it worse, not better: traffic is what shuffles a field. The bet
-  either prices that with odds or wants a design change, not more tuning.
+- **Pole depends on the run.** Over sixty races each, the front of the grid
+  wins 27% on The Chute, 45% on Switchback, 62% on First Drop, 63% on The
+  Leap and 85% on The Tower, where a spiral holds the field single file on
+  its outer wall. Only the leader ever has clean air, and a wider channel
+  makes it worse: traffic is what shuffles a field. The bet prices this with
+  odds, run by run, or wants a design change; not more tuning.
+- **Marbles stay on the track over a crest.** Only a jump's lip lets one
+  leave it; a fast marble over the top of a drop would, in life, fly.
 - **Overlap is a solver's business.** Two marbles are parted across the
   channel and then along it for whatever a wall refuses, over several
   passes. A new piece that pinches the channel meets this first.
@@ -188,8 +204,9 @@ For anything new in the run, check what it does:
 - **stuck:** a marble that settles on it, wedges against it, or circles it
   for ever. A run that cannot finish has to be noticed and said, not waited
   on
-- **off the run:** a marble that leaves sideways or over an edge, and where
-  it ends up when it does
+- **off the run:** off a jump's lip, a marble that comes down wide of the
+  channel, short of the landing or beyond everything the lip can reach; it is
+  lost, told of, given no place, and the race still ends
 - **building:** placed, moved, turned and taken away; placed overlapping
   what is already there, and placed with nothing underneath it
 - **let go and again:** the run released, stopped part way down, and
@@ -197,7 +214,8 @@ For anything new in the run, check what it does:
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **phone:** narrow screen, and a slower GPU: which rung it steps down to
 - **another run:** put on part way through a race, and the one before it
-  thrown away cleanly
+  thrown away cleanly; framed to fit the screen, whatever its shape; and put
+  back on after a reload
 
 ## Verifying in a browser
 

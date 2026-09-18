@@ -2,16 +2,19 @@
  * What must always be true of the game, however it has been played: the
  * rules that, broken, are a bug whatever the feature was.
  *
- * The run it is on is a sound one and joins up. Every marble is a number, on
- * a piece of the track, inside the channel, and not inside another marble.
- * Every marble is doing exactly one thing, and the places given out are
- * 1, 2, 3 and so on with none repeated. The save only ever grew.
+ * The run it is on is a sound one and joins up, and is one of the runs there
+ * are. Every marble is a number, on a piece of the track, inside the channel,
+ * not inside another marble, and doing exactly one thing, with the tallies
+ * agreeing — all of that is the marbles' own rules, in `checkMarbles`. The
+ * places given out are 1, 2, 3 and so on with none repeated, and only to
+ * marbles that got there. The save only ever grew.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import type { Game } from './game';
-import { FINISHED, RACING, STALLED, WAITING, checkMarbles } from './marbles';
+import { FINISHED, checkMarbles } from './marbles';
+import { RUNS } from './runs';
 import { checkTrack } from './track';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -28,21 +31,6 @@ export function checkInvariants(game: Game): string[] {
 
   report('the track', checkTrack(track));
   report('a marble', checkMarbles(marbles));
-
-  // every marble is doing one of the things there are to do, and the tally agrees with them
-  const doing = [0, 0, 0, 0];
-  for (let i = 0; i < marbles.count; i++) {
-    const state = marbles.state[i];
-    if (state !== WAITING && state !== RACING && state !== FINISHED && state !== STALLED) {
-      out.push(`marble ${i} is doing ${state}, which is nothing a marble does`);
-      continue;
-    }
-    doing[state]++;
-  }
-  if (doing[FINISHED] !== marbles.finishers)
-    out.push(`${doing[FINISHED]} marbles in the cup, and ${marbles.finishers} counted`);
-  if (doing[STALLED] !== marbles.stalled)
-    out.push(`${doing[STALLED]} marbles stopped short, and ${marbles.stalled} counted`);
 
   // the places are handed out once each, in order, and only to marbles that got there
   const places = new Map<number, number>();
@@ -61,9 +49,17 @@ export function checkInvariants(game: Game): string[] {
   }
   report('the places', wrong);
 
-  const { races, best } = progress.save;
+  // the run on is one of the runs there are, and it is the one the save says, or the save says none yet
+  if (!Number.isInteger(game.run) || game.run < 0 || game.run >= RUNS.length)
+    out.push(`run ${game.run} is on, of ${RUNS.length}`);
+  else if (track.name !== RUNS[game.run].name) out.push(`run ${game.run} is on, and the track is ${track.name}`);
+  else if (progress.save.run !== '' && progress.save.run !== RUNS[game.run].id)
+    out.push(`the save says ${progress.save.run} is on, and ${RUNS[game.run].id} is`);
+
+  const { races, bests } = progress.save;
   if (!Number.isInteger(races) || races < 0) out.push(`${races} races have been run`);
-  if (!Number.isFinite(best) || best < 0) out.push(`the best time is ${best}`);
+  for (const [id, time] of Object.entries(bests))
+    if (!Number.isFinite(time) || time <= 0) out.push(`the best time on ${id} is ${time}`);
   if (!Number.isFinite(game.t) || game.t < 0) out.push(`the game is ${game.t} seconds old`);
   return out;
 }
