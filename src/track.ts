@@ -372,8 +372,8 @@ interface Part {
 
 interface Shape extends Part {
   exit: { x: number; y: number; z: number; turn: number } | null;
-  /** A second part of the same piece, begun `at` cells along, cells to the left and levels up from the piece's entry. */
-  then?: Part & { at: { x: number; y: number; z: number } };
+  /** More parts of the same piece, in order, each begun `at` cells along, cells to the left and levels up from its entry. */
+  then?: (Part & { at: { x: number; y: number; z: number } })[];
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
@@ -699,12 +699,14 @@ const SHAPES: Record<Kind, Shape> = {
     curve: runUpCurve,
     flies: true,
     felt: { upto: 0.5, speed: FELT_SPEED },
-    then: {
-      at: { x: 3, y: 0, z: -2 },
-      rough: CELL * 2.1,
-      curve: boardCurve,
-      width: opening(HALF_WIDTH * 2, 0.1, 0.85),
-    },
+    then: [
+      {
+        at: { x: 3, y: 0, z: -2 },
+        rough: CELL * 2.1,
+        curve: boardCurve,
+        width: opening(HALF_WIDTH * 2, 0.1, 0.85),
+      },
+    ],
   },
   pegs: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
@@ -776,12 +778,14 @@ const SHAPES: Record<Kind, Shape> = {
     rough: CELL * 1.2,
     curve: funnelInCurve,
     flies: true,
-    then: {
-      at: { x: 1, y: 0, z: -1 },
-      rough: Math.PI * 2.5 * CELL * 0.7,
-      curve: funnelCurve,
-      bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH, wall: FUNNEL_WALL },
-    },
+    then: [
+      {
+        at: { x: 1, y: 0, z: -1 },
+        rough: Math.PI * 2.5 * CELL * 0.7,
+        curve: funnelCurve,
+        bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH, wall: FUNNEL_WALL },
+      },
+    ],
   },
   // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to
   // two chutes and three in its middle, where a field spreads out and finds its own lines
@@ -867,7 +871,7 @@ function portalKey(x: number, y: number, z: number, facing: Facing): string {
 function sample(piece: Placed, index: number): Segment[] {
   const shape = SHAPES[piece.kind];
   const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 })];
-  if (shape.then) out.push(samplePart(piece, index, shape.then, shape.then.at));
+  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at));
   return out;
 }
 
