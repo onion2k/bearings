@@ -136,9 +136,11 @@ What to copy the shape of, when building something new:
   each its own segment, so that it joins whatever is either side of it: a
   jump is its run-up, which `flies` off a lip after `felt` that brings any
   marble to the same pace, and its own landing board beyond the air; a
-  funnel is a run in that `flies` off a lip over its bowl, and then the
-  bowl, whose rim's wall stands as high as the lip, so that whatever comes
-  off it at whatever speed comes down inside. A board is the same
+  funnel is a run in that `flies` off a lip over its bowl, then the bowl,
+  whose rim's wall stands as high as the lip, so that whatever comes off it
+  at whatever speed comes down inside, and then a ramp of its own under the
+  hole, which a marble falls through the bowl's `throat` on to and is
+  carried off down, a cell beyond the hole and a level below. A board is the same
   plus `width`; pegs and moving parts are `obstacles`, each with a
   `Motion` that `pose` turns into where it is at a moment, from a phase the
   race draws from its seed; a funnel is `bowl`; lumps in a floor are
@@ -215,7 +217,7 @@ belonging with those:
   settled field ran every pass. A marble a moving part would crush against
   a wall is let out along the piece instead, and one pushed over the line
   has crossed it. A marble cannot drop out of a funnel on to one sat under
-  the hole; it waits in the hole. A new piece that pinches the channel
+  the hole, nor on to one still falling; it waits in the hole. A new piece that pinches the channel
   meets all of this first, and racing every pair is what found each of
   these.
 - **Nothing is quite level.** A straight or a curve leans down by a

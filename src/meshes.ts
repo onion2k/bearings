@@ -176,13 +176,15 @@ export function wheel(arm: number, wide: number, paddles: number): Mesh {
  * A funnel's bowl, turned round its middle at `centre`: the floor from the
  * hole out to the rim at the height `height(r)` gives, smooth, and a rim wall
  * standing `wall` above it, with a thickness to it, all the way round: the
- * chute feeding it comes in over the wall, not through it.
+ * chute feeding it comes in over the wall, not through it. The hole goes on
+ * down as a throat `throat` long, which a marble falls through.
  */
 export function bowl(
   hole: number,
   rim: number,
   height: (r: number) => number,
   wall: number,
+  throat: number,
   into = new MeshBuilder(),
   centre: V3 = [0, 0, 0],
 ): MeshBuilder {
@@ -223,6 +225,18 @@ export function bowl(
     face(b, p(a1, rim, z), p(a0, rim, z), p(a0, rim, z + wall), p(a1, rim, z + wall));
     face(b, p(a1, rim, z + wall), p(a0, rim, z + wall), p(a0, out, z + wall), p(a1, out, z + wall));
     face(b, p(a0, out, z - 0.18), p(a1, out, z - 0.18), p(a1, out, z + wall), p(a0, out, z + wall));
+  }
+  // the throat under the hole: its inside, its outside, and the ring it ends in
+  const top = cz + height(hole),
+    bottom = top - throat,
+    skin = hole + 0.18;
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    const p = (a: number, r: number, h: number): V3 => [cx + Math.cos(a) * r, cy + Math.sin(a) * r, h];
+    face(b, p(a1, hole, bottom), p(a0, hole, bottom), p(a0, hole, top), p(a1, hole, top));
+    face(b, p(a0, skin, bottom), p(a1, skin, bottom), p(a1, skin, top), p(a0, skin, top));
+    face(b, p(a0, hole, bottom), p(a1, hole, bottom), p(a1, skin, bottom), p(a0, skin, bottom));
   }
   return b;
 }

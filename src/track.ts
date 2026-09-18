@@ -300,6 +300,8 @@ export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
  * the rim, and a marble crept round it for eight seconds. Its rim's wall
  * stands `wall` high, which is as high as anything dropped into it comes
  * from, so that however fast a marble comes off the lip, the wall stops it.
+ * Its hole goes on down as a throat `throat` long, which keeps a marble
+ * falling through it inside the hole until it lands on the floor below.
  */
 export interface Bowl {
   x: number;
@@ -309,6 +311,7 @@ export interface Bowl {
   hole: number;
   depth: number;
   wall: number;
+  throat: number;
 }
 
 /** How far below its rim a bowl is at `r` from its middle: nothing at the rim, all of its depth at the hole. */
@@ -350,8 +353,8 @@ export function spot(): Spot {
 /**
  * A stretch of one piece: the curve it follows, and what it has. Most pieces
  * are one part; a jump is its run-up and, past the air, its own landing, and
- * a funnel is the run in to its bowl and then the bowl, so that each joins
- * the pieces either side of it like any other piece does.
+ * a funnel is the run in to its bowl, the bowl, and the floor under its hole,
+ * so that each joins the pieces either side of it like any other piece does.
  */
 interface Part {
   rough: number;
@@ -363,7 +366,7 @@ interface Part {
   /** What is in its way, in its own terms: `u` is how far along it, as a share of its length. */
   obstacles?: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[];
   /** A bowl in place of a channel: its rim through the part's start, its middle `rim` to the left. */
-  bowl?: { rim: number; hole: number; depth: number; wall: number };
+  bowl?: { rim: number; hole: number; depth: number; wall: number; throat: number };
   /** Lumps in its floor, in its own terms: `u` is how far along it, as a share of its length. */
   mounds?: (Omit<Mound, 'along'> & { u: number })[];
   /** Felt over its first `upto` share, which brings whatever marble crosses it to `speed`, whatever it came in at. */
@@ -635,6 +638,36 @@ const FUNNEL_DROP = 2.6;
 const FUNNEL_WALL = LEVEL - FUNNEL_DROP;
 
 /**
+ * Under a funnel's hole, the funnel's own way out: a ramp a level down,
+ * begun `FUNNEL_BEHIND` behind the hole's middle and handing a marble on a
+ * cell beyond it. A marble falls through the hole on to it and is carried
+ * off down it, clear of the next to fall. Handed on under the hole's middle,
+ * as the funnel once did, the floor there had to be level to meet the piece
+ * after, and each marble that fell crept off it while the rest queued in the
+ * hole: a field took half as long again to get out of the bowl. The hole goes
+ * on down as a throat to a marble's height and a hair above the highest the
+ * ramp is anywhere under the hole, which is at its back edge.
+ */
+const FUNNEL_BEHIND = 1.5;
+const FUNNEL_OUT = FUNNEL_BEHIND + CELL;
+const FUNNEL_THROAT = LEVEL - FUNNEL_DEPTH - 1 - outletFloor((FUNNEL_BEHIND - FUNNEL_HOLE) / FUNNEL_OUT);
+
+/** How high a funnel's way out is, `t` along it: a level down, eased at both ends like a ramp. */
+function outletFloor(t: number): number {
+  return (-LEVEL * (1 - Math.cos(Math.PI * t))) / 2;
+}
+
+/** A funnel's way out: from behind its hole, under it and on down a level, to hand a marble on level a cell beyond. */
+function outletCurve(t: number, out: number[]): void {
+  out[0] = FUNNEL_OUT * t;
+  out[1] = 0;
+  out[2] = outletFloor(t);
+  out[3] = FUNNEL_OUT;
+  out[4] = 0;
+  out[5] = (-LEVEL * Math.PI * Math.sin(Math.PI * t)) / 2;
+}
+
+/**
  * A funnel's run in: a cell along, bending left over the bowl and back so
  * that it ends heading round the bowl the way a field goes round it, and
  * easing down to a level lip, so that a marble leaves it going across the
@@ -772,9 +805,10 @@ const SHAPES: Record<Kind, Shape> = {
   // whatever came in from the left, a turn to the left most of all, whose arc is the bowl's own rim. The run in
   // once came down to the rim and ended on it, half outside the bowl, and a marble coming off it was set down
   // inside the rim where it had never been; its end stood in the way of everything going round. Over the bowl,
-  // each drops in where it comes off, at whatever pace it came, and those going round pass under it
+  // each drops in where it comes off, at whatever pace it came, and those going round pass under it. Then the way
+  // out under the hole, which each falls through the throat on to, and which carries it off to the piece after
   funnel: {
-    exit: { x: 1, y: 1, z: -2, turn: 0 },
+    exit: { x: 2, y: 1, z: -3, turn: 0 },
     rough: CELL * 1.2,
     curve: funnelInCurve,
     flies: true,
@@ -783,8 +817,9 @@ const SHAPES: Record<Kind, Shape> = {
         at: { x: 1, y: 0, z: -1 },
         rough: Math.PI * 2.5 * CELL * 0.7,
         curve: funnelCurve,
-        bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH, wall: FUNNEL_WALL },
+        bowl: { rim: CELL, hole: FUNNEL_HOLE, depth: FUNNEL_DEPTH, wall: FUNNEL_WALL, throat: FUNNEL_THROAT },
       },
+      { at: { x: 1 - FUNNEL_BEHIND / CELL, y: 1, z: -2 }, rough: FUNNEL_OUT * 1.1, curve: outletCurve },
     ],
   },
   // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to

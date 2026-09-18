@@ -86,9 +86,8 @@ export const WAITING = 0,
   SWIRLING = 6;
 
 /**
- * How springy a peg or a moving part is, how hard a funnel's rim grips a
- * marble pressed against it, and how fast a marble leaves a funnel's hole
- * for the piece below. The rim's grip is what makes a funnel slow a field:
+ * How springy a peg or a moving part is, and how hard a funnel's rim grips a
+ * marble pressed against it. The rim's grip is what makes a funnel slow a field:
  * the faster a marble goes round, the harder it is pressed into the rim, and
  * the more speed it loses, so a fast one circles longest.
  */
@@ -113,7 +112,6 @@ export const LANE_BRAKE = 2;
  */
 export const RATTLE = 0.3;
 export const GRIP = 0.1;
-export const DROP = 3;
 /**
  * How fast going round a bowl costs a marble, a share of its speed each
  * second, over what rolling costs it anywhere. At a third, a marble went round
@@ -125,10 +123,10 @@ export const DROP = 3;
 export const BOWL_DRAG = 0.05;
 /**
  * How long a marble may go round a bowl before it is called. The longest any
- * marble has gone round, over three hundred races of The Tower and a funnel
- * fed by every sort of piece, is fifteen seconds, all of it going round and
- * none waiting at the hole; a race that cannot end is noticed, not waited on,
- * whatever is tuned later.
+ * marble has stayed in one, over three hundred races of The Tower and a
+ * funnel fed by every sort of piece, is twenty seconds, three of them round
+ * the mouth of the hole or waiting at it for the way down to clear; a race
+ * that cannot end is noticed, not waited on, whatever is tuned later.
  */
 export const BOWL_PATIENCE = 30;
 
@@ -167,6 +165,22 @@ export interface MarblesOptions {
   count?: number;
   /** Chance, for the small differences between one marble and another. */
   random?: Random;
+}
+
+/**
+ * How far below its rim a bowl's floor is under a marble whose middle is `r`
+ * from the bowl's middle. Out to the hole, the bowl's own shape; over the
+ * hole's edge, the edge's slope carried on, which is a marble tipping over
+ * it, until its middle is a radius inside the edge and it falls; and further
+ * in, level, which is where one waits on another still under the hole. Taken
+ * from the bowl's shape alone, the floor stopped at the edge, and a marble
+ * went from its edge to the middle of the throat in one step.
+ */
+function floorUnder(bowl: Bowl, r: number): number {
+  if (r >= bowl.hole) return bowlHeight(bowl, r);
+  const eps = 1e-3;
+  const edge = (bowlHeight(bowl, bowl.hole + eps) - bowlHeight(bowl, bowl.hole)) / eps;
+  return bowlHeight(bowl, bowl.hole) - edge * (bowl.hole - Math.max(r, bowl.hole - RADIUS));
 }
 
 /**
@@ -648,7 +662,7 @@ export class Marbles {
       ry = y / r;
     // the pull down the bowl's own slope, less the share that goes into a rolling marble's spin
     const eps = 1e-3;
-    const slope = (bowlHeight(bowl, r + eps) - bowlHeight(bowl, r - eps)) / (2 * eps);
+    const slope = (floorUnder(bowl, r + eps) - floorUnder(bowl, r - eps)) / (2 * eps);
     const inward = GRAVITY * ROLLING * Math.sin(Math.atan(slope));
     const v = Math.hypot(this.vx[i], this.vy[i]);
     // what slows it only ever slows it, to a stop at most and never on round the other way
@@ -687,42 +701,60 @@ export class Marbles {
     this.bowlY[i] = y;
     this.rolled[i] += (Math.hypot(this.vx[i], this.vy[i]) * dt) / RADIUS;
     // how far in it has come, as how far along the bowl's own piece, for ordering the field
-    this.along[i] = Math.min(seg.length, (seg.length * (bowl.rim - Math.hypot(x, y))) / (bowl.rim - bowl.hole));
-    // through the hole, and down on to the piece below, heading off the way that piece goes: across its chute
-    // by as far as it went through the hole off the middle, so two falling close together do not land as one
-    // its middle over the hole is a marble falling through it: the bowl stops at the hole's edge, so anything
-    // asked of it further in would leave a flat ring round the hole for a slowed marble to sit in for ever
-    if (Math.hypot(x, y) < bowl.hole) {
-      const below = this.track.segments[seg.next];
-      const tx = below.tangents[0],
-        ty = below.tangents[1];
-      const tl = Math.hypot(tx, ty) || 1;
-      const wall = below.width[0] - RADIUS;
-      // across the chute is to the right of the way it goes: (ty, -tx) on the ground
-      const across = Math.min(wall, Math.max(-wall, (x * ty - y * tx) / tl));
-      // a marble cannot drop through a hole on to one still sitting under it: it waits in the hole until the
-      // one below has rolled clear, as the one below cannot be pushed back up into the bowl to make room
-      for (let j = 0; j < this.count; j++)
-        if (
-          j !== i &&
-          this.state[j] === RACING &&
-          this.segment[j] === seg.next &&
-          Math.hypot(this.along[j], this.across[j] - across) < RADIUS * 2
-        ) {
-          this.placeInBowl(i);
-          return;
-        }
-      this.segment[i] = seg.next;
-      this.along[i] = 0;
-      this.across[i] = across;
-      this.speed[i] = DROP + Math.hypot(this.vx[i], this.vy[i]) * 0.3;
-      this.drift[i] = 0;
-      this.vx[i] = this.vy[i] = this.vz[i] = 0;
-      this.state[i] = RACING;
-      if (this.track.segments[seg.next].next < 0) this.finish(i);
-      return;
-    }
+    const now = Math.hypot(x, y);
+    this.along[i] = Math.min(seg.length, (seg.length * (bowl.rim - now)) / (bowl.rim - bowl.hole));
     this.placeInBowl(i);
+    // its middle a radius inside the hole's edge, it has tipped over the edge, and falls through the throat on to
+    // the way out under it: it was once taken from the hole and set down on the piece below in one step. It
+    // cannot fall on to one still sitting under the hole, which cannot be pushed back up to make room, nor catch
+    // up one still falling, so it waits in the hole until the way down is clear
+    if (now >= bowl.hole - RADIUS || this.blocked(i, this.segment[i], bowl)) return;
+    // falling as it was going: round and in as it went, and down as fast as the edge was taking it down
+    this.vz[i] = (slope * (x * this.vx[i] + y * this.vy[i])) / (now || 1);
+    this.airX[i] = this.x[i];
+    this.airY[i] = this.y[i];
+    this.aloft[i] = 0;
+    this.state[i] = FLYING;
+  }
+
+  /**
+   * Whether the way down a bowl's throat is taken: by one falling through it,
+   * or one on the floor under the hole, stopped there for good or not. One
+   * stopped under the hole keeps the next in the hole until the bowl calls it.
+   */
+  private blocked(i: number, s: number, bowl: Bowl): boolean {
+    const under = this.track.segments[s].next;
+    const after = under >= 0 ? this.track.segments[under].next : -1;
+    for (let j = 0; j < this.count; j++) {
+      if (j === i) continue;
+      if (this.state[j] === FLYING && this.segment[j] === s) return true;
+      const on = this.state[j] === RACING || this.state[j] === FINISHED || this.state[j] === STALLED;
+      if (
+        on &&
+        (this.segment[j] === under || this.segment[j] === after) &&
+        Math.hypot(this.x[j] - bowl.x, this.y[j] - bowl.y) < bowl.hole + RADIUS
+      )
+        return true;
+    }
+    return false;
+  }
+
+  /** Falling through a bowl's throat: kept inside it, and sent off its wall as off the rim. */
+  private throat(i: number, bowl: Bowl) {
+    const edge = bowl.hole - RADIUS;
+    const x = this.x[i] - bowl.x,
+      y = this.y[i] - bowl.y;
+    const r = Math.hypot(x, y);
+    if (r <= edge) return;
+    const nx = x / r,
+      ny = y / r;
+    this.x[i] = bowl.x + nx * edge;
+    this.y[i] = bowl.y + ny * edge;
+    const vn = this.vx[i] * nx + this.vy[i] * ny;
+    if (vn > 0) {
+      this.vx[i] -= (1 + BOUNCE) * vn * nx;
+      this.vy[i] -= (1 + BOUNCE) * vn * ny;
+    }
   }
 
   /** How far a marble in a bowl is from the bowl's middle, across the ground. */
@@ -736,7 +768,7 @@ export class Marbles {
     const r = Math.hypot(this.bowlX[i], this.bowlY[i]);
     this.x[i] = bowl.x + this.bowlX[i];
     this.y[i] = bowl.y + this.bowlY[i];
-    this.z[i] = bowl.z + bowlHeight(bowl, r) + RADIUS;
+    this.z[i] = bowl.z + floorUnder(bowl, r) + RADIUS;
   }
 
   /**
@@ -842,6 +874,8 @@ export class Marbles {
     this.y[i] += this.vy[i] * dt;
     this.z[i] += this.vz[i] * dt;
     this.rolled[i] += (Math.hypot(this.vx[i], this.vy[i]) * dt) / RADIUS;
+    const from = this.track.segments[this.segment[i]].funnel;
+    if (from) this.throat(i, from);
     let s = this.track.segments[this.segment[i]].next;
     for (let k = 0; k < LANDING_LOOK && s >= 0; k++) {
       if (this.land(i, s)) return;
@@ -1193,7 +1227,15 @@ export function checkMarbles(marbles: Marbles): string[] {
     const state = marbles.state[i];
     if (state > SWIRLING) problems.push(`marble ${i} is doing ${state}, which is nothing a marble does`);
     else doing[state]++;
-    if (state === FLYING && !piece.flies) problems.push(`marble ${i} is in the air off a piece with no lip`);
+    if (state === FLYING && !piece.flies && !piece.funnel)
+      problems.push(`marble ${i} is in the air off a piece with no lip and no hole`);
+    // through a funnel's hole a marble falls down its throat, which keeps it inside the hole all the way down
+    if (
+      state === FLYING &&
+      piece.funnel &&
+      Math.hypot(marbles.x[i] - piece.funnel.x, marbles.y[i] - piece.funnel.y) > piece.funnel.hole - RADIUS + 1e-3
+    )
+      problems.push(`marble ${i} is falling through a funnel's hole, outside its throat`);
     // off a funnel's lip a marble drops into the bowl under it, and the rim's wall keeps it there: anywhere outside
     // it, it has gone off the side of the run in, as every marble did when the run in ended on the rim
     const into = state === FLYING && piece.next >= 0 ? track.segments[piece.next].funnel : null;
@@ -1233,7 +1275,8 @@ export function checkMarbles(marbles: Marbles): string[] {
   for (let a = 0; a < marbles.count; a++)
     for (let b = a + 1; b < marbles.count; b++) {
       // two marbles in the same place on the track would be one passing through the other, across the channel
-      // as well as along it; in the air nothing touches, so only those on the track and in a bowl are held to it
+      // as well as along it. Off a jump nothing touches in the air; down a funnel's throat, two falling at once are
+      // shut in together, so those on the track, in a bowl and down its throat are held to it
       let apart = Infinity;
       const onTrack = (i: number) => marbles.state[i] === RACING || marbles.state[i] === FINISHED;
       if (onTrack(a) && onTrack(b))
@@ -1244,6 +1287,13 @@ export function checkMarbles(marbles: Marbles): string[] {
         marbles.segment[a] === marbles.segment[b]
       )
         apart = Math.hypot(marbles.x[b] - marbles.x[a], marbles.y[b] - marbles.y[a]);
+      else if (
+        marbles.state[a] === FLYING &&
+        marbles.state[b] === FLYING &&
+        marbles.segment[a] === marbles.segment[b] &&
+        track.segments[marbles.segment[a]].funnel
+      )
+        apart = Math.hypot(marbles.x[b] - marbles.x[a], marbles.y[b] - marbles.y[a], marbles.z[b] - marbles.z[a]);
       if (apart < RADIUS * 2 - 0.05)
         problems.push(`marbles ${a} and ${b} are ${apart.toFixed(3)} apart, inside each other`);
     }

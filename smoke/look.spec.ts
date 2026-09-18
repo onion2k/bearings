@@ -118,6 +118,28 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test("a marble falling through the funnel's hole on to the ramp under it", async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const falling = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(2);
+      g.release();
+      g.follow(false);
+      g.step(1077);
+      // from beside the throat under the bowl, over the ramp that carries each marble off: a marble was once taken
+      // from the hole and set down on the piece below, and never seen between
+      g.look(25, 6, -44, { azimuth: -1.2, polar: 1.2, radius: 12 });
+      g.step(1);
+      // the hole's edge is 2.2 below the rim, a level under the tower's last spiral
+      return g.marbles().filter((m) => m.state === 'flying' && m.z < -42.2).length;
+    });
+    expect(falling, 'a marble in the throat, or it is not this picture').toBe(1);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('hole.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the chute, with the field in the pen and the gate across it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

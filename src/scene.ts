@@ -114,6 +114,8 @@ export class Scene {
     const pegs: number[] = [];
     const posts: number[] = [];
     const mounds: number[] = [];
+    // the floor under each funnel's hole, whose back end is walled
+    const backs: number[] = [];
     // the line a race is won at, across the start of the last piece, and the stop at the far end of its lane
     const end = track.segments.length - 1;
     const lineAt = new Float32Array(16),
@@ -132,7 +134,12 @@ export class Scene {
     track.segments.forEach((seg, s) => {
       const bowl = seg.funnel;
       // the chute feeding a bowl comes in over its rim, so the rim's wall goes all the way round
-      if (bowl) bowlMesh(bowl.hole, bowl.rim, (r) => bowlHeight(bowl, r), bowl.wall, bowls, [bowl.x, bowl.y, bowl.z]);
+      if (bowl)
+        bowlMesh(bowl.hole, bowl.rim, (r) => bowlHeight(bowl, r), bowl.wall, bowl.throat, bowls, [
+          bowl.x,
+          bowl.y,
+          bowl.z,
+        ]);
       else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
       // a jump's felt, laid over the floor of its run-up as far as it goes
       if (seg.felt) {
@@ -141,6 +148,7 @@ export class Scene {
         sweep(seg.points, seg.tangents, seg.ups, to + 1, FELT, felt, seg.width, HALF_WIDTH);
       }
       for (const m of seg.mounds) mounds.push(s, m.along, m.across);
+      if (s > 0 && track.segments[s - 1].funnel) backs.push(s);
       for (const ob of seg.obstacles) {
         if (ob.motion.kind === 'fixed') pegs.push(s, ob.along, ob.across);
         else if (ob.motion.kind === 'sweep') this.sweeping.push({ segment: s, ob });
@@ -162,6 +170,15 @@ export class Scene {
     const moundAt = new Float32Array(Math.max(1, mounds.length / 3) * 16);
     for (let k = 0; k < mounds.length; k += 3)
       this.onTrack(track, moundAt, k / 3, mounds[k], mounds[k + 1], mounds[k + 2], 0, 0);
+    // each wall stands just behind the floor it ends, as the lane's stop stands just beyond its lane
+    const backAt = new Float32Array(Math.max(1, backs.length) * 16);
+    backs.forEach((s, k) => {
+      this.onTrack(track, backAt, k, s, 0, 0, 0, Math.PI / 2);
+      const h = at(track, s, 0, this.here);
+      backAt[k * 16 + 12] -= h.tx * 0.12;
+      backAt[k * 16 + 13] -= h.ty * 0.12;
+      backAt[k * 16 + 14] -= h.tz * 0.12;
+    });
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
@@ -190,6 +207,13 @@ export class Scene {
       },
       { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
       { mesh: bar((LANE + SKIN) * 2, 0.24, WALL + 0.08), matrices: stopAt, albedo: [0.25, 0.25, 0.28], roughness: 0.5 },
+      {
+        mesh: bar((HALF_WIDTH + SKIN) * 2, 0.24, WALL),
+        matrices: backAt,
+        count: backs.length,
+        albedo: [0.42, 0.44, 0.5],
+        roughness: 0.65,
+      },
     ];
     if (felt.vertexCount > 0)
       groups.push({ mesh: felt.build(), matrices: one, albedo: [0.12, 0.3, 0.16], roughness: 0.95 });

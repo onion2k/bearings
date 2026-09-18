@@ -3,6 +3,7 @@ import {
   BOWL_PATIENCE,
   FINISHED,
   FLYING,
+  GRAVITY,
   LOST,
   Marbles,
   RACING,
@@ -687,7 +688,7 @@ describe('the marbles', () => {
 
     describe('in a funnel', () => {
       const FUNNEL = chain(['start', 'ramp', 'funnel', 'straight', 'ramp', 'finish']);
-      /** The funnel is two parts: the run in down to its bowl, and the bowl; then the straight below it. */
+      /** The funnel is three parts: the run in to its bowl, the bowl, and the floor under its hole; then a straight. */
       const RUN_IN = 2,
         BOWL = 3,
         BELOW = 4;
@@ -716,6 +717,50 @@ describe('the marbles', () => {
         if (marbles.state[i] === RACING) return Math.hypot(marbles.speed[i], marbles.drift[i]);
         return Math.hypot(marbles.vx[i], marbles.vy[i]);
       }
+
+      /** How fast a marble is going up or down, whatever it is doing: in a bowl, no faster than its steepest slope takes it. */
+      function sinking(marbles: Marbles, i: number): number {
+        if (marbles.state[i] === RACING) return Math.abs(marbles.speed[i]);
+        if (marbles.state[i] === FLYING) return Math.abs(marbles.vz[i]) + GRAVITY * DT;
+        return Math.hypot(marbles.vx[i], marbles.vy[i]) * 1.6;
+      }
+
+      it('drops a marble through the hole and on to the piece below, falling, without ever jumping it', () => {
+        for (const speed of [4, 10, 16]) {
+          const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, speed);
+          marbles.step(DT);
+          let fell = false,
+            across = -Infinity,
+            down = -Infinity,
+            on = 0;
+          // from its last frame in the bowl, through the hole, to a while on the piece below
+          for (let f = 0; f < 30 * 60 && on < 30; f++) {
+            const x = marbles.x[0],
+              y = marbles.y[0],
+              z = marbles.z[0],
+              was = marbles.state[0],
+              going0 = going(marbles, 0),
+              sinking0 = sinking(marbles, 0);
+            marbles.step(DT);
+            if (was === RACING && marbles.state[0] === RACING) {
+              if (marbles.segment[0] > BOWL) on++;
+              continue;
+            }
+            if (marbles.state[0] === FLYING && marbles.segment[0] === BOWL) fell = true;
+            across = Math.max(
+              across,
+              Math.hypot(marbles.x[0] - x, marbles.y[0] - y) - Math.max(going0, going(marbles, 0)) * DT,
+            );
+            down = Math.max(down, Math.abs(marbles.z[0] - z) - Math.max(sinking0, sinking(marbles, 0)) * DT);
+          }
+          expect(on, `${speed}: on the piece below in the end`).toBe(30);
+          // it was taken from the hole and set down on the piece below in a single frame, as much as a marble's
+          // height and a half lower and a hole's width across from where it had been
+          expect(down, `${speed}: never further down in a frame than it was going`).toBeLessThan(0.01);
+          expect(across, `${speed}: nor further across`).toBeLessThan(0.01);
+          expect(fell, `${speed}: it fell through the hole`).toBe(true);
+        }
+      });
 
       it('drops a marble off the run in into the bowl, from over it, without ever jumping it across the ground', () => {
         for (const speed of [2, 10, 20])
@@ -875,40 +920,123 @@ describe('the marbles', () => {
         expect(Math.hypot(marbles.vx[0], marbles.vy[0]), 'at rest').toBeLessThan(0.2);
       });
 
-      it('waits in the hole for a marble sat under it to roll clear, rather than dropping on to it', () => {
-        let waited = 0;
-        for (const speed of [4, 5, 6, 7, 8, 9, 10]) {
-          const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, speed, 2);
-          marbles.along[0] = marbles.track.segments[RUN_IN].length - 0.01;
-          const bowl = marbles.track.segments[BOWL].funnel!;
-          // the other sits still right under the hole, held by a bar across the chute until the test takes it away
-          const below = marbles.track.segments[BELOW];
-          below.obstacles.push({
-            along: RADIUS * 2 + 0.25,
-            across: 0,
-            half: HALF_WIDTH,
-            angle: Math.PI / 2,
-            radius: 0.2,
-            motion: { kind: 'fixed' },
-            slot: -1,
-          });
+      /** A marble coming into the funnel, and another put on the floor under the hole as the first nears the hole, held there by a bar. */
+      function waitingOn(speed: number) {
+        const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, speed, 2);
+        marbles.along[0] = marbles.track.segments[RUN_IN].length - 0.01;
+        const bowl = marbles.track.segments[BOWL].funnel!;
+        const below = marbles.track.segments[BELOW];
+        below.obstacles.push({
+          along: RADIUS * 2 + 0.25,
+          across: 0,
+          half: HALF_WIDTH,
+          angle: Math.PI / 2,
+          radius: 0.2,
+          motion: { kind: 'fixed' },
+          slot: -1,
+        });
+        // put there only as the first comes near the hole, or it sits still long enough to be called stopped first
+        const under = () => {
           marbles.state[1] = RACING;
           marbles.segment[1] = BELOW;
           marbles.along[1] = RADIUS;
           marbles.across[1] = 0;
           marbles.speed[1] = 0;
-          let here = 0;
-          for (let f = 0; f < 14 * 60 && marbles.segment[0] !== BELOW; f++) {
+        };
+        return { marbles, bowl, below, under };
+      }
+
+      it('waits in the hole for a marble sat under it to roll clear, rather than dropping on to it', () => {
+        let waited = 0;
+        for (const speed of [4, 5, 6, 7, 8, 9, 10]) {
+          const { marbles, bowl, below, under } = waitingOn(speed);
+          let here = 0,
+            put = false;
+          for (let f = 0; f < 20 * 60 && (marbles.state[0] !== RACING || marbles.segment[0] <= BOWL); f++) {
             marbles.step(DT);
+            if (!put && marbles.state[0] === SWIRLING && marbles.bowlRadius(0) < bowl.hole * 2) {
+              under();
+              put = true;
+            }
             expect(checkMarbles(marbles), `speed ${speed} frame ${f}`).toEqual([]);
             if (marbles.state[0] === SWIRLING && marbles.bowlRadius(0) < bowl.hole) here++;
+            // never falling while the other is still under the hole
+            const beneath = Math.hypot(marbles.x[1] - bowl.x, marbles.y[1] - bowl.y) < bowl.hole + RADIUS;
+            if (marbles.state[0] === FLYING && marbles.segment[0] === BOWL)
+              expect(beneath, `speed ${speed} frame ${f}: fell on to the one under the hole`).toBe(false);
             // and after a while the bar is taken away, and it rolls on out of the way
             if (here === 30) below.obstacles.pop();
           }
           waited += here;
-          expect(marbles.segment[0], `speed ${speed}: out of the bowl in the end`).toBe(BELOW);
+          expect(marbles.state[1], `speed ${speed}: the one under the hole rolled clear`).toBe(RACING);
+          expect(marbles.segment[0], `speed ${speed}: out of the bowl in the end`).toBeGreaterThan(BOWL);
         }
         expect(waited, 'it waited in the hole at least once').toBeGreaterThan(0);
+      });
+
+      it('says when a marble falling through the hole is outside the throat, or inside another falling with it', () => {
+        const { marbles } = setOn(FUNNEL, RUN_IN, 0, 0, 0, 2);
+        const bowl = marbles.track.segments[BOWL].funnel!;
+        const fall = (i: number, x: number, z: number) => {
+          marbles.state[i] = FLYING;
+          marbles.segment[i] = BOWL;
+          marbles.along[i] = marbles.track.segments[BOWL].length;
+          marbles.x[i] = bowl.x + x;
+          marbles.y[i] = bowl.y;
+          marbles.z[i] = z;
+        };
+        const lip = bowl.z - bowl.depth;
+        fall(0, 0, lip - 0.5);
+        fall(1, 0, lip - 0.5 - RADIUS * 3);
+        expect(checkMarbles(marbles)).toEqual([]);
+        // a marble's width from the middle of the throat, it is in the throat's wall
+        fall(0, bowl.hole - RADIUS + 0.2, lip - 0.5);
+        expect(checkMarbles(marbles).join('\n')).toMatch(/outside its throat/);
+        // and one right on top of the other, as two let down the throat together could be
+        fall(0, 0, lip - 0.5);
+        fall(1, 0, lip - 0.5 - RADIUS);
+        expect(checkMarbles(marbles).join('\n')).toMatch(/inside each other/);
+      });
+
+      it('lets one marble at a time down the throat, and none on to another', () => {
+        let most = 0;
+        for (const kinds of [
+          ['start', 'ramp', 'funnel', 'straight', 'ramp', 'finish'],
+          ['start', 'pegs', 'funnel', 'straight', 'finish'],
+          ['start', 'wheel', 'funnel', 'finish'],
+        ] as const)
+          for (const seed of [1, 2, 3, 4, 5, 6]) {
+            const { marbles } = fieldOn(chain([...kinds]), seed);
+            const bowl = marbles.track.segments.findIndex((s) => s.funnel);
+            marbles.release();
+            for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+              marbles.step(DT);
+              let falling = 0;
+              for (let i = 0; i < marbles.count; i++)
+                if (marbles.state[i] === FLYING && marbles.segment[i] === bowl) falling++;
+              most = Math.max(most, falling);
+              expect(falling, `${kinds.join(', ')}, seed ${seed} frame ${f}: two in the throat`).toBeLessThanOrEqual(1);
+            }
+          }
+        expect(most, 'some fell through').toBe(1);
+      });
+
+      it('waits on a marble stopped for good under the hole until the bowl calls it, and the race still ends', () => {
+        const { marbles, bowl, under } = waitingOn(6);
+        let put = false;
+        for (let f = 0; f < (BOWL_PATIENCE + 20) * 60 && !marbles.over; f++) {
+          marbles.step(DT);
+          if (!put && marbles.state[0] === SWIRLING && marbles.bowlRadius(0) < bowl.hole * 2) {
+            under();
+            put = true;
+          }
+          expect(marbles.state[0] === FLYING && marbles.segment[0] === BOWL, `frame ${f}: fell on to it`).toBe(false);
+        }
+        // the bar is never taken away: the one under the hole sits until it is called stopped, and so, in the hole
+        // over it, does the other
+        expect(marbles.state[1]).toBe(STALLED);
+        expect(marbles.state[0]).toBe(STALLED);
+        expect(marbles.over).toBe(true);
       });
 
       it('keeps a marble that came in fast longer than one that came in slow', () => {

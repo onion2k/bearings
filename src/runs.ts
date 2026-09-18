@@ -57,11 +57,13 @@ export const SHORT: Run = {
  * it goes into the bowl tells next to nothing of the order it comes out in.
  * When the bowl slowed a marble within a lap, the field came out nearly the
  * other way round, which is an order too. Its id has moved on each time the
- * funnel changed its races: when the bowl went a level down, and when its
- * run in came over the bowl and the field went round nearly twice as long.
+ * funnel changed its races: when the bowl went a level down; when its run in
+ * came over the bowl and the field went round nearly twice as long; and when
+ * the field came to fall through the hole on to a ramp of the funnel's own,
+ * which hands it on a cell further and a level lower than it did.
  */
 export const TOWER: Run = {
-  id: 'the-tower-4',
+  id: 'the-tower-5',
   name: 'The Tower',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -71,8 +73,8 @@ export const TOWER: Run = {
     { kind: 'spiralLeft', x: 3, y: 0, z: -5, facing: 0 },
     { kind: 'spiralLeft', x: 3, y: 0, z: -7, facing: 0 },
     { kind: 'funnel', x: 3, y: 0, z: -9, facing: 0 },
-    { kind: 'straight', x: 4, y: 1, z: -11, facing: 0 },
-    { kind: 'finish', x: 5, y: 1, z: -11, facing: 0 },
+    { kind: 'straight', x: 5, y: 1, z: -12, facing: 0 },
+    { kind: 'finish', x: 6, y: 1, z: -12, facing: 0 },
   ],
 };
 

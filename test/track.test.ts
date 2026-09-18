@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MARBLES, RADIUS } from '../src/marbles';
 import { FIRST } from '../src/runs';
 import {
+  CELL,
   HALF_WIDTH,
   LANE,
   LEVEL,
@@ -311,9 +312,9 @@ describe('the track', () => {
         expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 0 }), kind).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
       for (const kind of ['gate', 'wheel'] as const)
         expect(exitOf({ kind, x: 0, y: 0, z: 0, facing: 1 }), kind).toEqual({ x: 0, y: 1, z: -1, facing: 1 });
-      // a funnel runs in a cell and down a level to its bowl, and lets them out of the bowl's middle a level
-      // lower again and under it, going the way they came in
-      expect(exitOf({ kind: 'funnel', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 1, y: 1, z: -2, facing: 0 });
+      // a funnel runs in a cell and over its bowl a level down, and lets them out through the bowl's middle and down
+      // the ramp under it, a cell beyond the middle and a level below, going the way they came in
+      expect(exitOf({ kind: 'funnel', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 2, y: 1, z: -3, facing: 0 });
     });
 
     it("works out clean, with the chute's own width wherever it meets another piece", () => {
@@ -413,11 +414,31 @@ describe('the track', () => {
       const r = Math.hypot(runIn.points[lip] - bowl.x, runIn.points[lip + 1] - bowl.y);
       expect(r + HALF_WIDTH, 'the lip is inside the rim').toBeLessThan(bowl.rim);
       expect(r - HALF_WIDTH, 'and outside the hole').toBeGreaterThan(bowl.hole);
+      // under the hole, the funnel's own way out: from behind the hole, under it, and down a level to hand on a cell
+      // beyond it. The piece after alone, begun under the hole's middle, left the back half of the hole over nothing;
+      // and a floor that had to be level there to meet it left each marble that fell creeping off it
       const out = track.segments[seg.next];
-      expect(Math.hypot(out.points[0] - bowl.x, out.points[1] - bowl.y), 'the way out is under the hole').toBeLessThan(
+      expect(out.piece, 'the way out is the funnel too').toBe(seg.piece);
+      expect(Math.hypot(out.points[0] - bowl.x, out.points[1] - bowl.y), 'it begins behind the hole').toBeGreaterThan(
         bowl.hole,
       );
-      expect(out.points[2], 'and below it').toBeLessThan(bowl.z - bowl.depth);
+      const end = out.points.length - 3;
+      expect(Math.hypot(out.points[end] - bowl.x, out.points[end + 1] - bowl.y), 'a cell beyond it').toBeCloseTo(
+        CELL,
+        4,
+      );
+      expect(out.points[end + 2], 'and a level down').toBeCloseTo(out.points[2] - LEVEL, 4);
+      let under = 0;
+      for (let k = 0; k < out.arc.length; k++) {
+        const o = k * 3;
+        if (Math.hypot(out.points[o] - bowl.x, out.points[o + 1] - bowl.y) > bowl.hole) continue;
+        under++;
+        // below the throat by more than a marble anywhere under the hole, so a marble rolls out from under it
+        expect(bowl.z - bowl.depth - bowl.throat - out.points[o + 2], `sample ${k}`).toBeGreaterThan(RADIUS * 2);
+        // and falling away, so one come down is carried off clear of the next to fall
+        expect(out.tangents[o + 2], `sample ${k}`).toBeLessThan(-0.05);
+      }
+      expect(under, 'some of it is under the hole').toBeGreaterThan(2);
       // how far down the bowl is at its rim and at its hole, and that it only ever goes down toward the middle
       expect(bowlHeight(bowl, bowl.rim)).toBeCloseTo(0, 6);
       expect(bowlHeight(bowl, bowl.hole)).toBeCloseTo(-bowl.depth, 6);
