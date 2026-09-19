@@ -134,6 +134,57 @@ export const SWITCHBACK: Run = {
 };
 
 /**
+ * The short one that shows off the fork: a sweeper straight off the start,
+ * then a splitter parts the field by which side of the middle it is on, one
+ * lane either side of a cell, closed by a joiner right after, and a gate
+ * before the cup. A field the sweeper has already scattered goes down the
+ * two lanes in about the mix it arrived in, so the two never decide the
+ * race alone; the gate after the joiner does its own further mixing on the
+ * whole field back together.
+ */
+export const FORK: Run = {
+  id: 'the-fork-1',
+  name: 'The Fork',
+  pieces: [
+    { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
+    { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'splitter', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'straight', x: 4, y: 0, z: -2, facing: 0 },
+    { kind: 'straight', x: 4, y: 1, z: -2, facing: 0 },
+    { kind: 'joiner', x: 5, y: 0, z: -2, facing: 0 },
+    { kind: 'gate', x: 6, y: 0, z: -2, facing: 0 },
+    { kind: 'finish', x: 7, y: 0, z: -3, facing: 0 },
+  ],
+};
+
+/**
+ * Pegs off the start, then a bend into a splitter parted across the bend's
+ * own width: two ramps down a level side by side, a lane apart, closed by a
+ * joiner right after. Bending in and out of the fork, rather than straight
+ * on, is what a designer's own layout would do more often than not, and is
+ * what the splitter's `fork` and the joiner's `joins` have to turn with the
+ * piece, not only carry it straight ahead. Another bend and a gate follow,
+ * back on the whole field.
+ */
+export const CROSSING: Run = {
+  id: 'the-crossing-1',
+  name: 'The Crossing',
+  pieces: [
+    { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
+    { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'pegs', x: 2, y: 0, z: -2, facing: 0 },
+    { kind: 'curveLeft', x: 4, y: 0, z: -3, facing: 0 },
+    { kind: 'splitter', x: 5, y: 1, z: -3, facing: 1 },
+    { kind: 'ramp', x: 5, y: 2, z: -3, facing: 1 },
+    { kind: 'ramp', x: 4, y: 2, z: -3, facing: 1 },
+    { kind: 'joiner', x: 5, y: 3, z: -4, facing: 1 },
+    { kind: 'curveRight', x: 5, y: 4, z: -4, facing: 1 },
+    { kind: 'gate', x: 6, y: 5, z: -4, facing: 0 },
+    { kind: 'finish', x: 7, y: 5, z: -5, facing: 0 },
+  ],
+};
+
+/**
  * Every run that comes with the game, in the order they are offered. The
  * first is the one a new player starts on. A run's id is what a save keeps
  * its best under, so it never changes once a run has shipped; a run whose
@@ -144,4 +195,4 @@ export const SWITCHBACK: Run = {
  * with them, and The Tower when its funnel went down a level. Each carries
  * the id of its latest layout.
  */
-export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK];
+export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK, FORK, CROSSING];
