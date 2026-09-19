@@ -1299,6 +1299,51 @@ describe('the marbles', () => {
     });
   });
 
+  describe('on a splitter’s two branches', () => {
+    /** A bare splitter, its two lanes starting at the same point along the run, closed by a joiner right after. */
+    function forked(): Run {
+      const start: Placed = { kind: 'start', x: 0, y: 0, z: 0, facing: 0 };
+      const splitter: Placed = { kind: 'splitter', ...exitOf(start)! };
+      const joiner: Placed = { kind: 'joiner', ...exitOf(splitter)! };
+      const after: Placed = { kind: 'straight', ...exitOf(joiner)! };
+      const finish: Placed = { kind: 'finish', ...exitOf(after)! };
+      return { id: 'fork', name: 'fork', pieces: [start, splitter, joiner, after, finish] };
+    }
+
+    it('never jostles two marbles that only look close because the two branches overlap along the run', () => {
+      const { marbles } = fieldOn(forked(), 1, 2);
+      const track = marbles.track;
+      const branches = [...new Set(track.segments.map((s) => s.branch))].filter((b) => b !== 0);
+      expect(branches.length, 'a splitter makes two branches').toBe(2);
+      const [segA, segB] = branches.map((b) => track.segments.findIndex((s) => s.branch === b));
+      expect(track.segments[segA].start, "the two branches begin at the splitter's own point").toBe(
+        track.segments[segB].start,
+      );
+      // along values close enough that `far` alone would read them as closing on each other head-on, which they
+      // cannot really be doing: they are a lattice cell apart, on branches the splitter parted
+      for (const [i, seg, along] of [
+        [0, segA, 1],
+        [1, segB, 1.3],
+      ] as const) {
+        marbles.state[i] = RACING;
+        marbles.segment[i] = seg;
+        marbles.along[i] = along;
+        marbles.across[i] = 0;
+        marbles.drift[i] = 0;
+      }
+      marbles.speed[0] = 5;
+      marbles.speed[1] = -5;
+      marbles.step(DT);
+      expect(checkMarbles(marbles)).toEqual([]);
+      // settle's speed exchange would have levelled the two out; parted branches must not be read as closing
+      expect(
+        marbles.speed[0],
+        "the branch the marble is really on decides its speed, not the other one's",
+      ).toBeGreaterThan(0);
+      expect(marbles.speed[1]).toBeLessThan(0);
+    });
+  });
+
   it('says when a marble has gone somewhere it may not', () => {
     const { marbles } = field(1);
     marbles.along[0] = -99;

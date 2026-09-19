@@ -557,4 +557,27 @@ describe('the track', () => {
     for (const seg of track.segments) counted += seg.arc.length;
     expect(counted).toBe(track.samples);
   });
+
+  describe('a splitter and a joiner', () => {
+    /** A bare splitter, its two lanes starting at the same point, closed by a joiner right after. */
+    function forked(): Run {
+      const start: Placed = { kind: 'start', x: 0, y: 0, z: 0, facing: 0 };
+      const splitter: Placed = { kind: 'splitter', ...exitOf(start)! };
+      const joiner: Placed = { kind: 'joiner', ...exitOf(splitter)! };
+      const after: Placed = { kind: 'straight', ...exitOf(joiner)! };
+      const finish: Placed = { kind: 'finish', ...exitOf(after)! };
+      return { id: 'fork', name: 'fork', pieces: [start, splitter, joiner, after, finish] };
+    }
+
+    it('keeps both lanes at a chute width the whole way, the same as every other kind', () => {
+      const track = compile(forked());
+      const branches = [...new Set(track.segments.map((s) => s.branch))].filter((b) => b !== 0);
+      expect(branches.length).toBe(2);
+      for (const br of branches) {
+        const seg = track.segments.find((s) => s.branch === br)!;
+        for (const w of seg.width) expect(w).toBeCloseTo(HALF_WIDTH, 5);
+      }
+      expect(checkTrack(track)).toEqual([]);
+    });
+  });
 });

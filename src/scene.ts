@@ -46,6 +46,14 @@ const PEG_HEIGHT = 0.8,
   GATE_HEIGHT = 0.8;
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
+/**
+ * How long the wedge a splitter or a joiner is drawn with stands, and how
+ * thick: centred on the point the two lanes share, since the two are barely
+ * a lattice cell apart there and the channel itself cannot yet be a chute
+ * wide each without one lane's wall standing in the other's.
+ */
+const DIVIDER = 2.2,
+  DIVIDER_THICK = 0.2;
 
 /**
  * The channel in section, in its own terms: how far across, and how far up.
@@ -131,6 +139,21 @@ export class Scene {
     this.sweeping = [];
     this.gating = [];
     this.turning = [];
+    // a splitter's two lanes, and a joiner's two entries, share one point apiece: right there the channel
+    // cannot yet be a chute wide each without one lane's wall standing in the other's, so a divider is stood
+    // over the point itself rather than the channel pinched down to fit — the pinch tried first left a
+    // marble looking to squeeze through a gap barely its own width
+    const dividers: number[] = [];
+    const byNext = new Map<number, number[]>();
+    track.segments.forEach((seg, s) => {
+      if (seg.fork) dividers.push(s, seg.length);
+      if (seg.branch !== 0 && seg.next >= 0) {
+        const onto = byNext.get(seg.next) ?? [];
+        onto.push(s);
+        byNext.set(seg.next, onto);
+      }
+    });
+    for (const onto of byNext.values()) if (onto.length === 2) dividers.push(onto[0], track.segments[onto[0]].length);
     track.segments.forEach((seg, s) => {
       const bowl = seg.funnel;
       // the chute feeding a bowl comes in over its rim, so the rim's wall goes all the way round
@@ -167,6 +190,11 @@ export class Scene {
     const postAt = new Float32Array(Math.max(1, posts.length / 3) * 16);
     for (let k = 0; k < posts.length; k += 3)
       this.onTrack(track, postAt, k / 3, posts[k], posts[k + 1], posts[k + 2], 0, Math.PI / 2);
+    // stood on the point itself, facing the way the track goes there, so it reads as a wedge set into the
+    // channel rather than a bar laid across it
+    const dividerAt = new Float32Array(Math.max(1, dividers.length / 2) * 16);
+    for (let k = 0; k < dividers.length; k += 2)
+      this.onTrack(track, dividerAt, k / 2, dividers[k], dividers[k + 1], 0, 0, 0);
     const moundAt = new Float32Array(Math.max(1, mounds.length / 3) * 16);
     for (let k = 0; k < mounds.length; k += 3)
       this.onTrack(track, moundAt, k / 3, mounds[k], mounds[k + 1], mounds[k + 2], 0, 0);
@@ -196,6 +224,15 @@ export class Scene {
         count: posts.length / 3,
         albedo: [0.25, 0.25, 0.28],
         roughness: 0.5,
+      },
+      // the same grey as the walls either side of it, so it reads as one of them rather than something laid
+      // over the channel
+      {
+        mesh: bar(DIVIDER, DIVIDER_THICK, WALL),
+        matrices: dividerAt,
+        count: dividers.length / 2,
+        albedo: [0.42, 0.44, 0.5],
+        roughness: 0.65,
       },
       // the mounds the same grey as the floor they rise out of, so they read as the floor's own shape
       {

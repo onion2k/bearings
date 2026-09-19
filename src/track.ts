@@ -61,6 +61,8 @@ export type Kind =
   | 'gate'
   | 'wheel'
   | 'funnel'
+  | 'splitter'
+  | 'joiner'
   | 'shallow'
   | 'shallowWide'
   | 'shallowBroad'
@@ -121,6 +123,23 @@ export interface Segment {
   start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
   next: number;
+  /**
+   * The segment it came from, explicitly: usually the one before it in `segments`, but not always, once a
+   * splitter's two branches and a joiner's two entries mean a piece is not always fed by whatever was sampled
+   * right before it. -1 where nothing feeds it, at the very start of the run.
+   */
+  prev: number;
+  /**
+   * Where a splitter hands the field on: `a` to whatever is left of the channel's middle as the field reaches
+   * it, `b` to whatever is right of it, in place of `next`, which is left at -1 for a segment that forks.
+   */
+  fork: { a: number; b: number } | null;
+  /**
+   * Which side of a split the segment is on, so the two never jostle each other on their way to a joiner: 0 for
+   * a segment that is nobody's branch, and otherwise a number no other branch shares, set the same for every
+   * segment between a splitter and the joiner that closes it.
+   */
+  branch: number;
 }
 
 /** A whole run worked out: the segments in the order a marble meets them. */
@@ -377,6 +396,17 @@ interface Shape extends Part {
   exit: { x: number; y: number; z: number; turn: number } | null;
   /** More parts of the same piece, in order, each begun `at` cells along, cells to the left and levels up from its entry. */
   then?: (Part & { at: { x: number; y: number; z: number } })[];
+  /**
+   * A second branch off the very same entry as the shape's own curve, ending somewhere else: what makes a
+   * splitter. The shape's own curve is where the channel's right goes; `fork`'s is where its left goes.
+   */
+  fork?: { part: Part; exit: { x: number; y: number; z: number; turn: number } };
+  /**
+   * A second entry, offset from the piece's own, whose part reaches the very same exit as the shape's own
+   * curve does: what makes a joiner. The shape's own curve is the entry any other piece would have; `joins`
+   * is the one a splitter's other branch reaches instead.
+   */
+  joins?: Part & { at: { x: number; y: number; z: number } };
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
@@ -517,6 +547,24 @@ function boardCurve(t: number, out: number[]): void {
   out[3] = CELL * 2;
   out[4] = 0;
   out[5] = (-LEVEL * Math.PI * Math.sin(Math.PI * t)) / 2;
+}
+
+/**
+ * A cell along and a cell to one `side` or the other, easing out from the
+ * entry and back to level by the exit, so it starts and ends heading the
+ * one way whichever side it moves to: what a splitter's two branches part
+ * on, and, run the other way round, what a joiner's second entry closes
+ * back in on.
+ */
+function forkCurve(side: number, t: number, out: number[]): void {
+  const ease = (1 - Math.cos(Math.PI * t)) / 2,
+    slope = (Math.PI * Math.sin(Math.PI * t)) / 2;
+  out[0] = CELL * t;
+  out[1] = side * CELL * ease;
+  out[2] = 0;
+  out[3] = CELL;
+  out[4] = side * CELL * slope;
+  out[5] = 0;
 }
 
 /**
@@ -827,6 +875,35 @@ const SHAPES: Record<Kind, Shape> = {
       { at: { x: 1 - FUNNEL_BEHIND / CELL, y: 1, z: -2 }, rough: FUNNEL_OUT * 1.1, curve: outletCurve },
     ],
   },
+  // a channel that parts in two, level, by which side of the middle the field is on when it reaches the fork:
+  // its own curve is the lane straight ahead, `fork`'s is the one that moves a cell across to open a second
+  // lane beside it, and the two are raced apart, never jostling each other, until a joiner brings them back.
+  // a channel that parts in two, level, by which side of the middle the field is on when it reaches the fork:
+  // its own curve is the lane straight ahead, `fork`'s is the one that moves a cell across to open a second
+  // lane beside it, and the two are raced apart, never jostling each other, until a joiner brings them back.
+  // Both keep a chute's own width the whole way — a narrower one, tried first, pinched two marbles still side
+  // by side from the wide chute before it before they had anywhere near enough of the piece to settle apart
+  // in — and the wedge that keeps the two walls from crossing while they still can is `scene.ts`'s own business,
+  // a solid divider drawn over the point they share, not a change to what the channel itself is
+  splitter: {
+    exit: { x: 1, y: 0, z: 0, turn: 0 },
+    rough: CELL,
+    curve: straightCurve,
+    fork: {
+      exit: { x: 1, y: 1, z: 0, turn: 0 },
+      part: { rough: CELL * 1.1, curve: (t, out) => forkCurve(1, t, out) },
+    },
+  },
+  // the piece a splitter's two branches close back into: its own curve carries on the lane that never left,
+  // `joins` is the other, a cell across from it, whose part comes back in over the same cell that lane opened
+  // by. A joiner may be placed anywhere both branches happen to reach, not only right after the splitter that
+  // opened them, as long as the one that moved comes back the same cell it went out by
+  joiner: {
+    exit: { x: 1, y: 0, z: 0, turn: 0 },
+    rough: CELL,
+    curve: straightCurve,
+    joins: { at: { x: 0, y: 1, z: 0 }, rough: CELL * 1.1, curve: (t, out) => forkCurve(-1, t, out) },
+  },
   // a straight two cells along and one level down, half as steep as a ramp: at a chute's width, and opening to
   // two chutes and three in its middle, where a field spreads out and finds its own lines
   shallow: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 2.1, curve: boardCurve },
@@ -912,6 +989,10 @@ function sample(piece: Placed, index: number): Segment[] {
   const shape = SHAPES[piece.kind];
   const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 })];
   for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at));
+  // a splitter's second branch begins at the same entry as the first, not further along it
+  if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }));
+  // a joiner's second entry, off to one side of the one every other piece has, reaching the same exit as it
+  if (shape.joins) out.push(samplePart(piece, index, shape.joins, shape.joins.at));
   return out;
 }
 
@@ -992,6 +1073,9 @@ function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; 
     length,
     start: 0,
     next: -1,
+    prev: -1,
+    fork: null,
+    branch: 0,
     flies: !!shape.flies,
     gap: 0,
     width,
@@ -1002,50 +1086,197 @@ function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; 
   };
 }
 
+/** Where a piece's `fork` exit or `joins` entry sits, worked out the same way `exitOf` works out the main one. */
+function sideOf(
+  piece: Placed,
+  side: { x: number; y: number; z: number; turn?: number },
+): { x: number; y: number; z: number; facing: Facing } {
+  const turned: number[] = [0, 0];
+  turnBy(piece.facing, side.x, side.y, turned);
+  return {
+    x: piece.x + turned[0],
+    y: piece.y + turned[1],
+    z: piece.z + side.z,
+    facing: ((((piece.facing + (side.turn ?? 0)) % 4) + 4) % 4) as Facing,
+  };
+}
+
 /**
  * A run worked out into a track: walked from the start gate, piece by piece,
  * until it reaches a cup or runs out of track. A run with something wrong
  * with it gives back as much as could be walked rather than throwing, since
  * a player building one has a broken run in front of them most of the time;
- * `check` is what says what is wrong with it.
+ * `check` is what says what is wrong with it. `problems`, given, is told of
+ * anything a splitter or joiner gets wrong on the way, which `check` reads.
  */
-export function compile(run: Run): Track {
+export function compile(run: Run, problems?: string[]): Track {
   const track: Track = { name: run.name, segments: [], length: 0, samples: 0, slots: 0 };
-  const entries = new Map<string, number>();
+  // every piece's own entry, and a joiner's second one besides, each to which piece and which of its segments
+  const entries = new Map<string, { piece: number; part: number }>();
   run.pieces.forEach((p, i) => {
     if (p.kind === 'start') return;
-    entries.set(portalKey(p.x, p.y, p.z, p.facing), i);
+    entries.set(portalKey(p.x, p.y, p.z, p.facing), { piece: i, part: 0 });
+    const { joins } = SHAPES[p.kind];
+    if (joins) {
+      const at = sideOf(p, joins.at);
+      entries.set(portalKey(at.x, at.y, at.z, p.facing), { piece: i, part: 1 });
+    }
   });
-  let index = run.pieces.findIndex((p) => p.kind === 'start');
-  const seen = new Set<number>();
-  while (index >= 0 && !seen.has(index) && seen.size < MAX_PIECES) {
-    seen.add(index);
-    for (const segment of sample(run.pieces[index], index)) join(track, segment);
-    const out = exitOf(run.pieces[index]);
-    index = out ? (entries.get(portalKey(out.x, out.y, out.z, out.facing)) ?? -1) : -1;
-  }
-  return track;
-}
 
-/** A segment added to the end of a track: joined to the one before, air and all, and counted. */
-function join(track: Track, segment: Segment) {
-  // off a lip there is air before this one begins, and it counts towards how far along the run it is
-  const before = track.segments[track.segments.length - 1] as Segment | undefined;
-  if (before?.flies || before?.funnel) {
-    const last = before.points.length - 3;
-    before.gap = Math.hypot(segment.points[0] - before.points[last], segment.points[1] - before.points[last + 1]);
-    track.length += before.gap;
+  const segmentsByPiece = new Map<number, Segment[]>();
+  const segmentIndex = new Map<Segment, number>();
+  const committed = new Set<Segment>();
+  const onwardDone = new Set<number>();
+  const onStack = new Set<number>();
+  let nextBranch = 1;
+
+  /** A segment appended to the track, its bookkeeping done, at wherever `track.length` stands. */
+  function append(segment: Segment, branch: number): void {
+    segment.start = track.length;
+    segment.branch = branch;
+    if (segment.obstacles.some((o) => o.motion.kind !== 'fixed')) {
+      for (const o of segment.obstacles) if (o.motion.kind !== 'fixed') o.slot = track.slots;
+      track.slots++;
+    }
+    segmentIndex.set(segment, track.segments.length);
+    track.segments.push(segment);
+    committed.add(segment);
+    track.length += segment.length;
+    track.samples += segment.arc.length;
   }
-  segment.start = track.length;
-  // everything that moves on a piece keeps one time, so a wheel's paddles turn together
-  if (segment.obstacles.some((o) => o.motion.kind !== 'fixed')) {
-    for (const o of segment.obstacles) if (o.motion.kind !== 'fixed') o.slot = track.slots;
-    track.slots++;
+
+  /** This piece's segments, sampled the first time anything reaches it, geometry only until committed. */
+  function geometryOf(pieceIndex: number): Segment[] {
+    let segs = segmentsByPiece.get(pieceIndex);
+    if (!segs) {
+      segs = sample(run.pieces[pieceIndex], pieceIndex);
+      segmentsByPiece.set(pieceIndex, segs);
+    }
+    return segs;
   }
-  if (track.segments.length > 0) track.segments[track.segments.length - 1].next = track.segments.length;
-  track.segments.push(segment);
-  track.length += segment.length;
-  track.samples += segment.arc.length;
+
+  /**
+   * Commits `part` of a piece to the track, wherever `track.length` now stands: the whole piece at once, in
+   * order, unless it forks or joins. A splitter's two branches both begin at the one point it forks from; a
+   * joiner's two entries are committed apart, each the first time its own branch reaches it. Answers whether
+   * this was the first time `part` itself was committed, which is always so except a joiner's second entry.
+   */
+  function commit(pieceIndex: number, segs: Segment[], part: number, branch: number): boolean {
+    if (committed.has(segs[part])) return false;
+    const shape = SHAPES[run.pieces[pieceIndex].kind];
+    if (shape.joins) {
+      append(segs[part], branch);
+      return true;
+    }
+    const base = track.length;
+    segs.forEach((seg, k) => {
+      if (shape.fork && k === 1) track.length = base; // the left branch begins at the very same point as the right
+      // the gap, if the one before flies or drops, is added before this one is committed, not after
+      if (k > 0 && !shape.fork) {
+        const from = segs[k - 1];
+        if (from.flies || from.funnel) {
+          const last = from.points.length - 3;
+          from.gap = Math.hypot(seg.points[0] - from.points[last], seg.points[1] - from.points[last + 1]);
+          track.length += from.gap;
+        }
+      }
+      append(seg, shape.fork ? nextBranch++ : branch);
+      if (k > 0 && !shape.fork) {
+        segs[k - 1].next = segmentIndex.get(seg)!;
+        seg.prev = segmentIndex.get(segs[k - 1])!;
+      }
+    });
+    return true;
+  }
+
+  /** `before` wired on to whatever `x,y,z,facing` matches, walking on from it the first time it is reached. */
+  function walk(before: Segment | null, x: number, y: number, z: number, facing: Facing, branch: number) {
+    const match = entries.get(portalKey(x, y, z, facing));
+    if (!match) return; // a dead end: `before` keeps its default, and this branch of the walk stops here
+    const segs = geometryOf(match.piece);
+    const target = segs[match.part];
+    const forks = !!SHAPES[run.pieces[match.piece].kind].fork;
+    // the gap, if any, is added before the target is committed, so its own start already stands beyond it
+    if (before?.flies || before?.funnel) {
+      const last = before.points.length - 3;
+      before.gap = Math.hypot(target.points[0] - before.points[last], target.points[1] - before.points[last + 1]);
+      if (!committed.has(target)) track.length += before.gap;
+    }
+    // a piece is reached a second time only through a joiner's own second entry: geometry is committed per
+    // entry, since each is its own segment, but the piece as a whole is only walked on from once
+    const reachedBefore = onwardDone.has(match.piece);
+    commit(match.piece, segs, match.part, branch);
+    target.prev = before ? (segmentIndex.get(before) ?? -1) : -1;
+    if (forks) segs[1].prev = target.prev; // the fork's other branch shares the very same predecessor
+    if (before) {
+      // reaching a splitter hands the field on by which side of the middle it is on, in place of a plain next
+      if (forks) before.fork = { a: segmentIndex.get(segs[1])!, b: segmentIndex.get(segs[0])! };
+      else before.next = segmentIndex.get(target)!;
+    }
+    if (reachedBefore) {
+      // reached before with nowhere else to have come from but a joiner's own second entry is the run coming
+      // back round on itself instead: the same piece, the same one entry, asked for all over again
+      if (!SHAPES[run.pieces[match.piece].kind].joins) {
+        problems?.push('the run never ends: it comes back round on itself');
+        return;
+      }
+      // the two branches that meet at a joiner ought to have brought the field about the same distance: each
+      // entry's own start, not the track's current length, which by now may have gone all the way to the
+      // finish and back through whatever the first entry found. A lane that moved a cell across is inherently
+      // longer than a plain straight of the same span — about half again, over just one cell — so an exact
+      // match is not asked for, only that the gap between the two stays a small share of the whole, which any
+      // branch of a few pieces or more comes to on its own
+      const other = segs[1 - match.part];
+      const longer = Math.max(target.start, other.start);
+      if (Math.abs(target.start - other.start) > Math.max(1, longer * 0.15) && problems)
+        problems.push(
+          `piece ${match.piece}, a joiner, is reached ${other.start.toFixed(2)} along one branch and ${target.start.toFixed(2)} along the other`,
+        );
+      // the field arriving this way goes on exactly where the field that arrived first already does
+      target.next = other.next;
+      return;
+    }
+    onwardDone.add(match.piece);
+    continueFrom(match.piece, segs, match.part, branch);
+  }
+
+  /** Walks on from a piece just committed for the first time: forks it if it has to, joins the field back if it just did. */
+  function continueFrom(pieceIndex: number, segs: Segment[], firstPart: number, branch: number) {
+    if (onStack.has(pieceIndex)) {
+      problems?.push('the run never ends: it comes back round on itself');
+      return;
+    }
+    onStack.add(pieceIndex);
+    const piece = run.pieces[pieceIndex];
+    const shape = SHAPES[piece.kind];
+    // for a joiner this is whichever entry got here first; for anything else there is only ever the one
+    const last = shape.joins ? segs[firstPart] : segs[segs.length - 1];
+    if (shape.fork) {
+      // two branches from the one entry, each its own length, so each continues on from wherever it itself
+      // ends: the field parts by which side of the channel it is on, and is raced apart until a joiner closes it
+      const right = exitOf(piece);
+      track.length = segs[0].start + segs[0].length;
+      if (right) walk(segs[0], right.x, right.y, right.z, right.facing, segs[0].branch);
+      const left = sideOf(piece, shape.fork.exit);
+      track.length = segs[1].start + segs[1].length;
+      walk(segs[1], left.x, left.y, left.z, left.facing, segs[1].branch);
+      onStack.delete(pieceIndex);
+      return;
+    }
+    // a joiner's own onward continuation is a field made whole again, not one of a split any longer
+    const onward = shape.joins ? 0 : branch;
+    const out = exitOf(piece);
+    if (out) walk(last, out.x, out.y, out.z, out.facing, onward);
+    onStack.delete(pieceIndex);
+  }
+
+  const start = run.pieces.findIndex((p) => p.kind === 'start');
+  if (start < 0) return track;
+  const segs = geometryOf(start);
+  commit(start, segs, 0, 0);
+  onwardDone.add(start);
+  continueFrom(start, segs, 0, 0);
+  return track;
 }
 
 /** Where along the track a distance falls: the sample at or before it. */
@@ -1137,10 +1368,21 @@ export function check(run: Run): string[] {
   for (const p of run.pieces) {
     const out = exitOf(p);
     if (out) exits.add(portalKey(out.x, out.y, out.z, out.facing));
+    const { fork } = SHAPES[p.kind];
+    if (fork) {
+      const side = sideOf(p, fork.exit);
+      exits.add(portalKey(side.x, side.y, side.z, side.facing));
+    }
   }
   run.pieces.forEach((p, i) => {
     if (p.kind === 'start') return;
     if (!exits.has(portalKey(p.x, p.y, p.z, p.facing))) problems.push(`piece ${i}, a ${p.kind}, joins nothing`);
+    const { joins } = SHAPES[p.kind];
+    if (joins) {
+      const at = sideOf(p, joins.at);
+      if (!exits.has(portalKey(at.x, at.y, at.z, p.facing)))
+        problems.push(`piece ${i}, a ${p.kind}, has a second entry that joins nothing`);
+    }
   });
 
   // walk it as a marble would, which is the only way to tell a run that ends from one that goes round for ever
@@ -1172,8 +1414,14 @@ export function check(run: Run): string[] {
     problems.push('there is no finish for a marble to stop in');
   }
 
+  // working the whole thing out finds what the walk above cannot, on the far side of a splitter: a branch that
+  // never reaches a joiner, or reaches one a different distance along than the branch that closes it does
+  const forked: string[] = [];
+  const track = compile(run, forked);
+  problems.push(...forked);
+
   // a run that walks clean can still pass through itself, where two parts that do not join come to the same place
-  if (problems.length === 0) problems.push(...clashes(run, compile(run)));
+  if (problems.length === 0) problems.push(...clashes(run, track));
   return problems;
 }
 
@@ -1197,8 +1445,21 @@ const CLEAR = 0.3,
 function clashes(run: Run, track: Track): string[] {
   const out: string[] = [];
   const { segments } = track;
+  // whether two segments join, straight on or by a splitter's fork: neighbours by position no longer means
+  // neighbours in the run, since a splitter and a joiner each have more than one segment meeting at one point
+  const joined = (a: number, b: number): boolean => {
+    const A = segments[a],
+      B = segments[b];
+    return (
+      A.next === b ||
+      B.next === a ||
+      !!(A.fork && (A.fork.a === b || A.fork.b === b)) ||
+      !!(B.fork && (B.fork.a === a || B.fork.b === a))
+    );
+  };
   for (let a = 0; a < segments.length; a++)
-    for (let b = a + 2; b < segments.length; b++) {
+    for (let b = a + 1; b < segments.length; b++) {
+      if (joined(a, b)) continue;
       const A = segments[a],
         B = segments[b];
       if (A.piece === B.piece) continue;
@@ -1233,7 +1494,7 @@ export function checkTrack(track: Track): string[] {
     if (seg.next !== -1 && (seg.next < 0 || seg.next >= track.segments.length))
       problems.push(`segment ${i} goes on to ${seg.next}, which is not a segment`);
     if (!(seg.length > 0)) problems.push(`segment ${i} is ${seg.length} long`);
-    const prev = i === 0 ? null : track.segments[i - 1];
+    const prev = seg.prev < 0 ? null : track.segments[seg.prev];
     const before = prev ? prev.start + prev.length + prev.gap : 0;
     const drops = seg.flies || seg.funnel !== null;
     if (drops !== seg.gap > 0 && seg.next >= 0)

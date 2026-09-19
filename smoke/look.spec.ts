@@ -271,6 +271,27 @@ test.describe('what it looks like', () => {
     });
   }
 
+  test("the catalog's splitter, parting the field and closing it again", async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('pieces');
+      g.pick(g.content().catalog.indexOf('Splitter'));
+      g.release();
+      g.follow(false);
+      g.step(150);
+      // the splitter's own shelf piece is a whole loop, start to finish, not the two cells the others are
+      g.look(17, 0, -2, { azimuth: -0.9, polar: 0.8, radius: 16 });
+      g.step(1);
+      return g.state().runName;
+    });
+    expect(on).toBe('Splitter');
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('splitter.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

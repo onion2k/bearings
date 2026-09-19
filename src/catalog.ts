@@ -16,11 +16,38 @@ export interface Entry {
   /** What it does, in a line. */
   about: string;
   /** The pieces it is shown among, itself included: most need only a start before and the end after. */
-  among: readonly Kind[];
+  among?: readonly Kind[];
+  /**
+   * A shelf entry laid out by hand rather than chained by `among`: what a
+   * splitter and a joiner need, since neither means anything alone and a
+   * plain chain of kinds cannot say where a second branch or a second entry
+   * goes.
+   */
+  laid?: Placed[];
 }
 
 /** A piece shown on its own, between the start and the end. */
 const alone = (kind: Kind): readonly Kind[] => ['start', kind, 'finish'];
+
+/**
+ * The splitter and the joiner shown together, the only way either means
+ * anything: a lane parted in two, raced apart a cell either side of the
+ * middle, and closed again. The fork sits a lattice cell across from the
+ * lane that stayed straight, which is the splitter's own shape, not a
+ * choice made here.
+ */
+function splitAndJoin(): Placed[] {
+  const start: Placed = { kind: 'start', x: 0, y: 0, z: 0, facing: 0 };
+  const splitter: Placed = { kind: 'splitter', ...exitOf(start)! };
+  const mainStart = exitOf(splitter)!;
+  const forkStart = { x: mainStart.x, y: mainStart.y + 1, z: mainStart.z, facing: mainStart.facing };
+  const main: Placed = { kind: 'straight', ...mainStart };
+  const fork: Placed = { kind: 'straight', ...forkStart };
+  const joiner: Placed = { kind: 'joiner', ...exitOf(main)! };
+  const after: Placed = { kind: 'straight', ...exitOf(joiner)! };
+  const finish: Placed = { kind: 'finish', ...exitOf(after)! };
+  return [start, splitter, main, fork, joiner, after, finish];
+}
 
 export const CATALOG: Record<Kind, Entry> = {
   start: {
@@ -93,6 +120,16 @@ export const CATALOG: Record<Kind, Entry> = {
     about: 'Off a lip into a bowl the field goes round, each until it is slow enough to drop through.',
     among: alone('funnel'),
   },
+  splitter: {
+    name: 'Splitter',
+    about: 'Parts the field in two by which side of the middle it is on, each way its own lane from here.',
+    laid: splitAndJoin(),
+  },
+  joiner: {
+    name: 'Joiner',
+    about: 'Brings two lanes back into one, in whatever order the two of them hand the field on.',
+    laid: splitAndJoin(),
+  },
   shallow: {
     name: 'Shallow straight',
     about: 'Two cells along and a level down: half as steep as a ramp, at a chute’s width.',
@@ -141,7 +178,7 @@ function lay(kinds: readonly Kind[]): Placed[] {
 export const PIECES: readonly Run[] = KINDS.map((kind) => ({
   id: `piece-${kind.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
   name: CATALOG[kind].name,
-  pieces: lay(CATALOG[kind].among),
+  pieces: CATALOG[kind].laid ?? lay(CATALOG[kind].among!),
 }));
 
 /** What each piece on the shelf does, in the same order: for the board, in place of a run's best time. */

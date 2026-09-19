@@ -21,7 +21,6 @@ import {
   LEVEL,
   type Bowl,
   type Pose,
-  type Segment,
   type Track,
   at,
   FELT_GRIP,
@@ -514,14 +513,17 @@ export class Marbles {
           this.takeOff(i);
           break;
         }
-        const next = track.segments[this.segment[i]].next;
+        const here = track.segments[this.segment[i]];
+        // a splitter hands the field on by which side of the middle it is on as it reaches the fork, in place
+        // of the one `next` every other piece has
+        const next = here.fork ? (this.across[i] < 0 ? here.fork.a : here.fork.b) : here.next;
         if (next < 0) {
           this.finish(i);
           break;
         }
-        this.along[i] -= track.segments[this.segment[i]].length;
+        this.along[i] -= here.length;
         this.segment[i] = next;
-        if (track.segments[next].next < 0) {
+        if (track.segments[next].next < 0 && !track.segments[next].fork) {
           this.finish(i);
           break;
         }
@@ -542,16 +544,16 @@ export class Marbles {
       } else this.crawling[i] = 0;
       // and never back off the start, nor back up over a gap into the air it came down out of
       if (this.along[i] < 0) {
-        const seg0 = this.segment[i];
-        if (seg0 === 0 || track.segments[seg0 - 1].flies || track.segments[seg0 - 1].funnel) {
+        const prev = track.segments[this.segment[i]].prev;
+        if (prev < 0 || track.segments[prev].flies || track.segments[prev].funnel) {
           // the end of the track stops it, as a wall would
           this.hold(i);
           this.along[i] = 0;
           if (this.speed[i] < 0) this.speed[i] = 0;
           this.pushedFromHold(i);
         } else {
-          this.segment[i] = seg0 - 1;
-          this.along[i] += track.segments[seg0 - 1].length;
+          this.segment[i] = prev;
+          this.along[i] += track.segments[prev].length;
         }
       }
     }
@@ -1001,16 +1003,25 @@ export class Marbles {
       this.throat(i, from);
       this.pushed[i] += Math.hypot(this.x[i] - x, this.y[i] - y);
     }
-    let s = this.track.segments[this.segment[i]].next;
-    for (let k = 0; k < LANDING_LOOK && s >= 0; k++) {
-      if (this.land(i, s)) return;
-      s = this.track.segments[s].next;
-    }
+    if (this.landFrom(i, this.segment[i], 0)) return;
     if (this.aloft[i] > AIR_TIME || this.z[i] < this.bottom - LEVEL * 2) {
       this.state[i] = LOST;
       this.lost++;
       this.events.lost?.(i, this.t);
     }
+  }
+
+  /**
+   * Whether a marble in flight comes down within `LANDING_LOOK` pieces of
+   * `s`, tried a piece at a time, and both ways at a splitter, since the
+   * side it will fall to has not been decided for something still in the
+   * air.
+   */
+  private landFrom(i: number, s: number, depth: number): boolean {
+    if (depth >= LANDING_LOOK) return false;
+    const seg = this.track.segments[s];
+    const onward = (n: number): boolean => n >= 0 && (this.land(i, n) || this.landFrom(i, n, depth + 1));
+    return seg.fork ? onward(seg.fork.a) || onward(seg.fork.b) : onward(seg.next);
   }
 
   /**
@@ -1067,7 +1078,7 @@ export class Marbles {
     this.vx[i] = this.vy[i] = this.vz[i] = 0;
     this.aloft[i] = 0;
     this.state[i] = RACING;
-    if (seg.next < 0) this.finish(i);
+    if (seg.next < 0 && !seg.fork) this.finish(i);
     return true;
   }
 
@@ -1179,6 +1190,7 @@ export class Marbles {
       for (let j = k + 1; j < n; j++) {
         const a = runs[k],
           b = runs[j];
+        if (this.apart(a, b)) continue;
         const da = this.far(b) - this.far(a),
           dc = this.across[b] - this.across[a];
         const d2 = da * da + dc * dc;
@@ -1217,6 +1229,7 @@ export class Marbles {
    * Whether they had to be moved at all.
    */
   private part(a: number, b: number): boolean {
+    if (this.apart(a, b)) return false;
     const touch = RADIUS * 2;
     const da = this.far(b) - this.far(a),
       dc = this.across[b] - this.across[a];
@@ -1253,24 +1266,28 @@ export class Marbles {
       // a push stops at the air either way: nothing is pushed back up onto the lip it flew from or into the
       // bowl it dropped out of, nor on across a gap or into a bowl without flying or dropping into it
       if (this.along[i] < 0) {
-        const before = track.segments[this.segment[i] - 1] as Segment | undefined;
+        const prev = seg.prev;
+        const before = prev < 0 ? undefined : track.segments[prev];
         // nor is a marble in the lane pushed back over the line it has crossed
         if (!before || before.flies || before.funnel || this.state[i] === FINISHED) {
           this.along[i] = 0;
           return;
         }
-        this.segment[i]--;
-        this.along[i] += track.segments[this.segment[i]].length;
+        this.segment[i] = prev;
+        this.along[i] += before.length;
       } else if (this.along[i] > seg.length) {
-        if (seg.next < 0 || seg.flies || track.segments[seg.next].funnel) {
+        // a splitter hands a shoved marble on by which side of the middle it is on, same as one that got there
+        // on its own
+        const next = seg.fork ? (this.across[i] < 0 ? seg.fork.a : seg.fork.b) : seg.next;
+        if (next < 0 || seg.flies || track.segments[next].funnel) {
           this.along[i] = seg.length;
           return;
         }
         this.along[i] -= seg.length;
-        this.segment[i] = seg.next;
+        this.segment[i] = next;
         // pushed over the line is over it: held short of it instead, a crowd squeezing into the last of a run was
         // pressed inside one another against it
-        if (this.state[i] === RACING && track.segments[seg.next].next < 0) this.finish(i);
+        if (this.state[i] === RACING && track.segments[next].next < 0 && !track.segments[next].fork) this.finish(i);
       } else return;
     }
   }
@@ -1332,6 +1349,17 @@ export class Marbles {
       z = this.point[2];
     this.onTrack(i);
     this.pushed[i] += Math.hypot(this.point[0] - x, this.point[1] - y, this.point[2] - z);
+  }
+
+  /**
+   * Whether two marbles are on branches a splitter parted, so nothing between them is measured: `far` overlaps
+   * across a splitter's two lanes on its own, which would otherwise read them as touching however far apart
+   * they really are, on their own side of it.
+   */
+  apart(a: number, b: number): boolean {
+    const ba = this.track.segments[this.segment[a]].branch,
+      bb = this.track.segments[this.segment[b]].branch;
+    return ba !== 0 && bb !== 0 && ba !== bb;
   }
 
   /** How far along the whole run a marble is: what places it against the others. */
@@ -1422,8 +1450,12 @@ export function checkMarbles(marbles: Marbles): string[] {
     const into = state === FLYING && piece.next >= 0 ? track.segments[piece.next].funnel : null;
     if (into && Math.hypot(marbles.x[i] - into.x, marbles.y[i] - into.y) > into.rim - RADIUS + 1e-3)
       problems.push(`marble ${i} is in the air off the side of a funnel's run in, outside its bowl`);
-    if (state === FINISHED && piece.next !== -1) problems.push(`marble ${i} is home on a piece short of the end`);
-    if (state === RACING && piece.next === -1) problems.push(`marble ${i} is still racing past the line`);
+    // a splitter's fork stands in place of `next` on the piece before it, so a segment with no `next` is not
+    // yet the end unless it has no fork either
+    if (state === FINISHED && (piece.next !== -1 || piece.fork))
+      problems.push(`marble ${i} is home on a piece short of the end`);
+    if (state === RACING && piece.next === -1 && !piece.fork)
+      problems.push(`marble ${i} is still racing past the line`);
     if (state === SWIRLING) {
       if (!piece.funnel) problems.push(`marble ${i} is going round a piece that is no funnel`);
       else if (marbles.bowlRadius(i) > piece.funnel.rim - RADIUS + 1e-3)
@@ -1460,7 +1492,7 @@ export function checkMarbles(marbles: Marbles): string[] {
       // shut in together, so those on the track, in a bowl and down its throat are held to it
       let apart = Infinity;
       const onTrack = (i: number) => marbles.state[i] === RACING || marbles.state[i] === FINISHED;
-      if (onTrack(a) && onTrack(b))
+      if (onTrack(a) && onTrack(b) && !marbles.apart(a, b))
         apart = Math.hypot(marbles.far(b) - marbles.far(a), marbles.across[b] - marbles.across[a]);
       else if (
         marbles.state[a] === SWIRLING &&

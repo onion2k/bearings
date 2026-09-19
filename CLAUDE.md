@@ -151,6 +151,41 @@ What to copy the shape of, when building something new:
   after and before every other kind there is. `check` refuses a run whose
   parts pass through each other. Copy that shape for anything the game has
   several of.
+- **A branch in the track: the splitter and the joiner.** The one place
+  `compile` is a graph and not a line: a splitter's own segment carries
+  `fork` — `a` to whichever side of the middle the field is on as it reaches
+  it, `b` to the other — in place of the one `next` every other segment has,
+  and the segments either side of it carry `branch`, a lane tag that keeps
+  `settle`'s pairwise checks and `checkMarbles`'s "inside each other" from
+  reading two marbles on separate branches as touching just because their
+  `far` — cumulative length along the run — happens to overlap while the
+  branches run in parallel. A joiner's second entry is matched to the
+  splitter's own fork lane by position, the same way every other piece's
+  entry is; the two are held to about the same length (`start`, within 15%
+  of the longer or one unit, whichever is more), not exactly, since a lane
+  moved a cell across is inherently about half again longer than a plain
+  straight of the same span. Both are shown together on the catalog's
+  shelf (`CATALOG`'s `laid`, an `Entry` field that lays a shelf piece out by
+  hand instead of chaining `among`, since neither piece means anything
+  alone). A kind at a chute's width can stand on a branch — proven by
+  placing the same kind on both, which lines a joiner up with both at once
+  since a facing-preserving kind hands the same lattice offset on from
+  either entry — but a kind wider than the cell a splitter opens between its
+  two lanes cannot, which `check` refuses rather than racing them through
+  each other; nor can a kind that turns, since the joiner's own facing then
+  no longer lines up with both branches' true offset. `test/joins.test.ts`'s
+  `a splitter and a joiner` covers what its blanket pairwise matrix cannot.
+  Both keep a chute's own width the whole way — narrowing the channel down
+  to fit the lattice cell between them was tried first, and pinched two
+  marbles still side by side from the wide chute before it before they had
+  anywhere near enough of the piece to settle apart in. Since the channel
+  itself cannot be a chute wide each while barely a lattice cell apart, the
+  wall a marble looked to run through is covered instead, in `scene.ts`, by
+  a solid wedge (`bar`, from `DIVIDER`/`DIVIDER_THICK`) stood on the point
+  the two lanes share — the splitter's own `fork` segment's far end, or
+  wherever two segments of different branches hand on to the same one next.
+  A change to how it looks, not to the track or the solver, and nothing a
+  test races through: only `smoke/look.spec.ts`'s own pictures see it.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
