@@ -229,11 +229,22 @@ belonging with those:
   quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
   worst since the gate in `Marbles.jumped`, and `checkMarbles` rules on it.
   The funnel's two jumps, into its bowl and out of its hole, were this. A
-  push is counted as explained, and two are still big: a crowd squeezing
-  into the neck of a gate's pen is parted by as much as a marble and a half
-  in one step, and a wheel's paddle comes down on a marble all at once and
-  shoves it clear. Each is next through `/bug`, and then pushes are held to
-  half a marble a step as well.
+  push is counted as explained, and one is still big: a wheel's paddle
+  comes down on a marble all at once and shoves it clear. That is next
+  through `/bug`, and then pushes are held to half a marble a step as well.
+  A crowd squeezing into the neck of a gate's pen was the other: held there
+  by a shut gate, the whole field spread out across the pen's full width,
+  and closing that down to the chute's over the last fifth of the piece
+  asked one step to undo all of it at once — seed 19 once shoved a marble
+  1.8, twice its own width. The gate's own shape now closes from where the
+  gate itself stands (`u`) rather than later, over four times the distance,
+  which cuts the worst of it by four in ten without asking less of the pen:
+  nothing narrows before the gate, so the field waiting on it is exactly as
+  wide as it ever was. It falls short of half a marble because that width
+  is what gives some runs their mixing: narrow the pen further and The
+  Chute's back half stops winning its one race in five, since the shuffle
+  a `/feature` might one day give a narrower pen would need to come from
+  somewhere else.
 - **Nothing is quite level.** A straight or a curve leans down by a
   twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
   always drains; a truly level piece let a crowd come to rest on it.

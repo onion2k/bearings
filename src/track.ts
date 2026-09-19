@@ -766,8 +766,13 @@ const SHAPES: Record<Kind, Shape> = {
     curve: rampCurve,
     // a pen a board wide ahead of the gate, closing to the chute after it: a gate across a chute lets a field
     // go only in the order it came, first held first out; a pen lets the held pile spread out abreast, and it
-    // comes out of the neck in whatever order the jostle gives it
-    width: opening(3.2, 0.2, 0.78),
+    // comes out of the neck in whatever order the jostle gives it. It closed from the pen's own width to the
+    // chute's over the last fifth of the piece: a field spread out abreast the whole pen, held there while the
+    // gate was shut, had to be undone in that short a stretch the moment it opened, and seed 19 once shoved a
+    // marble 1.8, twice its own width, in a single step. Closing from the gate itself (`u` below) on, over the
+    // rest of the piece, asks far less of any one step without asking less of the pen: nothing narrows before
+    // the gate, so the field waiting on it is exactly as wide as it ever was
+    width: opening(3.2, 0.2, 0.6),
     obstacles: [
       {
         u: 0.6,

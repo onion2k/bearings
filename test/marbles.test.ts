@@ -605,6 +605,45 @@ describe('the marbles', () => {
       expect(marbles.segment[0], 'and let through').toBeGreaterThan(1);
     });
 
+    it("lets the field out of the gate's pen without a push far past its own width", () => {
+      // a pen a board wide, closing to the chute over the last fifth of the piece, asked the settling to shove
+      // a marble twice its own width in one step to fit the field spread abreast past that short a pinch: seed
+      // 19 once moved marble 6 by 1.8. Closing from the gate on, over the rest of the piece, still lets the
+      // field spread out exactly as wide while it waits, and cuts the worst of it by four in ten
+      const run = chain(['start', 'ramp', 'gate', 'finish']);
+      const gateSeg = 2;
+      let worst = 0,
+        where = '';
+      for (let seed = 1; seed <= 200; seed++) {
+        const { marbles } = fieldOn(run, seed);
+        marbles.release();
+        const n = marbles.count;
+        const px = new Float32Array(n),
+          py = new Float32Array(n),
+          pz = new Float32Array(n),
+          seg0 = new Int32Array(n);
+        for (let f = 0; f < 60 * 60 && !marbles.over; f++) {
+          for (let i = 0; i < n; i++) {
+            px[i] = marbles.x[i];
+            py[i] = marbles.y[i];
+            pz[i] = marbles.z[i];
+            seg0[i] = marbles.segment[i];
+          }
+          marbles.step(DT);
+          for (let i = 0; i < n; i++) {
+            if (seg0[i] !== gateSeg || marbles.segment[i] !== gateSeg) continue;
+            const d = Math.hypot(marbles.x[i] - px[i], marbles.y[i] - py[i], marbles.z[i] - pz[i]);
+            if (d > worst) {
+              worst = d;
+              where = `seed ${seed}, marble ${i}`;
+            }
+          }
+        }
+      }
+      // comfortably below what it was (up to 2.07 over the same seeds) and above what it is now (up to about 1.2)
+      expect(worst, where).toBeLessThan(RADIUS * 3.3);
+    });
+
     it("never lets a marble through a wheel's paddle, whenever it arrives", () => {
       const run = chain(['start', 'ramp', 'wheel', 'straight', 'finish']);
       for (const phase of [0, 0.1, 0.2, 0.3]) {
