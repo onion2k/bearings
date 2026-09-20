@@ -17,7 +17,7 @@ describe('the pace gate', () => {
 
   it('paces whichever run it is given, and every one of them finishes', () => {
     for (const [index, run] of RUNS.entries()) {
-      const one = paceRun(1, 2, 3, index);
+      const one = paceRun(1, 2, 5, index);
       expect(one.finished, run.name).toBe(true);
       expect(one.minutes, run.name).toBeGreaterThan(0);
     }
@@ -26,7 +26,7 @@ describe('the pace gate', () => {
       long = RUNS.findIndex((r) => r.name === 'Switchback');
     expect(short).toBeGreaterThanOrEqual(0);
     expect(long).toBeGreaterThanOrEqual(0);
-    expect(paceRun(1, 2, 3, long).minutes).toBeGreaterThan(paceRun(1, 2, 3, short).minutes);
+    expect(paceRun(1, 2, 5, long).minutes).toBeGreaterThan(paceRun(1, 2, 5, short).minutes);
   });
 
   it('gives up at the cap, and says so', () => {

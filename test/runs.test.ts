@@ -17,6 +17,8 @@ const SPEED_LIMIT = (RADIUS * 2) / DT;
 const SEEDS = 24;
 /** How many races a run's randomness is judged over: enough that one odd race moves a figure by little. */
 const JUDGED = 60;
+/** How long a race may take before it is read as never finishing. The Stress Test's own hundred pieces took up to 127 s. */
+const RACE_FRAMES = 180 * 60;
 
 /** Kendall's tau between two orders of the same marbles: 1 the same order, 0 no relation, -1 the other way round. */
 function tau(a: number[], b: number[]): number {
@@ -57,7 +59,7 @@ function judge(run: Run): Judged {
     const off = track.segments.map(() => new Float64Array(marbles.count).fill(-1));
     const last = new Int32Array(marbles.count);
     marbles.release();
-    for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
+    for (let f = 0; f < RACE_FRAMES && !marbles.over; f++) {
       marbles.step(DT);
       for (let i = 0; i < marbles.count; i++) {
         const s = marbles.segment[i];
@@ -144,7 +146,7 @@ describe('the runs that come with the game', () => {
         for (let seed = 1; seed <= SEEDS; seed++) {
           const marbles = new Marbles(track, {}, { random: seeded(seed) });
           marbles.release();
-          for (let f = 0; f < 120 * 60 && !marbles.over; f++) {
+          for (let f = 0; f < RACE_FRAMES && !marbles.over; f++) {
             marbles.step(DT);
             for (let i = 0; i < marbles.count; i++)
               fastest = Math.max(

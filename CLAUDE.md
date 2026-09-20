@@ -210,6 +210,29 @@ What to copy the shape of, when building something new:
   jump on to a chute, and none once it landed on a peg board. A run rebuilt
   enough to change its races gets a new id, so a best set on the old one is
   not held against the new; the game drops bests for ids it no longer has.
+  Stitching whole existing runs together for the Stress Test's hundred
+  pieces (every kind, `MAX_PIECES`'s own ceiling) found what a run ten
+  times the usual length runs into. Laid out piece after piece the way a
+  short run is, it needed a camera three hundred units further back than
+  any other run and stood a sliver in the corner of the screen for it;
+  folded into a box with turns instead — a lawnmower's own rows, stepping
+  one level further down each turn rather than drifting across the world —
+  what carries the length is depth, and it frames like any other run. A
+  turn costs a field more time than a straight the same length, so the
+  fold that fixed the screen also made the run slower, which moved
+  `pace.ts`'s own `capMinutes` (`test/pace.test.ts`'s smaller one, and
+  `smoke/progress.spec.ts`'s `settle` and `test/runs.test.ts`'s own race
+  cap, too) a second time over — each sized to the runs that existed, not
+  to whatever a future one might be, and a run long enough moves all of
+  them. And a piece with something in the way keeps the field's order
+  about as well as the field it meets is already spread out: a splitter
+  and a joiner hand two equal lanes back on in lock step, exactly as
+  evenly spaced as they went in, and the first piece with something in the
+  way to meet that field afterward reads as though it did nothing,
+  whatever it is and however far downstream it sits — moved to stand
+  before the fork instead of tuned in place, which is where the run's
+  pegboards live now, and nothing with something in the way stands between
+  the joiner and the cup.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`), the pace gate
   (`scripts/pace.ts`) and the race bench (`scripts/bench.ts`, its
   arithmetic in `scripts/benching.ts`). Each has unit tests of its own

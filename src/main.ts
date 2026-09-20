@@ -163,7 +163,9 @@ async function main() {
     minPolar: 0.15,
     maxPolar: 1.45,
     minDistance: 12,
-    maxDistance: 240,
+    // the Stress Test's hundred pieces need a diagonal of about 460 to stand back far enough to fit; the
+    // ceiling is comfortably past that, not just past it, so a run laid out even more spread out still frames
+    maxDistance: 800,
     rotateSpeed: 0.4,
     zoomSpeed: 0.8,
     panSpeed: 0,

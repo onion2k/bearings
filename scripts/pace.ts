@@ -22,9 +22,12 @@ const DT = 1 / 60;
 /**
  * The seeds and races each figure is taken over, and how long a seed may take before it is called stuck. The
  * cap is twice the slowest seed seen: Switchback's ten races took up to 6.1 minutes over seeds 1 to 16 once
- * its pegs, wheel and pens were in, and a cap under that calls a slow seed stuck when it is not.
+ * its pegs, wheel and pens were in, and a cap under that calls a slow seed stuck when it is not. The Stress
+ * Test's hundred pieces moved the slowest seen to its own ten races taking up to 20.79 minutes, folded into
+ * a box of turns rather than run straight out — a turn costs a field more time than a straight the same
+ * length, so the fold that let it fit on a screen also made it slower.
  */
-export const CHECK = { seeds: [1, 2, 3, 4], races: 10, capMinutes: 12 };
+export const CHECK = { seeds: [1, 2, 3, 4], races: 10, capMinutes: 42 };
 /** How far the figure may move from the baseline, as a share of it, before the check fails. */
 export const TOLERANCE = 0.2;
 

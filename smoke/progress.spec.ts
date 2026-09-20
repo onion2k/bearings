@@ -152,7 +152,8 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
     await page.evaluate(() => window.game!.release());
     const raced = await page.evaluate(() => {
       const g = window.game!;
-      g.settle(120);
+      // the Stress Test's hundred pieces, folded into a box of turns, took up to 127 s to race through
+      g.settle(180);
       return [g.state(), g.invariants()] as const;
     });
     expect(raced[1], `invariants after racing ${content.runs[i]}`).toEqual([]);

@@ -185,6 +185,131 @@ export const CROSSING: Run = {
 };
 
 /**
+ * The stress test: a hundred pieces, `MAX_PIECES`'s own ceiling, and every
+ * kind of piece the catalog has, at least once. Folded into a box with
+ * turns rather than run straight out — laid out end to end the first time,
+ * it needed a camera three hundred units further back than any other run
+ * and stood a sliver in the corner of the screen for it — so what carries
+ * the length is depth, one level further down each turn, not width.
+ *
+ * Every piece with something in the way to break the field up sits early,
+ * while the field is still off the gate and fresh, save the pegboards
+ * scattered through the long middle for the fold's own sake: a splitter
+ * and a joiner hand two equal lanes back on in lock step, exactly as evenly
+ * spaced as they went in, and the first piece with something in the way to
+ * meet that field reads as though it did nothing, whatever it is — moved
+ * once, tried right after the joiner and failing there however it was
+ * built around, not tuned in place. The pegboards sit before the fork
+ * instead, and nothing stands between the joiner and the cup.
+ */
+export const STRESS: Run = {
+  id: 'stress-test-1',
+  name: 'Stress Test',
+  pieces: [
+    { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
+    { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'curveRight', x: 3, y: 0, z: -2, facing: 0 },
+    { kind: 'pegs', x: 4, y: -1, z: -2, facing: 3 },
+    { kind: 'curveLeft', x: 4, y: -3, z: -3, facing: 3 },
+    { kind: 'gate', x: 5, y: -4, z: -3, facing: 0 },
+    { kind: 'curveLeft', x: 6, y: -4, z: -4, facing: 0 },
+    { kind: 'wheel', x: 7, y: -3, z: -4, facing: 1 },
+    { kind: 'curveRight', x: 7, y: -2, z: -5, facing: 1 },
+    { kind: 'funnel', x: 8, y: -1, z: -5, facing: 0 },
+    { kind: 'curveRight', x: 10, y: 0, z: -8, facing: 0 },
+    { kind: 'spiralLeft', x: 11, y: -1, z: -8, facing: 3 },
+    { kind: 'curveLeft', x: 11, y: -1, z: -10, facing: 3 },
+    { kind: 'spiralRight', x: 12, y: -2, z: -10, facing: 0 },
+    { kind: 'curveRight', x: 12, y: -2, z: -12, facing: 0 },
+    { kind: 'jump', x: 13, y: -3, z: -12, facing: 3 },
+    { kind: 'curveRight', x: 13, y: -8, z: -15, facing: 3 },
+    { kind: 'shallow', x: 12, y: -9, z: -15, facing: 2 },
+    { kind: 'curveLeft', x: 10, y: -9, z: -16, facing: 2 },
+    { kind: 'shallowWide', x: 9, y: -10, z: -16, facing: 3 },
+    { kind: 'curveLeft', x: 9, y: -12, z: -17, facing: 3 },
+    { kind: 'shallowBroad', x: 10, y: -13, z: -17, facing: 0 },
+    { kind: 'curveRight', x: 12, y: -13, z: -18, facing: 0 },
+    { kind: 'narrow', x: 13, y: -14, z: -18, facing: 3 },
+    { kind: 'curveRight', x: 13, y: -16, z: -19, facing: 3 },
+    { kind: 'drop', x: 12, y: -17, z: -19, facing: 2 },
+    { kind: 'pegs', x: 11, y: -17, z: -21, facing: 2 },
+    { kind: 'drop', x: 9, y: -17, z: -22, facing: 2 },
+    { kind: 'curveRight', x: 8, y: -17, z: -24, facing: 2 },
+    { kind: 'curveRight', x: 7, y: -16, z: -24, facing: 1 },
+    { kind: 'ramp', x: 8, y: -15, z: -24, facing: 0 },
+    { kind: 'bumps', x: 9, y: -15, z: -25, facing: 0 },
+    { kind: 'ramp', x: 11, y: -15, z: -26, facing: 0 },
+    { kind: 'curveLeft', x: 12, y: -15, z: -27, facing: 0 },
+    { kind: 'curveLeft', x: 13, y: -14, z: -27, facing: 1 },
+    { kind: 'drop', x: 12, y: -13, z: -27, facing: 2 },
+    { kind: 'bumps', x: 11, y: -13, z: -29, facing: 2 },
+    { kind: 'drop', x: 9, y: -13, z: -30, facing: 2 },
+    { kind: 'curveRight', x: 8, y: -13, z: -32, facing: 2 },
+    { kind: 'curveRight', x: 7, y: -12, z: -32, facing: 1 },
+    { kind: 'ramp', x: 8, y: -11, z: -32, facing: 0 },
+    { kind: 'pegs', x: 9, y: -11, z: -33, facing: 0 },
+    { kind: 'ramp', x: 11, y: -11, z: -34, facing: 0 },
+    { kind: 'curveLeft', x: 12, y: -11, z: -35, facing: 0 },
+    { kind: 'curveLeft', x: 13, y: -10, z: -35, facing: 1 },
+    { kind: 'drop', x: 12, y: -9, z: -35, facing: 2 },
+    { kind: 'pegs', x: 11, y: -9, z: -37, facing: 2 },
+    { kind: 'drop', x: 9, y: -9, z: -38, facing: 2 },
+    { kind: 'curveRight', x: 8, y: -9, z: -40, facing: 2 },
+    { kind: 'curveRight', x: 7, y: -8, z: -40, facing: 1 },
+    { kind: 'ramp', x: 8, y: -7, z: -40, facing: 0 },
+    { kind: 'bumps', x: 9, y: -7, z: -41, facing: 0 },
+    { kind: 'ramp', x: 11, y: -7, z: -42, facing: 0 },
+    { kind: 'curveLeft', x: 12, y: -7, z: -43, facing: 0 },
+    { kind: 'curveLeft', x: 13, y: -6, z: -43, facing: 1 },
+    { kind: 'drop', x: 12, y: -5, z: -43, facing: 2 },
+    { kind: 'bumps', x: 11, y: -5, z: -45, facing: 2 },
+    { kind: 'drop', x: 9, y: -5, z: -46, facing: 2 },
+    { kind: 'curveRight', x: 8, y: -5, z: -48, facing: 2 },
+    { kind: 'curveRight', x: 7, y: -4, z: -48, facing: 1 },
+    { kind: 'ramp', x: 8, y: -3, z: -48, facing: 0 },
+    { kind: 'pegs', x: 9, y: -3, z: -49, facing: 0 },
+    { kind: 'ramp', x: 11, y: -3, z: -50, facing: 0 },
+    { kind: 'curveLeft', x: 12, y: -3, z: -51, facing: 0 },
+    { kind: 'curveLeft', x: 13, y: -2, z: -51, facing: 1 },
+    { kind: 'drop', x: 12, y: -1, z: -51, facing: 2 },
+    { kind: 'pegs', x: 11, y: -1, z: -53, facing: 2 },
+    { kind: 'drop', x: 9, y: -1, z: -54, facing: 2 },
+    { kind: 'curveRight', x: 8, y: -1, z: -56, facing: 2 },
+    { kind: 'curveRight', x: 7, y: 0, z: -56, facing: 1 },
+    { kind: 'ramp', x: 8, y: 1, z: -56, facing: 0 },
+    { kind: 'bumps', x: 9, y: 1, z: -57, facing: 0 },
+    { kind: 'ramp', x: 11, y: 1, z: -58, facing: 0 },
+    { kind: 'curveLeft', x: 12, y: 1, z: -59, facing: 0 },
+    { kind: 'curveLeft', x: 13, y: 2, z: -59, facing: 1 },
+    { kind: 'drop', x: 12, y: 3, z: -59, facing: 2 },
+    { kind: 'bumps', x: 11, y: 3, z: -61, facing: 2 },
+    { kind: 'drop', x: 9, y: 3, z: -62, facing: 2 },
+    { kind: 'splitter', x: 8, y: 3, z: -64, facing: 2 },
+    { kind: 'straight', x: 7, y: 3, z: -64, facing: 2 },
+    { kind: 'straight', x: 7, y: 2, z: -64, facing: 2 },
+    { kind: 'joiner', x: 6, y: 3, z: -64, facing: 2 },
+    { kind: 'straight', x: 5, y: 3, z: -64, facing: 2 },
+    { kind: 'ramp', x: 4, y: 3, z: -64, facing: 2 },
+    { kind: 'straight', x: 3, y: 3, z: -65, facing: 2 },
+    { kind: 'curveRight', x: 2, y: 3, z: -65, facing: 2 },
+    { kind: 'curveRight', x: 1, y: 4, z: -65, facing: 1 },
+    { kind: 'straight', x: 2, y: 5, z: -65, facing: 0 },
+    { kind: 'ramp', x: 3, y: 5, z: -65, facing: 0 },
+    { kind: 'straight', x: 4, y: 5, z: -66, facing: 0 },
+    { kind: 'curveLeft', x: 5, y: 5, z: -66, facing: 0 },
+    { kind: 'curveLeft', x: 6, y: 6, z: -66, facing: 1 },
+    { kind: 'straight', x: 5, y: 7, z: -66, facing: 2 },
+    { kind: 'ramp', x: 4, y: 7, z: -66, facing: 2 },
+    { kind: 'straight', x: 3, y: 7, z: -67, facing: 2 },
+    { kind: 'curveRight', x: 2, y: 7, z: -67, facing: 2 },
+    { kind: 'curveRight', x: 1, y: 8, z: -67, facing: 1 },
+    { kind: 'straight', x: 2, y: 9, z: -67, facing: 0 },
+    { kind: 'ramp', x: 3, y: 9, z: -67, facing: 0 },
+    { kind: 'finish', x: 4, y: 9, z: -68, facing: 0 },
+  ],
+};
+
+/**
  * Every run that comes with the game, in the order they are offered. The
  * first is the one a new player starts on. A run's id is what a save keeps
  * its best under, so it never changes once a run has shipped; a run whose
@@ -195,4 +320,4 @@ export const CROSSING: Run = {
  * with them, and The Tower when its funnel went down a level. Each carries
  * the id of its latest layout.
  */
-export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK, FORK, CROSSING];
+export const RUNS: readonly Run[] = [FIRST, SHORT, TOWER, LEAP, SWITCHBACK, FORK, CROSSING, STRESS];
