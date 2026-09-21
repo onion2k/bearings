@@ -18,7 +18,7 @@
  */
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
-import { SLOTS } from '../src/cameras';
+import { MAX_SLOTS } from '../src/cameras';
 import { MARBLES } from '../src/marbles';
 import { RUNS } from '../src/runs';
 import { MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
@@ -34,8 +34,8 @@ const DT = 1 / 60;
  */
 export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }>> = {
   marbles: { ceiling: MARBLES },
-  // four cameras, each on one marble, and never more however long the screen is split
-  'cameras followed': { ceiling: SLOTS },
+  // a camera to a marble at most, and never more however long the screen is split
+  'cameras followed': { ceiling: MAX_SLOTS },
   segments: { ceiling: MAX_SEGMENTS },
   samples: { ceiling: MAX_SAMPLES },
   // the save is three fields and has to stay three, however long it is played

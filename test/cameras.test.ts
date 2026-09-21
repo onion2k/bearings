@@ -1,14 +1,14 @@
 /** Four cameras, each on a marble: who is followed, when a camera changes hands, and where each looks from. */
 import { describe, expect, it } from 'vitest';
-import { Cameras, SLOTS, SPLIT_VIEW } from '../src/cameras';
+import { Cameras, MAX_SLOTS, SPLIT_VIEW } from '../src/cameras';
 import { FINISHED, LOST, RACING, STALLED } from '../src/marbles';
 import { DT, newGame } from './helpers';
 
 /** A game let go with four players holding these marbles, in player order. */
-function played(picks: number[], seed = 1) {
+function played(picks: number[], seed = 1, views = 4) {
   const { game } = newGame(seed);
   for (const m of picks) game.claim(m);
-  const cameras = new Cameras();
+  const cameras = new Cameras(views);
   const follow = () => cameras.assign(game.marbles, game.players, game.standing());
   return { game, cameras, follow };
 }
@@ -21,13 +21,14 @@ describe('the four cameras', () => {
     follow();
     expect([...cameras.marble].slice(0, 2)).toEqual([5, 2]);
     const rest = game.standing().filter((m) => m !== 5 && m !== 2);
-    expect([...cameras.marble].slice(2)).toEqual(rest.slice(0, SLOTS - 2));
+    expect([...cameras.marble].slice(2, 4)).toEqual(rest.slice(0, 2));
+    expect([...cameras.marble].slice(4), 'and no camera past the four there are').toEqual([-1, -1, -1, -1]);
   });
 
   it('never follow a marble twice, and follow nobody where there is nobody left', () => {
     const { cameras, follow } = played([0, 1, 2, 3, 4]);
     follow();
-    expect(new Set(followed(cameras)).size).toBe(SLOTS);
+    expect(new Set(followed(cameras)).size).toBe(4);
     expect(followed(cameras)).toEqual([0, 1, 2, 3]);
   });
 
@@ -55,7 +56,7 @@ describe('the four cameras', () => {
       const took = cameras.marble[1];
       expect(game.marbles.state[took], `after state ${done}`).toBe(RACING);
       expect(took).not.toBe(1);
-      expect(new Set(followed(cameras)).size).toBe(SLOTS);
+      expect(new Set(followed(cameras)).size).toBe(4);
     }
   });
 
@@ -75,7 +76,7 @@ describe('the four cameras', () => {
     // three marbles racing and the rest done with
     for (let i = 3; i < 8; i++) game.marbles.state[i] = LOST;
     cameras.assign(game.marbles, game.players, game.standing());
-    expect(followed(cameras).length).toBeLessThanOrEqual(SLOTS);
+    expect(followed(cameras).length).toBeLessThanOrEqual(4);
     expect(new Set(followed(cameras)).size).toBe(followed(cameras).length);
   });
 
@@ -83,7 +84,7 @@ describe('the four cameras', () => {
     const { cameras, follow } = played([3]);
     follow();
     cameras.reset();
-    expect([...cameras.marble]).toEqual([-1, -1, -1, -1]);
+    expect([...cameras.marble]).toEqual(Array(MAX_SLOTS).fill(-1));
   });
 
   it('put each camera on its marble the first time, and ease to it after', () => {
@@ -106,7 +107,7 @@ describe('the four cameras', () => {
     follow();
     cameras.ease(game.marbles, [0, 0, 0], 0.06);
     const out = [0, 0, 0];
-    for (let s = 0; s < SLOTS; s++) {
+    for (let s = 0; s < 4; s++) {
       cameras.eye(s, out);
       const dx = out[0] - cameras.target[s * 3],
         dy = out[1] - cameras.target[s * 3 + 1],
@@ -114,5 +115,25 @@ describe('the four cameras', () => {
       expect(Math.hypot(dx, dy, dz)).toBeCloseTo(SPLIT_VIEW.radius, 6);
       expect(dz).toBeCloseTo(SPLIT_VIEW.radius * Math.cos(SPLIT_VIEW.polar), 6);
     }
+  });
+
+  it('follow every marble in the field, picked ones first, when there are eight cameras', () => {
+    const { game, cameras, follow } = played([5, 2], 1, 8);
+    follow();
+    expect([...cameras.marble].slice(0, 2)).toEqual([5, 2]);
+    expect([...cameras.marble].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(game.marbles.count).toBe(8);
+  });
+
+  it('hand over among eight as marbles finish, none twice, the last held where it finished', () => {
+    const { game, cameras, follow } = played([], 1, 8);
+    game.release();
+    for (let f = 0; f < 60; f++) game.step(DT);
+    follow();
+    game.marbles.state[3] = FINISHED;
+    follow();
+    // there is nobody left who is not followed already, so the camera stays on the marble that finished
+    expect(cameras.marble[cameras.marble.indexOf(3)]).toBe(3);
+    expect(new Set(followed(cameras)).size).toBe(8);
   });
 });

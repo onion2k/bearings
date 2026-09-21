@@ -136,9 +136,9 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       [
         2,
         () => {
-          // the screen split in four or whole again, at any time: a way of looking, so nothing it does may show
-          // in the race, and the invariants have every camera on a marble that is there, none twice
-          game.setSplit(!game.split);
+          // the screen split in four, in eight or whole again, at any time: a way of looking, so nothing it does
+          // may show in the race, and the invariants have every camera on a marble that is there, none twice
+          game.setSplit(([0, 4, 8] as const)[Math.floor(random() * 3)]);
           busy = Math.floor(between(5, 40));
           did('split');
         },

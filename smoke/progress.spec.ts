@@ -227,19 +227,29 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   expect(problems).toEqual([]);
 });
 
-test('the screen split in four follows four marbles through a race, on the key and on the board', async ({ page }) => {
+test('the screen split in four and in eight follows the marbles through a race, on the key and on the board', async ({
+  page,
+}) => {
   const problems = watch(page);
   await start(page, { seed: 3, paused: true });
+  const cellOf = (box: { x: number; y: number; width: number; height: number }, columns: number, rows: number) => {
+    const size = page.viewportSize()!;
+    const x = box.x + box.width / 2,
+      y = box.y + box.height / 2;
+    return { x: Math.floor((x / size.width) * columns), y: Math.floor((y / size.height) * rows) };
+  };
 
   // whole to begin with: nothing is followed
   expect((await page.evaluate(() => window.game!.cameras())).on).toBe(false);
   await expect(page.locator('#toSplit')).not.toHaveClass(/on/);
+  await expect(page.locator('#toSplit')).toHaveText('Split');
 
-  // S splits it, and the board's button says so
+  // S splits it in four, and the board's button says so
   await page.keyboard.press('s');
   await expect(page.locator('#toSplit')).toHaveClass(/on/);
+  await expect(page.locator('#toSplit')).toHaveText('Split 4');
   let cameras = await page.evaluate(() => window.game!.cameras());
-  expect(cameras.on).toBe(true);
+  expect(cameras.views).toBe(4);
   expect(new Set(cameras.marbles).size, 'four marbles, none twice').toBe(4);
 
   // the picked marbles are the ones followed, first
@@ -248,56 +258,78 @@ test('the screen split in four follows four marbles through a race, on the key a
     g.claim(6);
     g.claim(2);
   });
+  // S again is eight, and again whole, and again four
   await page.keyboard.press('s');
+  await expect(page.locator('#toSplit')).toHaveText('Split 8');
+  cameras = await page.evaluate(() => window.game!.cameras());
+  expect(cameras.views).toBe(8);
+  expect([...cameras.marbles].sort(), 'every marble in the field, once').toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  expect(cameras.marbles.slice(0, 2)).toEqual([6, 2]);
+  const eight = page.locator('#tags .tag');
+  for (let s = 0; s < 8; s++) {
+    await expect(eight.nth(s)).toBeVisible();
+    const cell = cellOf((await eight.nth(s).boundingBox())!, 4, 2);
+    expect(cell, `caption ${s} in its view, four across and two down`).toEqual({ x: s % 4, y: Math.floor(s / 4) });
+  }
+  await page.keyboard.press('s');
+  await expect(page.locator('#tags')).toBeHidden();
   await page.keyboard.press('s');
   cameras = await page.evaluate(() => window.game!.cameras());
+  expect(cameras.views).toBe(4);
   expect(cameras.marbles.slice(0, 2)).toEqual([6, 2]);
 
-  // each quarter says who it follows, in its own corner of the screen: the picked ones with their player
+  // each view says who it follows, in its own place on the screen: the picked ones with their player
   const tags = page.locator('#tags .tag');
   await expect(page.locator('#tags')).toBeVisible();
   await expect(tags.nth(0)).toHaveText('P1 · Bone');
   await expect(tags.nth(1)).toHaveText('P2 · Sulphur');
   for (let s = 0; s < 4; s++) {
     await expect(tags.nth(s)).toBeVisible();
-    const box = (await tags.nth(s).boundingBox())!;
-    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    expect(centre.x > 640, `caption ${s} in its quarter, across`).toBe((s & 1) === 1);
-    expect(centre.y > 400, `caption ${s} in its quarter, down`).toBe(s >= 2);
+    const cell = cellOf((await tags.nth(s).boundingBox())!, 2, 2);
+    expect(cell, `caption ${s} in its quarter`).toEqual({ x: s & 1, y: s >> 1 });
   }
+  await expect(tags.nth(4), 'and no caption for a view there is not').toBeHidden();
 
-  // raced through, with the rules holding at every stage and no camera on a marble that is not there
-  for (let stage = 0; stage < 6; stage++) {
-    const seen = await page.evaluate(() => {
+  // raced through, four views and then eight, with the rules holding at every stage and no camera on a marble
+  // that is not there
+  for (let stage = 0; stage < 8; stage++) {
+    const seen = await page.evaluate((n) => {
       const g = window.game!;
+      if (n === 4) g.split(8);
       if (g.state().racing === 0 && !g.state().over) g.release();
       g.step(300);
       return [g.cameras(), g.invariants()] as const;
-    });
+    }, stage);
     expect(seen[1], `invariants after stage ${stage} split`).toEqual([]);
     const live = seen[0].marbles.filter((m) => m >= 0);
     expect(new Set(live).size, `no two cameras on one marble, stage ${stage}`).toBe(live.length);
     for (const target of seen[0].targets) for (const v of target) expect(Number.isFinite(v)).toBe(true);
   }
 
-  // the window changing shape while it is split: upright is one quarter over the next, wide is two and two, and
-  // neither leaves the game broken or a camera off its marble
-  for (const size of [
-    { width: 700, height: 900 },
-    { width: 1001, height: 601 },
-    { width: 1280, height: 800 },
-  ]) {
-    await page.setViewportSize(size);
-    const shown = await page.evaluate(() => {
-      const g = window.game!;
-      g.step(5);
-      return [g.cameras(), g.invariants()] as const;
-    });
-    expect(shown[1], `invariants at ${size.width}x${size.height} split`).toEqual([]);
-    expect(shown[0].on).toBe(true);
+  // the window changing shape while it is split, in eight and in four: upright and wide grids, neither
+  // leaving the game broken or a camera off its marble
+  for (const views of [8, 4] as const) {
+    await page.evaluate((v) => window.game!.split(v), views);
+    for (const size of [
+      { width: 700, height: 900 },
+      { width: 1001, height: 601 },
+      { width: 1280, height: 800 },
+    ]) {
+      await page.setViewportSize(size);
+      const shown = await page.evaluate(() => {
+        const g = window.game!;
+        g.step(5);
+        return [g.cameras(), g.invariants()] as const;
+      });
+      expect(shown[1], `invariants at ${size.width}x${size.height} in ${views}`).toEqual([]);
+      expect(shown[0].views).toBe(views);
+    }
   }
 
-  // the board's button puts it whole again, and it follows nobody
+  // the board's button goes round: from four to eight, and then whole again, following nobody
+  await page.evaluate(() => window.game!.split(4));
+  await page.locator('#toSplit').click();
+  await expect(page.locator('#toSplit')).toHaveText('Split 8');
   await page.locator('#toSplit').click();
   await expect(page.locator('#toSplit')).not.toHaveClass(/on/);
   await expect(page.locator('#tags')).toBeHidden();

@@ -10,7 +10,7 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { LightPool } from 'artshape-render/game/lights';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
-import { SLOTS } from './cameras';
+import { MAX_SLOTS, type Views } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT } from './catalog';
@@ -226,15 +226,17 @@ async function main() {
   let width = 1,
     height = 1;
   /**
-   * The four quarters of a split screen, each a texture of its own the renderer draws a camera's view into
-   * before it is copied on to the canvas: the renderer has one camera and draws the whole of what it is given,
-   * so a quarter is a small screen of its own. Made when the screen is split and on every resize, and let go
-   * of when it is whole again. Side by side two and two on a screen wider than it is tall; one over the
-   * other on a phone held upright, where four small squares would each show a marble and nothing round it.
+   * The views of a split screen, each a texture of its own the renderer draws a camera's view into before it
+   * is copied on to the canvas: the renderer has one camera and draws the whole of what it is given, so a view
+   * is a small screen of its own. Made when the screen is split and on every resize, and let go of when it is
+   * whole again. The grid follows the screen's shape so a view is never a long thin strip: four are two and
+   * two on a wide screen and one over the next on an upright one, where two and two would be four squares that
+   * each show a marble and nothing round it; eight are four across and two down, or two across and four down.
    */
   let quarters: GPUTexture[] = [];
   let quarterWidth = 1,
     quarterHeight = 1,
+    columns = 1,
     stacked = false;
   const layout = () => {
     for (const t of quarters) t.destroy();
@@ -244,42 +246,54 @@ async function main() {
       return;
     }
     stacked = height > width;
-    quarterWidth = Math.max(1, stacked ? width : width >> 1);
-    quarterHeight = Math.max(1, stacked ? height >> 2 : height >> 1);
+    columns = game.split === 8 ? (stacked ? 2 : 4) : stacked ? 1 : 2;
+    const rows = game.split / columns;
+    quarterWidth = Math.max(1, Math.floor(width / columns));
+    quarterHeight = Math.max(1, Math.floor(height / rows));
     renderer.resize(quarterWidth, quarterHeight);
-    quarters = Array.from({ length: SLOTS }, () =>
+    quarters = Array.from({ length: game.split }, () =>
       ctx.device.createTexture({
-        label: 'quarter',
+        label: 'view',
         size: [quarterWidth, quarterHeight],
         format: ctx.format,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       }),
     );
   };
-  /** One caption to a quarter: a dot of the marble's colour and its name. Made once; only the words change. */
-  const captions = Array.from({ length: SLOTS }, () => {
+  /** One caption to a view: a dot of the marble's colour and its name. Made once; only the words change. */
+  const captions = Array.from({ length: MAX_SLOTS }, () => {
     const el = document.createElement('span');
     el.className = 'tag';
     el.append(document.createElement('i'), document.createTextNode(''));
     tags.append(el);
     return { el, marble: -2, player: -2 };
   });
-  /** The captions put over their quarters for the layout there is, and read again for who is followed. */
+  /**
+   * The captions put over their views for the layout there is: over the top of each on a wide screen, where the
+   * board, the help line and the count have the corners, and at the foot of each on an upright one, where the
+   * board has the top left and there is no help line or count.
+   */
   const place = () => {
     tags.hidden = !game.split;
-    tags.classList.toggle('stacked', stacked);
+    board.classList.toggle('split', game.split > 0);
     captions.forEach((c, s) => {
-      c.el.style.left = stacked ? '100%' : `${((s & 1) * 50 + 25).toFixed(1)}%`;
-      c.el.style.top = stacked ? `${((s + 1) * 25).toFixed(1)}%` : `${(s >> 1) * 50}%`;
-      c.el.style.marginTop = stacked ? '-26px' : '8px';
-      c.el.style.marginLeft = stacked ? '-8px' : '0';
+      c.el.hidden = s >= game.split;
       c.marble = -2;
+      if (s >= game.split) return;
+      const cell = { x: s % columns, y: Math.floor(s / columns) };
+      const rows = game.split / columns;
+      // the first view's caption stays clear of the board over the top left, where a narrow view would put it
+      const across = `${(((cell.x + 0.5) / columns) * 100).toFixed(2)}%`;
+      c.el.style.left = s === 0 && !stacked ? `max(${across}, 290px)` : across;
+      c.el.style.top = `${(((cell.y + (stacked ? 1 : 0)) / rows) * 100).toFixed(2)}%`;
+      c.el.style.marginTop = stacked ? '-26px' : '8px';
     });
   };
   /** Each caption says who its camera follows, changing only when it does. */
   const say = () => {
     if (!game.split) return;
     captions.forEach((c, s) => {
+      if (s >= game.split) return;
       const marble = game.cameras.marble[s];
       const player = marble >= 0 ? game.players[marble] : 0;
       if (c.marble === marble && c.player === player) return;
@@ -304,12 +318,15 @@ async function main() {
     layout();
     place();
     if (!game.split) frameRun();
-    toSplit.classList.toggle('on', game.split);
+    toSplit.classList.toggle('on', game.split > 0);
+    toSplit.textContent = game.split ? `Split ${game.split}` : 'Split';
   };
-  const setSplit = (on: boolean) => {
-    game.setSplit(on);
+  const setSplit = (views: Views) => {
+    game.setSplit(views);
     resplit();
   };
+  /** Whole, then four views, then eight, then whole again. */
+  const cycleSplit = () => setSplit(game.split === 0 ? 4 : game.split === 4 ? 8 : 0);
   // a screen that changes shape before the off is framed again for its new shape; once they race, the
   // camera is the leader's
   addEventListener('resize', () => {
@@ -337,7 +354,7 @@ async function main() {
     if (!game.split) return renderer.frame(target.createView(), 'redraw', dt);
     const eye = [0, 0, 0];
     const { cameras } = game;
-    for (let s = 0; s < SLOTS; s++) {
+    for (let s = 0; s < game.split; s++) {
       cameras.eye(s, eye);
       cam.position = [eye[0], eye[1], eye[2]];
       cam.target = [cameras.target[s * 3], cameras.target[s * 3 + 1], cameras.target[s * 3 + 2]];
@@ -354,10 +371,8 @@ async function main() {
         ],
       })
       .end();
-    for (let s = 0; s < SLOTS; s++) {
-      const origin = stacked
-        ? { x: 0, y: s * quarterHeight }
-        : { x: (s & 1) * quarterWidth, y: (s >> 1) * quarterHeight };
+    for (let s = 0; s < game.split; s++) {
+      const origin = { x: (s % columns) * quarterWidth, y: Math.floor(s / columns) * quarterHeight };
       encoder.copyTextureToTexture(
         { texture: quarters[s] },
         { texture: target, origin },
@@ -493,7 +508,7 @@ async function main() {
     showOrder();
   };
   toRuns.addEventListener('click', () => shelve('runs'));
-  toSplit.addEventListener('click', () => setSplit(!game.split));
+  toSplit.addEventListener('click', cycleSplit);
   toPieces.addEventListener('click', () => shelve('pieces'));
   // a row of the board picked by a tap or a click, for the next player without a marble, or let go again
   order.addEventListener('click', (e) => {
@@ -505,7 +520,7 @@ async function main() {
     else if (intent === 'reset') game.reset();
     else if (intent === 'next') step(1);
     else if (intent === 'shelf') shelve(game.shelf === 'runs' ? 'pieces' : 'runs');
-    else if (intent === 'split') setSplit(!game.split);
+    else if (intent === 'split') cycleSplit();
     else {
       if (intent.pick < game.marbles.count) game.claim(game.standing()[intent.pick]);
     }

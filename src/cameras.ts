@@ -13,19 +13,25 @@
  */
 import { FINISHED, LOST, STALLED, type Marbles } from './marbles';
 
-/** How many cameras there are, and so how many marbles are followed at once. */
-export const SLOTS = 4;
+/** The most cameras there are: one to every marble of a full field, in the eight-way split. */
+export const MAX_SLOTS = 8;
+
+/** How many views the screen is split in: none, four, or eight. */
+export type Views = 0 | 4 | 8;
 
 /** Where a camera looks from, round the marble it follows: the same angles as the single view, much closer in. */
 export const SPLIT_VIEW = { azimuth: 0.9, polar: 0.95, radius: 16 };
 
 export class Cameras {
-  /** The marble each camera follows, or -1 for none. */
-  readonly marble = new Int32Array(SLOTS).fill(-1);
+  /** The marble each camera follows, or -1 for none: the first `count` of these are in use. */
+  readonly marble = new Int32Array(MAX_SLOTS).fill(-1);
   /** Where each camera looks, three numbers a slot, eased toward its marble. */
-  readonly target = new Float64Array(SLOTS * 3);
+  readonly target = new Float64Array(MAX_SLOTS * 3);
   /** Whether a camera's target has been put on something yet, so the first look is not a flight from the origin. */
-  private readonly placed = new Uint8Array(SLOTS);
+  private readonly placed = new Uint8Array(MAX_SLOTS);
+
+  /** How many cameras are in use: four, or eight. */
+  constructor(public count = 4) {}
 
   /** Every camera let go of its marble, to be given one again. */
   reset() {
@@ -48,7 +54,7 @@ export class Cameras {
     picked.sort((a, b) => players[a] - players[b]);
     const candidates = [...picked, ...standing].filter((m) => m < marbles.count && !done(m));
     const taken = (m: number) => this.marble.includes(m);
-    for (let s = 0; s < SLOTS; s++) {
+    for (let s = 0; s < this.count; s++) {
       const now = this.marble[s];
       // a camera on a marble still going keeps it; one on a marble that is done with hands over if anyone is left
       if (now >= 0 && !done(now)) continue;
@@ -64,7 +70,7 @@ export class Cameras {
    * its marble rather than arriving from wherever the last run left it.
    */
   ease(marbles: Marbles, home: readonly number[], chase: number) {
-    for (let s = 0; s < SLOTS; s++) {
+    for (let s = 0; s < this.count; s++) {
       const m = this.marble[s];
       const at = s * 3;
       const x = m >= 0 ? marbles.x[m] : home[0],

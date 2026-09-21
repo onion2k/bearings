@@ -15,7 +15,7 @@
  * That is the game, and it is also what makes a race exactly repeatable from
  * its seed, which every replay and every baseline rests on.
  */
-import { Cameras } from './cameras';
+import { Cameras, type Views } from './cameras';
 import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
@@ -71,11 +71,11 @@ export class Game {
    */
   readonly players = new Int8Array(MARBLES);
   /**
-   * Whether the screen is split in four, each quarter following a marble, and
-   * who they follow. A way of looking and nothing the race feels: it is not
+   * How many views the screen is split in, 0 for none, 4 or 8, each following
+   * a marble, and who they follow. A way of looking and nothing the race feels: it is not
    * saved, and it changes no marble.
    */
-  split = false;
+  split: Views = 0;
   readonly cameras = new Cameras();
 
   constructor(
@@ -152,15 +152,16 @@ export class Game {
     this.follow();
   }
 
-  /** The screen split in four, or whole again. */
-  setSplit(on: boolean) {
-    this.split = on;
+  /** The screen split in four or in eight, or whole again. */
+  setSplit(views: Views) {
+    this.split = views;
     this.follow();
   }
 
   /** The cameras given their marbles afresh, where the screen is split, and let go of them where it is not. */
   private follow() {
     this.cameras.reset();
+    this.cameras.count = this.split || 4;
     if (this.split) this.cameras.assign(this.marbles, this.players, this.standing());
   }
 

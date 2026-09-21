@@ -241,9 +241,6 @@
     white-space: nowrap;
     transform: translateX(-50%);
   }
-  #tags.stacked .tag {
-    transform: translateX(-100%);
-  }
   #tags .tag[hidden] {
     display: none;
   }
@@ -268,6 +265,15 @@
   #boot p {
     color: var(--dim);
   }
+  /* split on a phone: the board is only its header, or it covers the first views and their captions, which
+     carry the players' badges themselves */
+  @media (max-width: 600px) {
+    #board.split #best,
+    #board.split #order,
+    #board.split #verdict {
+      display: none;
+    }
+  }
   @media (max-width: 600px) {
     #help,
     #stats {
@@ -280,7 +286,9 @@
   <div id="shelves">
     <button id="toRuns" type="button" class="on">Runs</button>
     <button id="toPieces" type="button">Pieces</button>
-    <button id="toSplit" type="button" aria-label="Split the screen in four, each on a marble">Split</button>
+    <button id="toSplit" type="button" aria-label="Split the screen in four or eight, each view on a marble">
+      Split
+    </button>
   </div>
   <div id="picker">
     <button id="prev" type="button" aria-label="The run before">‹</button>

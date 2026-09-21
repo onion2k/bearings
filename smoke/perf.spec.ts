@@ -75,23 +75,26 @@ test('draws every run within budget, whole, with the field racing down it', asyn
   expect(problems).toEqual([]);
 });
 
-test('draws the screen split in four within budget, with every marble racing', async ({ page }) => {
+test('draws the screen split in four and in eight within budget, with every marble racing', async ({ page }) => {
   test.setTimeout(180_000);
   const problems = watch(page);
   await start(page, { seed: 11, paused: true });
-  const [whole, split] = await page.evaluate(async () => {
+  const [whole, four, eight] = await page.evaluate(async () => {
     const g = window.game!;
     g.release();
     g.step(120);
     const whole = await g.measureFrame();
-    g.split(true);
+    g.split(4);
     g.step(2);
-    return [whole, await g.measureFrame()];
+    const four = await g.measureFrame();
+    g.split(8);
+    g.step(2);
+    return [whole, four, await g.measureFrame()];
   });
-  console.log(
-    `perf: split, frame ${Math.round(split * 100) / 100} ms, against ${Math.round(whole * 100) / 100} ms whole`,
-  );
-  expect(split, 'the split screen within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  const ms = (n: number) => Math.round(n * 100) / 100;
+  console.log(`perf: split, frame ${ms(four)} ms in four and ${ms(eight)} ms in eight, against ${ms(whole)} ms whole`);
+  expect(four, 'the four-way split within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(eight, 'the eight-way split within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(problems).toEqual([]);
 });
 

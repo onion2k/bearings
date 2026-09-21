@@ -90,7 +90,7 @@ describe('what must always hold', () => {
 describe('the cameras', () => {
   it('follow real marbles, none twice', () => {
     const { game } = newGame();
-    game.setSplit(true);
+    game.setSplit(4);
     expect(checkInvariants(game)).toEqual([]);
     game.cameras.marble[1] = game.cameras.marble[0];
     expect(checkInvariants(game).join('\n')).toMatch(/camera/);
@@ -101,6 +101,13 @@ describe('the cameras', () => {
   it('follow nothing while the split is off', () => {
     const { game } = newGame();
     game.cameras.marble[0] = 2;
+    expect(checkInvariants(game).join('\n')).toMatch(/camera/);
+  });
+
+  it('follow no more marbles than the split has views', () => {
+    const { game } = newGame();
+    game.setSplit(4);
+    game.cameras.marble[5] = 5;
     expect(checkInvariants(game).join('\n')).toMatch(/camera/);
   });
 });
