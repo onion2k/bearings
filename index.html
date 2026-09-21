@@ -216,6 +216,43 @@
     border-radius: 5px;
     padding: 0 6px;
   }
+  /* what each quarter of the split screen follows: a name and a dot of its colour, in the corner of the quarter
+     that nothing else sits in — over the top on a wide screen, where the board and the help line have the
+     left and the count the right, and at the foot of each on an upright one, where they are all gone or over it */
+  #tags {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+  #tags[hidden] {
+    display: none;
+  }
+  #tags .tag {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 9px 2px 7px;
+    border-radius: 999px;
+    background: rgba(12, 11, 18, 0.66);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  #tags.stacked .tag {
+    transform: translateX(-100%);
+  }
+  #tags .tag[hidden] {
+    display: none;
+  }
+  #tags .tag i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
   #boot {
     position: fixed;
     inset: 0;
@@ -254,6 +291,7 @@
   <ol id="order"></ol>
   <div id="verdict"></div>
 </div>
+<div id="tags" hidden></div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="help" hidden>
   <span>1</span>–<span>8</span> pick a marble · <span>space</span> let them go · <span>R</span> again ·

@@ -202,8 +202,10 @@ What to copy the shape of, when building something new:
   A way of looking and nothing the race feels: not saved, no marble touched,
   the same seed the same race with it on or off, which a test holds it to.
   `S` and the board's Split tab turn it on; `split()` and `cameras()` are the
-  test API. Not done: nothing tells you which marble a quarter follows,
-  and on a phone the board covers the first quarter.
+  test API. A caption in each quarter (`#tags`, `captionOf` and
+  `swatchOf` in `field.ts`) names its marble and the player who picked it,
+  over the top of it on a wide screen and at the foot of it on an upright
+  one. Not done: on a phone the board covers the first quarter.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a

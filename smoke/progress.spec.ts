@@ -253,6 +253,19 @@ test('the screen split in four follows four marbles through a race, on the key a
   cameras = await page.evaluate(() => window.game!.cameras());
   expect(cameras.marbles.slice(0, 2)).toEqual([6, 2]);
 
+  // each quarter says who it follows, in its own corner of the screen: the picked ones with their player
+  const tags = page.locator('#tags .tag');
+  await expect(page.locator('#tags')).toBeVisible();
+  await expect(tags.nth(0)).toHaveText('P1 · Bone');
+  await expect(tags.nth(1)).toHaveText('P2 · Sulphur');
+  for (let s = 0; s < 4; s++) {
+    await expect(tags.nth(s)).toBeVisible();
+    const box = (await tags.nth(s).boundingBox())!;
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    expect(centre.x > 640, `caption ${s} in its quarter, across`).toBe((s & 1) === 1);
+    expect(centre.y > 400, `caption ${s} in its quarter, down`).toBe(s >= 2);
+  }
+
   // raced through, with the rules holding at every stage and no camera on a marble that is not there
   for (let stage = 0; stage < 6; stage++) {
     const seen = await page.evaluate(() => {
@@ -287,6 +300,7 @@ test('the screen split in four follows four marbles through a race, on the key a
   // the board's button puts it whole again, and it follows nobody
   await page.locator('#toSplit').click();
   await expect(page.locator('#toSplit')).not.toHaveClass(/on/);
+  await expect(page.locator('#tags')).toBeHidden();
   cameras = await page.evaluate(() => window.game!.cameras());
   expect(cameras.on).toBe(false);
   expect(cameras.marbles).toEqual([-1, -1, -1, -1]);

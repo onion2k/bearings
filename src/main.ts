@@ -11,7 +11,7 @@ import { LightPool } from 'artshape-render/game/lights';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
 import { SLOTS } from './cameras';
-import { nameOf } from './field';
+import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT } from './catalog';
 import { Game, type GameEvents, type Shelf } from './game';
@@ -50,6 +50,7 @@ const order = document.getElementById('order')!;
 const toRuns = document.getElementById('toRuns')!;
 const toPieces = document.getElementById('toPieces')!;
 const toSplit = document.getElementById('toSplit')!;
+const tags = document.getElementById('tags')!;
 const verdict = document.getElementById('verdict')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
@@ -255,6 +256,40 @@ async function main() {
       }),
     );
   };
+  /** One caption to a quarter: a dot of the marble's colour and its name. Made once; only the words change. */
+  const captions = Array.from({ length: SLOTS }, () => {
+    const el = document.createElement('span');
+    el.className = 'tag';
+    el.append(document.createElement('i'), document.createTextNode(''));
+    tags.append(el);
+    return { el, marble: -2, player: -2 };
+  });
+  /** The captions put over their quarters for the layout there is, and read again for who is followed. */
+  const place = () => {
+    tags.hidden = !game.split;
+    tags.classList.toggle('stacked', stacked);
+    captions.forEach((c, s) => {
+      c.el.style.left = stacked ? '100%' : `${((s & 1) * 50 + 25).toFixed(1)}%`;
+      c.el.style.top = stacked ? `${((s + 1) * 25).toFixed(1)}%` : `${(s >> 1) * 50}%`;
+      c.el.style.marginTop = stacked ? '-26px' : '8px';
+      c.el.style.marginLeft = stacked ? '-8px' : '0';
+      c.marble = -2;
+    });
+  };
+  /** Each caption says who its camera follows, changing only when it does. */
+  const say = () => {
+    if (!game.split) return;
+    captions.forEach((c, s) => {
+      const marble = game.cameras.marble[s];
+      const player = marble >= 0 ? game.players[marble] : 0;
+      if (c.marble === marble && c.player === player) return;
+      c.marble = marble;
+      c.player = player;
+      c.el.hidden = marble < 0;
+      (c.el.firstChild as HTMLElement).style.background = swatchOf(marble);
+      c.el.lastChild!.textContent = captionOf(marble, player);
+    });
+  };
   const resize = () => {
     const dpr = Math.min(devicePixelRatio || 1, 1.5);
     width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
@@ -262,10 +297,12 @@ async function main() {
     canvas.width = width;
     canvas.height = height;
     layout();
+    place();
   };
   /** The screen split in four or whole again, laid out for it, and the board's button told. */
   const resplit = () => {
     layout();
+    place();
     if (!game.split) frameRun();
     toSplit.classList.toggle('on', game.split);
   };
@@ -417,8 +454,10 @@ async function main() {
     // while they race the camera rides with whoever is in front, easing rather than snapping so a pass is
     // worth watching; before the off and after it, it drifts back to take in the whole run. Written in
     // place, since this is every frame and a new array each time would be garbage sixty times a second.
-    if (game.split) game.cameras.ease(game.marbles, home, CHASE);
-    else if (follow) {
+    if (game.split) {
+      game.cameras.ease(game.marbles, home, CHASE);
+      say();
+    } else if (follow) {
       const m = game.marbles;
       const lead = m.leader();
       cam.target[0] += ((lead >= 0 ? m.x[lead] : home[0]) - cam.target[0]) * CHASE;

@@ -35,3 +35,16 @@ export const FIELD: readonly Look[] = [
 export function nameOf(marble: number): string {
   return FIELD[marble % FIELD.length].name;
 }
+
+/** What a camera on `marble` says of it: its name, and the player who picked it first where somebody did; nothing for none. */
+export function captionOf(marble: number, player: number): string {
+  if (marble < 0) return '';
+  return player > 0 ? `P${player} · ${nameOf(marble)}` : nameOf(marble);
+}
+
+/** The marble's colour for a page to draw with: the renderer's is linear, and a screen wants it lightened. */
+export function swatchOf(marble: number): string {
+  if (marble < 0) return 'transparent';
+  const [r, g, b] = FIELD[marble % FIELD.length].colour.map((c) => Math.round(255 * c ** (1 / 2.2)));
+  return `rgb(${r}, ${g}, ${b})`;
+}
