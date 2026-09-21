@@ -1,10 +1,10 @@
 /**
  * The keyboard. There is nothing to steer — once they are let go the run
  * decides it — so what the players have is picking their marbles, the gate,
- * setting up again, choosing which run to watch, and C for the catalog of
- * pieces and back.
+ * setting up again, choosing which run to watch, C for the catalog of
+ * pieces and back, and S for the screen split in four, each on a marble.
  */
-export type Intent = 'release' | 'reset' | 'next' | 'shelf' | { pick: number };
+export type Intent = 'release' | 'reset' | 'next' | 'shelf' | 'split' | { pick: number };
 
 export class Input {
   constructor(private readonly told: (intent: Intent) => void) {
@@ -24,7 +24,9 @@ export class Input {
                 ? 'next'
                 : k === 'c'
                   ? 'shelf'
-                  : null;
+                  : k === 's'
+                    ? 'split'
+                    : null;
       if (!intent) return;
       e.preventDefault();
       this.told(intent);

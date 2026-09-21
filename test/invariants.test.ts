@@ -86,3 +86,21 @@ describe('what must always hold', () => {
     expect(checkInvariants(game).join('\n')).toMatch(/of \d+ pieces/);
   });
 });
+
+describe('the cameras', () => {
+  it('follow real marbles, none twice', () => {
+    const { game } = newGame();
+    game.setSplit(true);
+    expect(checkInvariants(game)).toEqual([]);
+    game.cameras.marble[1] = game.cameras.marble[0];
+    expect(checkInvariants(game).join('\n')).toMatch(/camera/);
+    game.cameras.marble[1] = 99;
+    expect(checkInvariants(game).join('\n')).toMatch(/camera/);
+  });
+
+  it('follow nothing while the split is off', () => {
+    const { game } = newGame();
+    game.cameras.marble[0] = 2;
+    expect(checkInvariants(game).join('\n')).toMatch(/camera/);
+  });
+});

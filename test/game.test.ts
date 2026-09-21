@@ -265,3 +265,73 @@ describe('the game', () => {
     });
   });
 });
+
+describe('the split screen', () => {
+  it('is off until asked, and follows nobody', () => {
+    const { game } = newGame(3);
+    expect(game.split).toBe(false);
+    game.release();
+    settle(game, 60);
+    expect([...game.cameras.marble]).toEqual([-1, -1, -1, -1]);
+  });
+
+  it('puts four cameras on four marbles as soon as it is turned on, and keeps them there as they race', () => {
+    const { game } = newGame(3);
+    game.claim(6);
+    game.claim(1);
+    game.setSplit(true);
+    expect([...game.cameras.marble].slice(0, 2)).toEqual([6, 1]);
+    expect(new Set(game.cameras.marble).size).toBe(4);
+    game.release();
+    settle(game, 300);
+    expect(new Set([...game.cameras.marble].filter((m) => m >= 0)).size).toBe(4);
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('hands a camera on to the next marble as the race goes on, without being asked', () => {
+    const { game } = newGame(3);
+    game.setSplit(true);
+    game.release();
+    settle(game, 60);
+    const was = game.cameras.marble[0];
+    game.marbles.state[was] = FINISHED;
+    game.step(DT);
+    expect(game.cameras.marble[0]).not.toBe(was);
+    expect(game.marbles.state[game.cameras.marble[0]]).not.toBe(FINISHED);
+  });
+
+  it('lets go of them when it is turned off', () => {
+    const { game } = newGame(3);
+    game.setSplit(true);
+    game.setSplit(false);
+    expect([...game.cameras.marble]).toEqual([-1, -1, -1, -1]);
+  });
+
+  it('starts the cameras again for another run and for a field set up again, and is still on', () => {
+    const { game } = newGame(3);
+    game.claim(2);
+    game.setSplit(true);
+    game.release();
+    settle(game, 120);
+    // a camera left on a marble the new field does not want it on, so a restart has to be seen to happen
+    game.cameras.marble[0] = 7;
+    game.reset();
+    expect(game.split).toBe(true);
+    expect(game.cameras.marble[0]).toBe(2);
+    game.cameras.marble[0] = 7;
+    game.pick(1);
+    expect(game.split).toBe(true);
+    expect(game.cameras.marble[0]).toBe(2);
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('changes nothing about the race: the same seed goes the same way with it on or off', () => {
+    const run = (split: boolean) => {
+      const { game } = newGame(9);
+      if (split) game.setSplit(true);
+      race(game);
+      return [...game.marbles.x, ...game.marbles.y, ...game.marbles.z, ...game.marbles.took].join(',');
+    };
+    expect(run(true)).toBe(run(false));
+  });
+});

@@ -64,6 +64,18 @@ export function checkInvariants(game: Game): string[] {
   });
   report('the players', players);
 
+  // each camera follows a marble there is, no two the same one, and none at all while the screen is whole
+  const seen = new Set<number>();
+  const cameras: string[] = [];
+  game.cameras.marble.forEach((m, slot) => {
+    if (m === -1) return;
+    if (!game.split) cameras.push(`camera ${slot} follows marble ${m} on a screen that is whole`);
+    else if (!Number.isInteger(m) || m < 0 || m >= marbles.count) cameras.push(`camera ${slot} follows marble ${m}`);
+    else if (seen.has(m)) cameras.push(`two cameras follow marble ${m}`);
+    seen.add(m);
+  });
+  report('the cameras', cameras);
+
   // the run on is one of the runs there are, and it is the one the save says, or the save says none yet
   const list = game.shelf === 'runs' ? RUNS : PIECES;
   if (!Number.isInteger(game.run) || game.run < 0 || game.run >= list.length)

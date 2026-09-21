@@ -100,6 +100,7 @@ change meant to move it, and the commit says why. Look at every picture.
   the marbles roll on; stands the pegs; and places the marbles and, every
   frame, the sweepers, gates and wheels from the same `pose` the solver
   meets them in, so what is drawn is what a marble hits.
+- `src/cameras.ts` is the four cameras of the split screen, without the screen.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
@@ -186,6 +187,23 @@ What to copy the shape of, when building something new:
   wherever two segments of different branches hand on to the same one next.
   A change to how it looks, not to the track or the solver, and nothing a
   test races through: only `smoke/look.spec.ts`'s own pictures see it.
+- **The screen split in four:** `src/cameras.ts` is which four marbles are
+  followed and where each camera looks, with no renderer in it; `Game` owns
+  it (`split`, `setSplit`, `cameras`) and reassigns every step, so the fuzzer
+  and the tests step it headless. The picked marbles come first, in player
+  order, then the furthest on that nobody follows; a camera keeps its marble
+  until it is home, stopped or lost, and holds on it if nobody is left. The
+  renderer has one camera and draws all of what it is given, so `main.ts`
+  makes the renderer a quarter of the screen, draws each camera's view into a
+  texture of its own (`present`) and copies the four on to the canvas, which
+  is configured with `COPY_DST` for it: nothing in artshape-render changed,
+  and it costs four scene draws — 0.7 ms against 0.4 whole, in the perf spec.
+  Two and two on a wide screen, one over the next on an upright one (`layout`).
+  A way of looking and nothing the race feels: not saved, no marble touched,
+  the same seed the same race with it on or off, which a test holds it to.
+  `S` and the board's Split tab turn it on; `split()` and `cameras()` are the
+  test API. Not done: nothing tells you which marble a quarter follows,
+  and on a phone the board covers the first quarter.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a

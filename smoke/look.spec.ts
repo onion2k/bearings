@@ -292,6 +292,25 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the screen split in four, each quarter on a marble, three of them picked', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      g.claim(1);
+      g.claim(4);
+      g.claim(6);
+      g.split(true);
+      g.release();
+      g.step(240);
+      return g.cameras();
+    });
+    expect(on.marbles.slice(0, 3), 'the picked marbles first, in player order').toEqual([1, 4, 6]);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('split.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
@@ -318,6 +337,22 @@ test.describe('what it looks like', () => {
         g.step(1);
       });
       await expect(page).toHaveScreenshot('phone.png', TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+
+    test('the screen split, one quarter over the next, at the width of a phone', async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true });
+      await page.evaluate(() => {
+        const g = window.game!;
+        g.claim(2);
+        g.claim(5);
+        g.split(true);
+        g.release();
+        g.step(240);
+      });
+      await hideStats(page);
+      await expect(page).toHaveScreenshot('split-phone.png', TOLERANCE);
       expect(problems).toEqual([]);
     });
   });

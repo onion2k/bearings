@@ -10,6 +10,7 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { LightPool } from 'artshape-render/game/lights';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
+import { SLOTS } from './cameras';
 import { nameOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT } from './catalog';
@@ -48,6 +49,7 @@ const next = document.getElementById('next')!;
 const order = document.getElementById('order')!;
 const toRuns = document.getElementById('toRuns')!;
 const toPieces = document.getElementById('toPieces')!;
+const toSplit = document.getElementById('toSplit')!;
 const verdict = document.getElementById('verdict')!;
 const stats = document.getElementById('stats')!;
 const help = document.getElementById('help')!;
@@ -61,6 +63,13 @@ async function main() {
   // ---- the renderer ----
 
   const ctx = await createContext(canvas);
+  // the canvas is drawn into whole, or in four quarters copied into it, so it has to be a place a copy may land
+  ctx.context.configure({
+    device: ctx.device,
+    format: ctx.format,
+    alphaMode: 'opaque',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
+  });
   bootMsg.textContent = 'compiling shaders…';
   const renderer = new GameRenderer(ctx, LIGHT_CAPACITY, EFFECT_CAPACITY, PARTICLE_CAPACITY, MM_PER_UNIT);
   renderer.look = {
@@ -215,14 +224,54 @@ async function main() {
 
   let width = 1,
     height = 1;
+  /**
+   * The four quarters of a split screen, each a texture of its own the renderer draws a camera's view into
+   * before it is copied on to the canvas: the renderer has one camera and draws the whole of what it is given,
+   * so a quarter is a small screen of its own. Made when the screen is split and on every resize, and let go
+   * of when it is whole again. Side by side two and two on a screen wider than it is tall; one over the
+   * other on a phone held upright, where four small squares would each show a marble and nothing round it.
+   */
+  let quarters: GPUTexture[] = [];
+  let quarterWidth = 1,
+    quarterHeight = 1,
+    stacked = false;
+  const layout = () => {
+    for (const t of quarters) t.destroy();
+    quarters = [];
+    if (!game.split) {
+      renderer.resize(width, height);
+      return;
+    }
+    stacked = height > width;
+    quarterWidth = Math.max(1, stacked ? width : width >> 1);
+    quarterHeight = Math.max(1, stacked ? height >> 2 : height >> 1);
+    renderer.resize(quarterWidth, quarterHeight);
+    quarters = Array.from({ length: SLOTS }, () =>
+      ctx.device.createTexture({
+        label: 'quarter',
+        size: [quarterWidth, quarterHeight],
+        format: ctx.format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      }),
+    );
+  };
   const resize = () => {
     const dpr = Math.min(devicePixelRatio || 1, 1.5);
     width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
     height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
     canvas.width = width;
     canvas.height = height;
-    cam.aspect = width / height;
-    renderer.resize(width, height);
+    layout();
+  };
+  /** The screen split in four or whole again, laid out for it, and the board's button told. */
+  const resplit = () => {
+    layout();
+    if (!game.split) frameRun();
+    toSplit.classList.toggle('on', game.split);
+  };
+  const setSplit = (on: boolean) => {
+    game.setSplit(on);
+    resplit();
   };
   // a screen that changes shape before the off is framed again for its new shape; once they race, the
   // camera is the leader's
@@ -243,19 +292,58 @@ async function main() {
     renderer.move(3, scene.wheels, wheels);
   }
 
+  /**
+   * The scene drawn into `target`, a whole screen: one view of it, or four, one to a quarter, each from its
+   * own camera. The renderer's clock moves once a frame whichever it is, on the first view alone.
+   */
+  function present(target: GPUTexture, dt: number): boolean {
+    if (!game.split) return renderer.frame(target.createView(), 'redraw', dt);
+    const eye = [0, 0, 0];
+    const { cameras } = game;
+    for (let s = 0; s < SLOTS; s++) {
+      cameras.eye(s, eye);
+      cam.position = [eye[0], eye[1], eye[2]];
+      cam.target = [cameras.target[s * 3], cameras.target[s * 3 + 1], cameras.target[s * 3 + 2]];
+      cam.update();
+      if (!renderer.frame(quarters[s].createView(), 'redraw', s === 0 ? dt : 0)) return false;
+    }
+    const encoder = ctx.device.createCommandEncoder({ label: 'split screen' });
+    // what no quarter reaches, an odd pixel at an edge, is cleared and not left as it was
+    encoder
+      .beginRenderPass({
+        label: 'split screen clear',
+        colorAttachments: [
+          { view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } },
+        ],
+      })
+      .end();
+    for (let s = 0; s < SLOTS; s++) {
+      const origin = stacked
+        ? { x: 0, y: s * quarterHeight }
+        : { x: (s & 1) * quarterWidth, y: (s >> 1) * quarterHeight };
+      encoder.copyTextureToTexture(
+        { texture: quarters[s] },
+        { texture: target, origin },
+        { width: quarterWidth, height: quarterHeight },
+      );
+    }
+    ctx.device.queue.submit([encoder.finish()]);
+    return true;
+  }
+
   /** What a frame of the scene as it stands costs, drawn to a texture of our own rather than the canvas, so no wait to be shown is counted. */
   async function measureFrame(): Promise<number> {
     const target = ctx.device.createTexture({
       label: 'measuring target',
       size: [width, height],
       format: ctx.format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
     });
-    const view = target.createView();
+    if (game.split) game.cameras.ease(game.marbles, home, CHASE);
     const cost = await frameCost(
       () => {
         upload();
-        return renderer.frame(view, 'redraw', 1 / 60);
+        return present(target, 1 / 60);
       },
       () => ctx.device.queue.onSubmittedWorkDone(),
     );
@@ -329,18 +417,21 @@ async function main() {
     // while they race the camera rides with whoever is in front, easing rather than snapping so a pass is
     // worth watching; before the off and after it, it drifts back to take in the whole run. Written in
     // place, since this is every frame and a new array each time would be garbage sixty times a second.
-    if (follow) {
+    if (game.split) game.cameras.ease(game.marbles, home, CHASE);
+    else if (follow) {
       const m = game.marbles;
       const lead = m.leader();
       cam.target[0] += ((lead >= 0 ? m.x[lead] : home[0]) - cam.target[0]) * CHASE;
       cam.target[1] += ((lead >= 0 ? m.y[lead] : home[1]) - cam.target[1]) * CHASE;
       cam.target[2] += ((lead >= 0 ? m.z[lead] : home[2]) - cam.target[2]) * CHASE;
     }
-    orbit.update();
-    cam.update();
+    if (!game.split) {
+      orbit.update();
+      cam.update();
+    }
     upload();
     const t = performance.now();
-    renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
+    present(ctx.context.getCurrentTexture(), dt);
     smoothed += (performance.now() - t - smoothed) * 0.05;
     if (frames % 30 === 0)
       stats.textContent = `${smoothed.toFixed(1)} ms · ${game.marbles.finishers} home · ${game.progress.save.races} races`;
@@ -363,6 +454,7 @@ async function main() {
     showOrder();
   };
   toRuns.addEventListener('click', () => shelve('runs'));
+  toSplit.addEventListener('click', () => setSplit(!game.split));
   toPieces.addEventListener('click', () => shelve('pieces'));
   // a row of the board picked by a tap or a click, for the next player without a marble, or let go again
   order.addEventListener('click', (e) => {
@@ -374,6 +466,7 @@ async function main() {
     else if (intent === 'reset') game.reset();
     else if (intent === 'next') step(1);
     else if (intent === 'shelf') shelve(game.shelf === 'runs' ? 'pieces' : 'runs');
+    else if (intent === 'split') setSplit(!game.split);
     else {
       if (intent.pick < game.marbles.count) game.claim(game.standing()[intent.pick]);
     }
@@ -413,6 +506,7 @@ async function main() {
     setFollow: (on) => {
       follow = on;
     },
+    resplit,
     measureFrame,
     events: eventLog,
   });

@@ -226,3 +226,70 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   await info.attach('the board', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);
 });
+
+test('the screen split in four follows four marbles through a race, on the key and on the board', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 3, paused: true });
+
+  // whole to begin with: nothing is followed
+  expect((await page.evaluate(() => window.game!.cameras())).on).toBe(false);
+  await expect(page.locator('#toSplit')).not.toHaveClass(/on/);
+
+  // S splits it, and the board's button says so
+  await page.keyboard.press('s');
+  await expect(page.locator('#toSplit')).toHaveClass(/on/);
+  let cameras = await page.evaluate(() => window.game!.cameras());
+  expect(cameras.on).toBe(true);
+  expect(new Set(cameras.marbles).size, 'four marbles, none twice').toBe(4);
+
+  // the picked marbles are the ones followed, first
+  await page.evaluate(() => {
+    const g = window.game!;
+    g.claim(6);
+    g.claim(2);
+  });
+  await page.keyboard.press('s');
+  await page.keyboard.press('s');
+  cameras = await page.evaluate(() => window.game!.cameras());
+  expect(cameras.marbles.slice(0, 2)).toEqual([6, 2]);
+
+  // raced through, with the rules holding at every stage and no camera on a marble that is not there
+  for (let stage = 0; stage < 6; stage++) {
+    const seen = await page.evaluate(() => {
+      const g = window.game!;
+      if (g.state().racing === 0 && !g.state().over) g.release();
+      g.step(300);
+      return [g.cameras(), g.invariants()] as const;
+    });
+    expect(seen[1], `invariants after stage ${stage} split`).toEqual([]);
+    const live = seen[0].marbles.filter((m) => m >= 0);
+    expect(new Set(live).size, `no two cameras on one marble, stage ${stage}`).toBe(live.length);
+    for (const target of seen[0].targets) for (const v of target) expect(Number.isFinite(v)).toBe(true);
+  }
+
+  // the window changing shape while it is split: upright is one quarter over the next, wide is two and two, and
+  // neither leaves the game broken or a camera off its marble
+  for (const size of [
+    { width: 700, height: 900 },
+    { width: 1001, height: 601 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(size);
+    const shown = await page.evaluate(() => {
+      const g = window.game!;
+      g.step(5);
+      return [g.cameras(), g.invariants()] as const;
+    });
+    expect(shown[1], `invariants at ${size.width}x${size.height} split`).toEqual([]);
+    expect(shown[0].on).toBe(true);
+  }
+
+  // the board's button puts it whole again, and it follows nobody
+  await page.locator('#toSplit').click();
+  await expect(page.locator('#toSplit')).not.toHaveClass(/on/);
+  cameras = await page.evaluate(() => window.game!.cameras());
+  expect(cameras.on).toBe(false);
+  expect(cameras.marbles).toEqual([-1, -1, -1, -1]);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});

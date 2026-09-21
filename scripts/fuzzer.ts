@@ -134,6 +134,16 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        2,
+        () => {
+          // the screen split in four or whole again, at any time: a way of looking, so nothing it does may show
+          // in the race, and the invariants have every camera on a marble that is there, none twice
+          game.setSplit(!game.split);
+          busy = Math.floor(between(5, 40));
+          did('split');
+        },
+      ],
+      [
         1,
         () => {
           // saved, and loaded again into a new game as a reload would: what was run must be kept
