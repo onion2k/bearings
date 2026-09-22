@@ -357,15 +357,22 @@ ever builds on the end. Open, and belonging with those:
   quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
   worst since the gate in `Marbles.jumped`, and `checkMarbles` rules on it.
   The funnel's two jumps, into its bowl and out of its hole, were this. A
-  push is counted as explained, and some are still big. Measured over every
-  run and catalog piece on 24 seeds, what a thing in the way shoves a marble
-  in one step was: a wheel 0.63, a gate 0.61, a sweeper 0.48, a peg 0.34,
-  and marbles parting one another in a crowd up to about 0.9, against half a
-  marble of 0.45. The wheel's was the paddle appearing whole rather than
-  coming down, and is fixed; the gate's and the sweeper's are their own
-  bugs, still open, and the crowd's is the settling's. Pushes are held to
-  half a marble a step only once all of those are done, since a rule the
-  gate and the sweeper break would be a rule written red.
+  push is counted as explained, so a second rule holds what a thing in the
+  way may do in one go: half a marble (`SHOVE`), kept per marble in
+  `Marbles.shoved` with the piece that did it in `shovedOn`, and ruled on by
+  `checkMarbles`. Setting a marble out of something all at once was what
+  broke it: a gate's bar slides across its pen at 18 a second, a third of a
+  marble in a step, and one caught between the end of it and the wall cannot
+  go further across, so it went along — four hops of 0.12 in the one step,
+  0.61 back up the run, further than it had come down. A shove is now taken
+  as far as it goes and no further, and what is left over is seen to over
+  the steps after, by which time the thing has usually gone by of its own
+  accord; over every run and catalog piece on 24 seeds no marble is ever
+  left sitting inside anything. Measured the same way, the worst single
+  shove is now a gate's 0.45, a sweeper's 0.36, a peg's 0.34 and a wheel's
+  0.29. What a whole step comes to is still more than that — 1.12 at worst,
+  a shove and then the settling parting a crowd that the shove pressed
+  together — and that is the settling's own business, still open.
   A crowd squeezing into the neck of a gate's pen was the other: held there
   by a shut gate, the whole field spread out across the pen's full width,
   and closing that down to the chute's over the last fifth of the piece

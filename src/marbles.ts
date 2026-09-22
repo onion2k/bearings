@@ -149,6 +149,14 @@ export const AIR_TIME = 4;
 export const JUMP = 0.25;
 
 /**
+ * How far a thing in the way may move a marble in one step: half a marble.
+ * A gate's bar sliding across its pen sweeps 0.3 in a step, and a marble it
+ * catches at the wall was set out of it all at once and thrown 0.61 — further
+ * back up the run than it had come down it.
+ */
+export const SHOVE = RADIUS;
+
+/**
  * How slowly a marble may be going, and for how long, before the run is
  * called on it. A run that cannot be finished has to be noticed and said,
  * because the alternative is a race nobody is ever told is over. It is
@@ -281,6 +289,13 @@ export class Marbles {
   private readonly fromZ: Float32Array;
   private readonly went: Float32Array;
   private readonly pushed: Float32Array;
+  /**
+   * The furthest a thing in the way has moved a marble in one shove since the
+   * field was set on the gate, and which piece did it: what `SHOVE` is the
+   * ceiling on, and `checkMarbles` rules on.
+   */
+  readonly shoved: Float32Array;
+  readonly shovedOn: Int32Array;
   /** Where on the track each marble was before it was pushed, to tell how far the push took it. */
   private readonly holdSegment: Int32Array;
   private readonly holdAlong: Float32Array;
@@ -354,6 +369,8 @@ export class Marbles {
     this.fromZ = new Float32Array(n);
     this.went = new Float32Array(n);
     this.pushed = new Float32Array(n);
+    this.shoved = new Float32Array(n);
+    this.shovedOn = new Int32Array(n);
     this.holdSegment = new Int32Array(n);
     this.holdAlong = new Float32Array(n);
     this.holdAcross = new Float32Array(n);
@@ -412,6 +429,8 @@ export class Marbles {
       this.place[i] = 0;
       this.jumped[i] = 0;
       this.jumpedOn[i] = 0;
+      this.shoved[i] = 0;
+      this.shovedOn[i] = 0;
       this.bySlot[slot] = i;
     }
     this.write();
@@ -701,20 +720,33 @@ export class Marbles {
         na /= l;
         nc /= l;
       }
-      const out = reach - d;
+      // as far out as it is in, but never more than half a marble in one step: a moving part sweeping across a
+      // marble puts it deep inside itself in a single step, and setting it out of that all at once threw it
+      // further than anything on the run travels. What is left over is seen to over the steps after, by which
+      // time the part has usually gone by of its own accord
+      const out = Math.min(reach - d, SHOVE);
       // touching is not a push: only one that moves a marble on counts, so a settled field stops settling
       if (out > MOVED) hit = true;
+      const was = { along: this.along[i], across: this.across[i] };
       this.along[i] = Math.min(Math.max(this.along[i] + na * out, 0), seg.length);
       this.across[i] += nc * out;
       // pushed out sideways into a wall, a marble has nowhere to go and the two stay inside each other: a paddle
       // swung to the wall, or a gate sliding shut across its pen, would crush it. It is let out along the piece
-      // instead, past the end of the thing, the way the marbles go.
+      // instead, past the end of the thing, the way the marbles go, and no further than the same half a marble.
       const wall = widthAt(this.track, this.segment[i], this.along[i]) - RADIUS;
       if (Math.abs(this.across[i]) > wall) {
         this.across[i] = Math.sign(this.across[i]) * wall;
         const ahead = Math.abs(na) > 0.2 ? Math.sign(na) : 1;
-        for (let k = 0; k < 12 && this.inside(i, p, reach); k++)
+        const left = SHOVE - Math.abs(this.across[i] - was.across);
+        for (let k = 0; k < 12 && this.inside(i, p, reach); k++) {
+          if (Math.abs(this.along[i] + ahead * 0.12 - was.along) > left) break;
           this.along[i] = Math.min(Math.max(this.along[i] + ahead * 0.12, 0), seg.length);
+        }
+      }
+      const shove = Math.hypot(this.along[i] - was.along, this.across[i] - was.across);
+      if (shove > this.shoved[i]) {
+        this.shoved[i] = shove;
+        this.shovedOn[i] = seg.piece;
       }
       if (!bounce) continue;
       const rv = (this.speed[i] - p.va) * na + (this.drift[i] - p.vc) * nc;
@@ -1426,6 +1458,12 @@ export function checkMarbles(marbles: Marbles): string[] {
     if (!numbers.every(Number.isFinite)) problems.push(`marble ${i} is not a number`);
     // nothing moves a marble in a step but its own speed and what pushes it: anything more is a jump, as the funnel
     // once set a marble down inside its rim where it had never been, and again on the piece below its hole
+    // nothing in the way shoves a marble half its own width or more in one go: a gate's bar sliding across its pen
+    // caught one at the wall, set it out of itself all at once, and threw it 0.61 back up the run
+    if (marbles.shoved[i] > SHOVE + 1e-3)
+      problems.push(
+        `marble ${i} was shoved ${marbles.shoved[i].toFixed(3)} in one go by something in the way on piece ${marbles.shovedOn[i]}`,
+      );
     if (marbles.jumped[i] > JUMP)
       problems.push(
         `marble ${i} moved ${marbles.jumped[i].toFixed(3)} further in a step than its speed and what pushed it explain, on to piece ${marbles.jumpedOn[i]}`,

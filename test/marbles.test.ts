@@ -8,6 +8,7 @@ import {
   Marbles,
   RACING,
   RADIUS,
+  SHOVE,
   STALLED,
   SWIRLING,
   WAITING,
@@ -672,6 +673,39 @@ describe('the marbles', () => {
         }
         expect(marbles.segment[0], `phase ${phase}: through the wheel in the end`).toBeGreaterThan(2);
       }
+    });
+
+    it('lets a marble out from under its closing bar without throwing it back up the run', () => {
+      // the bar slides across its pen at 18 a second, a third of a marble in a step. One caught between the end of
+      // it and the wall was set out of it all at once and thrown 0.6 back up the run, further than it had come
+      // down: the marble cannot go further across, so it went along, four hops of 0.12 in the one step
+      const run = chain(['start', 'ramp', 'gate', 'straight', 'finish']);
+      const bar = compile(run).segments[2].obstacles[0];
+      const at = pose0();
+      let worst = 0,
+        where = '';
+      for (let phase = 0; phase < 1; phase += 0.02)
+        for (const side of [-1, 1]) {
+          // a marble that cannot roll, held against one wall at the bar's own line, where the end of it sweeps by
+          const { marbles } = setOn(run, 2, bar.along, side * (widthAt(compile(run), 2, bar.along) - RADIUS - 0.01), 0);
+          marbles.friction = 1000;
+          marbles.phase[bar.slot] = phase;
+          // set down clear of the bar, as a marble always arrives, and not inside it already
+          pose(bar, 0, phase, at, RADIUS);
+          const pa = marbles.along[0] - at.along,
+            pc = marbles.across[0] - at.across;
+          const s = Math.min(Math.max(pa * Math.cos(bar.angle) + pc * Math.sin(bar.angle), -at.half), at.half);
+          if (Math.hypot(pa - Math.cos(bar.angle) * s, pc - Math.sin(bar.angle) * s) < at.radius + RADIUS) continue;
+          for (let f = 0; f < 3 * 60; f++) {
+            marbles.step(DT);
+            if (marbles.shoved[0] > worst) {
+              worst = marbles.shoved[0];
+              where = `phase ${phase.toFixed(2)}, ${side < 0 ? 'left' : 'right'} wall, frame ${f}`;
+            }
+          }
+          expect(checkMarbles(marbles), where).toEqual([]);
+        }
+      expect(worst, where).toBeLessThanOrEqual(SHOVE);
     });
 
     it('comes down on a marble without shoving it more than half a marble in a step, wherever it sits under the wheel', () => {
