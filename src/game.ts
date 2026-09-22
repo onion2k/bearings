@@ -15,7 +15,7 @@
  * That is the game, and it is also what makes a race exactly repeatable from
  * its seed, which every replay and every baseline rests on.
  */
-import { Cameras, type Views } from './cameras';
+import { Cameras, MAX_SLOTS } from './cameras';
 import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
 import { Progress } from './progress';
 import type { Random } from './random';
@@ -71,12 +71,21 @@ export class Game {
    */
   readonly players = new Int8Array(MARBLES);
   /**
-   * How many views the screen is split in, 0 for none, 4 or 8, each following
-   * a marble, and who they follow. A way of looking and nothing the race feels: it is not
-   * saved, and it changes no marble.
+   * Whether the screen is split, one view to every picked marble, and who
+   * they follow. Off below two picks, whatever this says: a split of one is
+   * no split, and no split is the whole screen. A way of looking and
+   * nothing the race feels: it is not saved, and it changes no marble.
    */
-  split: Views = 0;
+  split = false;
   readonly cameras = new Cameras();
+
+  /** How many views the split has, from how many marbles are picked; 0 with the screen whole. */
+  get views(): number {
+    if (!this.split) return 0;
+    let picked = 0;
+    for (let m = 0; m < this.players.length; m++) if (this.players[m] > 0) picked++;
+    return picked >= 2 ? Math.min(picked, MAX_SLOTS) : 0;
+  }
 
   constructor(
     readonly progress: Progress,
@@ -152,17 +161,17 @@ export class Game {
     this.follow();
   }
 
-  /** The screen split in four or in eight, or whole again. */
-  setSplit(views: Views) {
-    this.split = views;
+  /** The screen split, one view to every picked marble, or whole again. */
+  setSplit(on: boolean) {
+    this.split = on;
     this.follow();
   }
 
   /** The cameras given their marbles afresh, where the screen is split, and let go of them where it is not. */
   private follow() {
     this.cameras.reset();
-    this.cameras.count = this.split || 4;
-    if (this.split) this.cameras.assign(this.marbles, this.players, this.standing());
+    this.cameras.count = this.views;
+    if (this.views > 0) this.cameras.assign(this.players);
   }
 
   /**
@@ -197,6 +206,7 @@ export class Game {
       while (this.players.includes(player)) player++;
       this.players[marble] = player;
     }
+    this.follow();
     this.events.claimed?.(marble, this.players[marble]);
     return this.players[marble];
   }
@@ -240,7 +250,6 @@ export class Game {
   step(dt: number) {
     this.t += dt;
     this.marbles.step(dt);
-    if (this.split) this.cameras.assign(this.marbles, this.players, this.standing());
     // a race counts once, when it is done with, however it ended
     if (!this.counted && this.marbles.over) {
       this.counted = true;

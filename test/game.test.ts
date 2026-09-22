@@ -269,82 +269,100 @@ describe('the game', () => {
 describe('the split screen', () => {
   it('is off until asked, and follows nobody', () => {
     const { game } = newGame(3);
-    expect(game.split).toBe(0);
+    expect(game.split).toBe(false);
+    expect(game.views).toBe(0);
     game.release();
     settle(game, 60);
     expect([...game.cameras.marble]).toEqual(Array(8).fill(-1));
   });
 
-  it('puts four cameras on four marbles as soon as it is turned on, and keeps them there as they race', () => {
+  it('shows a view to every picked marble, and no more, once two or more are picked', () => {
     const { game } = newGame(3);
     game.claim(6);
     game.claim(1);
-    game.setSplit(4);
-    expect([...game.cameras.marble].slice(0, 2)).toEqual([6, 1]);
-    expect(new Set([...game.cameras.marble].filter((m) => m >= 0)).size).toBe(4);
+    game.claim(4);
+    game.setSplit(true);
+    expect(game.views).toBe(3);
+    expect([...game.cameras.marble].slice(0, 3)).toEqual([6, 1, 4]);
+    expect([...game.cameras.marble].slice(3)).toEqual([-1, -1, -1, -1, -1]);
     game.release();
     settle(game, 300);
-    expect(new Set([...game.cameras.marble].filter((m) => m >= 0)).size).toBe(4);
+    expect([...game.cameras.marble].slice(0, 3)).toEqual([6, 1, 4]);
     expect(checkInvariants(game)).toEqual([]);
   });
 
-  it('hands a camera on to the next marble as the race goes on, without being asked', () => {
+  it('does not show it below two picks: a split of one marble is the same as none', () => {
     const { game } = newGame(3);
-    game.setSplit(4);
+    game.claim(6);
+    game.setSplit(true);
+    expect(game.views).toBe(0);
+    expect([...game.cameras.marble]).toEqual(Array(8).fill(-1));
+    game.claim(1);
+    expect(game.views, 'a second pick turns it on without being asked again').toBe(2);
+    expect([...game.cameras.marble].slice(0, 2)).toEqual([6, 1]);
+  });
+
+  it('keeps a camera on its own marble as the race goes on, whatever becomes of it', () => {
+    const { game } = newGame(3);
+    game.claim(0);
+    game.claim(1);
+    game.setSplit(true);
     game.release();
     settle(game, 60);
     const was = game.cameras.marble[0];
     game.marbles.state[was] = FINISHED;
     game.step(DT);
-    expect(game.cameras.marble[0]).not.toBe(was);
-    expect(game.marbles.state[game.cameras.marble[0]]).not.toBe(FINISHED);
+    expect(game.cameras.marble[0]).toBe(was);
   });
 
-  it('follows all eight marbles in the eight-way split, and four again when it goes back', () => {
+  it('follows every marble in an eight-player field, one to a camera', () => {
     const { game } = newGame(3);
-    game.claim(6);
-    game.setSplit(8);
+    for (let m = 0; m < 8; m++) game.claim(m);
+    game.setSplit(true);
+    expect(game.views).toBe(8);
     expect([...game.cameras.marble].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-    expect(game.cameras.marble[0]).toBe(6);
-    expect(checkInvariants(game)).toEqual([]);
-    game.setSplit(4);
-    expect(game.cameras.marble.filter((m) => m >= 0).length).toBe(4);
     expect(checkInvariants(game)).toEqual([]);
   });
 
   it('lets go of them when it is turned off', () => {
     const { game } = newGame(3);
-    game.setSplit(4);
-    game.setSplit(0);
+    game.claim(0);
+    game.claim(1);
+    game.setSplit(true);
+    game.setSplit(false);
+    expect(game.views).toBe(0);
     expect([...game.cameras.marble]).toEqual(Array(8).fill(-1));
   });
 
   it('starts the cameras again for another run and for a field set up again, and is still on', () => {
     const { game } = newGame(3);
     game.claim(2);
-    game.setSplit(4);
+    game.claim(5);
+    game.setSplit(true);
     game.release();
     settle(game, 120);
     // a camera left on a marble the new field does not want it on, so a restart has to be seen to happen
     game.cameras.marble[0] = 7;
     game.reset();
-    expect(game.split).toBe(4);
+    expect(game.split).toBe(true);
     expect(game.cameras.marble[0]).toBe(2);
     game.cameras.marble[0] = 7;
     game.pick(1);
-    expect(game.split).toBe(4);
+    expect(game.split).toBe(true);
     expect(game.cameras.marble[0]).toBe(2);
     expect(checkInvariants(game)).toEqual([]);
   });
 
   it('changes nothing about the race: the same seed goes the same way with it on or off', () => {
-    const run = (split: 0 | 4 | 8) => {
+    const run = (on: boolean) => {
       const { game } = newGame(9);
-      game.setSplit(split);
+      game.claim(0);
+      game.claim(1);
+      game.claim(2);
+      game.setSplit(on);
       race(game);
       return [...game.marbles.x, ...game.marbles.y, ...game.marbles.z, ...game.marbles.took].join(',');
     };
-    expect(run(4)).toBe(run(0));
-    expect(run(8)).toBe(run(0));
+    expect(run(true)).toBe(run(false));
   });
 });

@@ -12,7 +12,6 @@
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import type { Views } from './cameras';
 import type { Game, Shelf } from './game';
 import { checkInvariants } from './invariants';
 import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
@@ -137,10 +136,12 @@ export interface GameApi {
   measureFrame(): Promise<number>;
   /** Whether the camera follows the leader, which a test wants off so a picture is the same every run. */
   follow(on: boolean): void;
-  /** The screen split in four or in eight, each view on a marble, or whole again with 0; how many views it has now. */
-  split(views?: Views): Views;
-  /** The cameras in use, four or eight: whether the screen is split, which marble each follows, and where each looks. */
+  /** The screen split, one view to every picked marble, or whole again; whether it is split now. */
+  split(on?: boolean): boolean;
+  /** The cameras in use, one to every picked marble: whether the screen is split, which marble each follows, and where each looks. */
   cameras(): { on: boolean; views: number; marbles: number[]; targets: number[][] };
+  /** Where the ordinary, unsplit camera is looking: a test's way of telling a chase still moving from one frozen. */
+  chase(): [number, number, number];
 }
 
 /** What the page gives the API that is not the game's: time, the camera and the renderer. */
@@ -161,6 +162,8 @@ export interface DebugHost {
   /** The screen laid out again for the game's `split`, which has just changed. */
   resplit(): void;
   measureFrame(): Promise<number>;
+  /** Where the ordinary, unsplit camera is looking. */
+  chase(): [number, number, number];
   events: string[];
 }
 
@@ -290,22 +293,24 @@ export function createApi(host: DebugHost): GameApi {
     look: (x, y, z, view = {}) => host.look(x, y, z, view),
     measureFrame: () => host.measureFrame(),
     follow: (on) => host.setFollow(on),
-    split(views) {
-      if (views !== undefined && views !== game.split) {
-        game.setSplit(views);
+    split(on) {
+      if (on !== undefined && on !== game.split) {
+        game.setSplit(on);
         host.resplit();
       }
       return game.split;
     },
     cameras() {
-      const { cameras } = game;
-      const views = game.split || 4;
+      const { cameras, views } = game;
       return {
-        on: game.split > 0,
+        on: views > 0,
         views,
         marbles: [...cameras.marble.slice(0, views)],
         targets: Array.from({ length: views }, (_, s) => [...cameras.target.slice(s * 3, s * 3 + 3)]),
       };
+    },
+    chase() {
+      return host.chase();
     },
   };
 }

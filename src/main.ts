@@ -10,7 +10,7 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { LightPool } from 'artshape-render/game/lights';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
-import { MAX_SLOTS, type Views } from './cameras';
+import { MAX_SLOTS } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT } from './catalog';
@@ -132,6 +132,8 @@ async function main() {
     claimed(marble, player) {
       log(`claimed ${marble} ${player}`);
       refresh();
+      // a pick can change how many views the split has, so the grid and its captions redraw with it
+      resplit();
     },
   };
   // ?seed=N makes chance the same from before the field is drawn, for a test that wants the same race every run
@@ -238,20 +240,33 @@ async function main() {
     quarterHeight = 1,
     columns = 1,
     stacked = false;
+  /**
+   * How many columns suit `n` views on a screen this shape: never more columns than rows would leave a view
+   * a long thin strip. An upright screen wants at most two across, so even eight is a tall two-and-four
+   * rather than a wide one-and-eight; a wide screen grows a column at a time as there is more to fit in.
+   */
+  const columnsFor = (n: number, stacked: boolean): number => {
+    if (stacked) return n <= 2 ? 1 : 2;
+    if (n <= 2) return n;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  };
   const layout = () => {
     for (const t of quarters) t.destroy();
     quarters = [];
-    if (!game.split) {
+    const { views } = game;
+    if (!views) {
       renderer.resize(width, height);
       return;
     }
     stacked = height > width;
-    columns = game.split === 8 ? (stacked ? 2 : 4) : stacked ? 1 : 2;
-    const rows = game.split / columns;
+    columns = columnsFor(views, stacked);
+    const rows = Math.ceil(views / columns);
     quarterWidth = Math.max(1, Math.floor(width / columns));
     quarterHeight = Math.max(1, Math.floor(height / rows));
     renderer.resize(quarterWidth, quarterHeight);
-    quarters = Array.from({ length: game.split }, () =>
+    quarters = Array.from({ length: views }, () =>
       ctx.device.createTexture({
         label: 'view',
         size: [quarterWidth, quarterHeight],
@@ -274,14 +289,15 @@ async function main() {
    * board has the top left and there is no help line or count.
    */
   const place = () => {
-    tags.hidden = !game.split;
-    board.classList.toggle('split', game.split > 0);
+    const { views } = game;
+    tags.hidden = !views;
+    board.classList.toggle('split', views > 0);
+    const rows = Math.ceil(views / columns);
     captions.forEach((c, s) => {
-      c.el.hidden = s >= game.split;
+      c.el.hidden = s >= views;
       c.marble = -2;
-      if (s >= game.split) return;
+      if (s >= views) return;
       const cell = { x: s % columns, y: Math.floor(s / columns) };
-      const rows = game.split / columns;
       // the first view's caption stays clear of the board over the top left, where a narrow view would put it
       const across = `${(((cell.x + 0.5) / columns) * 100).toFixed(2)}%`;
       c.el.style.left = s === 0 && !stacked ? `max(${across}, 290px)` : across;
@@ -291,9 +307,10 @@ async function main() {
   };
   /** Each caption says who its camera follows, changing only when it does. */
   const say = () => {
-    if (!game.split) return;
+    const { views } = game;
+    if (!views) return;
     captions.forEach((c, s) => {
-      if (s >= game.split) return;
+      if (s >= views) return;
       const marble = game.cameras.marble[s];
       const player = marble >= 0 ? game.players[marble] : 0;
       if (c.marble === marble && c.player === player) return;
@@ -317,16 +334,15 @@ async function main() {
   const resplit = () => {
     layout();
     place();
-    if (!game.split) frameRun();
-    toSplit.classList.toggle('on', game.split > 0);
-    toSplit.textContent = game.split ? `Split ${game.split}` : 'Split';
+    if (!game.views) frameRun();
+    toSplit.classList.toggle('on', game.views > 0);
+    toSplit.textContent = game.views ? `Split ${game.views}` : 'Split';
   };
-  const setSplit = (views: Views) => {
-    game.setSplit(views);
+  const setSplit = (on: boolean) => {
+    game.setSplit(on);
     resplit();
   };
-  /** Whole, then four views, then eight, then whole again. */
-  const cycleSplit = () => setSplit(game.split === 0 ? 4 : game.split === 4 ? 8 : 0);
+  const cycleSplit = () => setSplit(!game.split);
   // a screen that changes shape before the off is framed again for its new shape; once they race, the
   // camera is the leader's
   addEventListener('resize', () => {
@@ -351,10 +367,10 @@ async function main() {
    * own camera. The renderer's clock moves once a frame whichever it is, on the first view alone.
    */
   function present(target: GPUTexture, dt: number): boolean {
-    if (!game.split) return renderer.frame(target.createView(), 'redraw', dt);
+    const { views, cameras } = game;
+    if (!views) return renderer.frame(target.createView(), 'redraw', dt);
     const eye = [0, 0, 0];
-    const { cameras } = game;
-    for (let s = 0; s < game.split; s++) {
+    for (let s = 0; s < views; s++) {
       cameras.eye(s, eye);
       cam.position = [eye[0], eye[1], eye[2]];
       cam.target = [cameras.target[s * 3], cameras.target[s * 3 + 1], cameras.target[s * 3 + 2]];
@@ -371,7 +387,7 @@ async function main() {
         ],
       })
       .end();
-    for (let s = 0; s < game.split; s++) {
+    for (let s = 0; s < views; s++) {
       const origin = { x: (s % columns) * quarterWidth, y: Math.floor(s / columns) * quarterHeight };
       encoder.copyTextureToTexture(
         { texture: quarters[s] },
@@ -391,7 +407,7 @@ async function main() {
       format: ctx.format,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
     });
-    if (game.split) game.cameras.ease(game.marbles, home, CHASE);
+    if (game.views) game.cameras.ease(game.marbles, home, CHASE);
     const cost = await frameCost(
       () => {
         upload();
@@ -469,7 +485,7 @@ async function main() {
     // while they race the camera rides with whoever is in front, easing rather than snapping so a pass is
     // worth watching; before the off and after it, it drifts back to take in the whole run. Written in
     // place, since this is every frame and a new array each time would be garbage sixty times a second.
-    if (game.split) {
+    if (game.views) {
       game.cameras.ease(game.marbles, home, CHASE);
       say();
     } else if (follow) {
@@ -479,7 +495,7 @@ async function main() {
       cam.target[1] += ((lead >= 0 ? m.y[lead] : home[1]) - cam.target[1]) * CHASE;
       cam.target[2] += ((lead >= 0 ? m.z[lead] : home[2]) - cam.target[2]) * CHASE;
     }
-    if (!game.split) {
+    if (!game.views) {
       orbit.update();
       cam.update();
     }
@@ -562,6 +578,7 @@ async function main() {
     },
     resplit,
     measureFrame,
+    chase: () => [cam.target[0], cam.target[1], cam.target[2]],
     events: eventLog,
   });
 

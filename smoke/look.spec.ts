@@ -292,7 +292,7 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  test('the screen split in four, each quarter on a marble, three of them picked', async ({ page }) => {
+  test('the screen split, a view to every picked marble, three of them picked', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const on = await page.evaluate(() => {
@@ -300,33 +300,49 @@ test.describe('what it looks like', () => {
       g.claim(1);
       g.claim(4);
       g.claim(6);
-      g.split(4);
+      g.split(true);
       g.release();
       g.step(240);
       return g.cameras();
     });
-    expect(on.marbles.slice(0, 3), 'the picked marbles first, in player order').toEqual([1, 4, 6]);
+    expect(on.views, 'a view to each of the three picked, and no more').toBe(3);
+    expect(on.marbles.slice(0, 3), 'the picked marbles, in player order').toEqual([1, 4, 6]);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('split.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('the screen split in eight, a view to every marble, four across and two down', async ({ page }) => {
+  test('the screen split, a view to every picked marble, five of them picked', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const on = await page.evaluate(() => {
       const g = window.game!;
-      g.claim(1);
-      g.claim(4);
-      g.claim(6);
-      g.split(8);
+      for (const m of [1, 4, 6, 0, 5]) g.claim(m);
+      g.split(true);
+      g.release();
+      g.step(240);
+      return g.cameras();
+    });
+    expect(on.views).toBe(5);
+    expect(on.marbles.slice(0, 5)).toEqual([1, 4, 6, 0, 5]);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('split-five.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the screen split, a view to every marble, all eight of them picked', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      for (let m = 0; m < 8; m++) g.claim(m);
+      g.split(true);
       g.release();
       g.step(240);
       return g.cameras();
     });
     expect(on.views).toBe(8);
-    expect(on.marbles.slice(0, 3), 'the picked marbles first, in player order').toEqual([1, 4, 6]);
-    expect([...on.marbles].sort(), 'and every marble followed once').toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect([...on.marbles].sort(), 'every marble followed once').toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('split-eight.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -361,14 +377,14 @@ test.describe('what it looks like', () => {
       expect(problems).toEqual([]);
     });
 
-    test('the screen split, one quarter over the next, at the width of a phone', async ({ page }) => {
+    test('the screen split, one view over the next, at the width of a phone', async ({ page }) => {
       const problems = watch(page);
       await start(page, { seed: 11, paused: true });
       await page.evaluate(() => {
         const g = window.game!;
         g.claim(2);
         g.claim(5);
-        g.split(4);
+        g.split(true);
         g.release();
         g.step(240);
       });
@@ -377,19 +393,18 @@ test.describe('what it looks like', () => {
       expect(problems).toEqual([]);
     });
 
-    test('the screen split in eight, two across and four down, at the width of a phone', async ({ page }) => {
+    test('the screen split six ways, two across and three down, at the width of a phone', async ({ page }) => {
       const problems = watch(page);
       await start(page, { seed: 11, paused: true });
       await page.evaluate(() => {
         const g = window.game!;
-        g.claim(2);
-        g.claim(5);
-        g.split(8);
+        for (const m of [2, 5, 0, 1, 3, 6]) g.claim(m);
+        g.split(true);
         g.release();
         g.step(240);
       });
       await hideStats(page);
-      await expect(page).toHaveScreenshot('split-eight-phone.png', TOLERANCE);
+      await expect(page).toHaveScreenshot('split-six-phone.png', TOLERANCE);
       expect(problems).toEqual([]);
     });
   });

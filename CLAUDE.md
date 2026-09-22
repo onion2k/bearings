@@ -100,7 +100,8 @@ change meant to move it, and the commit says why. Look at every picture.
   the marbles roll on; stands the pegs; and places the marbles and, every
   frame, the sweepers, gates and wheels from the same `pose` the solver
   meets them in, so what is drawn is what a marble hits.
-- `src/cameras.ts` is the four cameras of the split screen, without the screen.
+- `src/cameras.ts` is the split screen's cameras, one to every picked
+  marble, without the screen.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
@@ -187,29 +188,38 @@ What to copy the shape of, when building something new:
   wherever two segments of different branches hand on to the same one next.
   A change to how it looks, not to the track or the solver, and nothing a
   test races through: only `smoke/look.spec.ts`'s own pictures see it.
-- **The screen split in four, or in eight:** `src/cameras.ts` is which
-  marbles are followed and where each camera looks, with no renderer in it;
-  `Game` owns it (`split`, `setSplit`, `cameras`) and reassigns every step,
-  so the fuzzer and the tests step it headless. `split` is 0, 4 or 8 views:
-  in four the picked marbles come first, in player order, then the furthest
-  on that nobody follows; in eight every marble has a camera, picked first.
-  A camera keeps its marble until it is home, stopped or lost, and holds on
-  it if nobody is left. The renderer has one camera and draws all of what it
-  is given, so `main.ts` makes the renderer one view's size, draws each
-  camera's view into a texture of its own (`present`) and copies them on to
-  the canvas, which is configured with `COPY_DST` for it: nothing in
-  artshape-render changed. The grid follows the screen's shape (`layout`),
-  so a view is never a thin strip: four are two and two, or one over the
-  next upright; eight are four across and two down, or two across and four
-  down. `S` and the board's Split tab go round whole, four, eight; `split()`
-  and `cameras()` are the test API. A caption in each view (`#tags`,
-  `captionOf` and `swatchOf` in `field.ts`) names its marble and the player
-  who picked it, over the top of the view on a wide screen and at the foot
-  of it upright, and on a phone the board shrinks to its header while split
-  so it covers neither a view nor its caption. A way of looking and nothing
-  the race feels: not saved, no marble touched, the same seed the same race
-  in any mode, which a test holds it to. Costs a scene draw a view: about 1 ms
-  in four and 1.5 in eight, against 0.5 whole, in the perf spec.
+- **The screen split, a view to every picked marble:** `src/cameras.ts` is
+  which marbles are followed and where each camera looks, with no renderer
+  in it. `Game.split` is the player's own intent, on or off; `Game.views`
+  is what it comes to — as many views as marbles are picked, in player
+  order, or 0 with fewer than two picked, since one marble is nothing to
+  split a screen over. A camera is not assigned by anything happening in
+  the race: `Game.follow()` runs only when a pick changes or the split is
+  turned on, since picks are fixed once the field is away, and holds its
+  marble whatever becomes of it — home, stopped or lost — with no hand-over
+  to anyone else, because there is no one else to hand to. The renderer has
+  one camera and draws all of what it is given, so `main.ts` makes the
+  renderer one view's size, draws each camera's view into a texture of its
+  own (`present`) and copies them on to the canvas, which is configured
+  with `COPY_DST` for it: nothing in artshape-render changed. The grid
+  follows the screen's shape and the view count (`columnsFor`), so a view
+  is never a thin strip up to the eight a field can ever have. `S` and the
+  board's Split tab toggle `game.split`; a pick made while it is already on
+  grows or shrinks the grid on its own, without pressing `S` again. When
+  `game.split` is on but `views` is 0 the page falls back to its ordinary
+  chase camera exactly as if split were off — every guard in `main.ts`
+  reads `game.views`, never `game.split`, for that reason, and `chase()` in
+  the test API reads where that ordinary camera is looking, for a test that
+  wants to tell a chase still moving from one left frozen. `split()` and
+  `cameras()` are the rest of the test API. A caption in each view
+  (`#tags`, `captionOf` and `swatchOf` in `field.ts`) names its marble and
+  the player who picked it, over the top of the view on a wide screen and
+  at the foot of it upright, and on a phone the board shrinks to its header
+  while split so it covers neither a view nor its caption. A way of looking
+  and nothing the race feels: not saved, no marble touched, the same seed
+  the same race whatever is picked, which a test holds it to. Costs a scene
+  draw a view: about 1 ms at eight views, against 0.5 whole, in the perf
+  spec.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a

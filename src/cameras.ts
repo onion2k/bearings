@@ -1,23 +1,19 @@
 /**
- * Four cameras, each following a marble: which four, and where each looks
- * from. It is the split screen without the screen — nothing here draws — so
- * the choice of who is followed is stepped headless in a test and a script,
- * and the page only turns four targets into four quarters.
+ * The cameras of the split screen: one to every picked marble, and where
+ * each looks from. It is the split screen without the screen — nothing here
+ * draws — so the choice of who is followed is stepped headless in a test
+ * and a script, and the page only turns each target into a view.
  *
- * The picked marbles come first, in player order, since they are what a
- * player is watching; the rest of the four are the marbles furthest on that
- * nobody is following yet. A camera keeps its marble for as long as it is
- * racing, so a pass in the field does not send four views swapping places,
- * and hands over only when its marble is home, stopped or lost. With nobody
- * left to hand over to it stays where it is, on the marble that finished.
+ * A camera is not a marble but a player's pick: the first camera is always
+ * whichever marble player 1 has, the second whichever player 2 has, and so
+ * on, so a player's own view stays theirs even if the marbles pass each
+ * other. A pick can only change before the off, so once the field is away a
+ * camera's marble is fixed for the race, whatever becomes of it.
  */
-import { FINISHED, LOST, STALLED, type Marbles } from './marbles';
+import type { Marbles } from './marbles';
 
-/** The most cameras there are: one to every marble of a full field, in the eight-way split. */
+/** The most cameras there are: one to every marble of a full field. */
 export const MAX_SLOTS = 8;
-
-/** How many views the screen is split in: none, four, or eight. */
-export type Views = 0 | 4 | 8;
 
 /** Where a camera looks from, round the marble it follows: the same angles as the single view, much closer in. */
 export const SPLIT_VIEW = { azimuth: 0.9, polar: 0.95, radius: 16 };
@@ -30,8 +26,8 @@ export class Cameras {
   /** Whether a camera's target has been put on something yet, so the first look is not a flight from the origin. */
   private readonly placed = new Uint8Array(MAX_SLOTS);
 
-  /** How many cameras are in use: four, or eight. */
-  constructor(public count = 4) {}
+  /** How many cameras are in use: as many as are picked, at most `MAX_SLOTS`. */
+  constructor(public count = 0) {}
 
   /** Every camera let go of its marble, to be given one again. */
   reset() {
@@ -40,27 +36,20 @@ export class Cameras {
   }
 
   /**
-   * Who is followed, from how the race stands: the cameras whose marble is
-   * done with let it go, and every camera without one takes the next
-   * candidate that no camera has.
+   * Who is followed: the marble each player picked, in player order. A
+   * camera whose marble has not changed is left alone, easing stays smooth;
+   * one given a different marble — only possible before the off — is put on
+   * it outright the next `ease`, as if it had never followed anything.
    */
-  assign(marbles: Marbles, players: ArrayLike<number>, standing: readonly number[]) {
-    const done = (m: number) => {
-      const state = marbles.state[m];
-      return state === FINISHED || state === LOST || state === STALLED;
-    };
+  assign(players: ArrayLike<number>) {
     const picked: number[] = [];
     for (let m = 0; m < players.length; m++) if (players[m] > 0) picked.push(m);
     picked.sort((a, b) => players[a] - players[b]);
-    const candidates = [...picked, ...standing].filter((m) => m < marbles.count && !done(m));
-    const taken = (m: number) => this.marble.includes(m);
     for (let s = 0; s < this.count; s++) {
-      const now = this.marble[s];
-      // a camera on a marble still going keeps it; one on a marble that is done with hands over if anyone is left
-      if (now >= 0 && !done(now)) continue;
-      const next = candidates.find((m) => !taken(m));
-      if (next === undefined) continue;
+      const next = picked[s] ?? -1;
+      if (this.marble[s] === next) continue;
       this.marble[s] = next;
+      this.placed[s] = 0;
     }
   }
 
