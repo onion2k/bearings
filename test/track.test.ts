@@ -18,6 +18,7 @@ import {
   compile,
   exitOf,
   pose,
+  pose0,
   bowlHeight,
   moundHeight,
   spot,
@@ -339,7 +340,7 @@ describe('the track', () => {
       const seg = track.segments[1];
       const pegs = seg.obstacles;
       expect(pegs.length).toBeGreaterThan(10);
-      const at = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      const at = pose0();
       for (const peg of pegs) {
         expect(peg.motion.kind).toBe('fixed');
         pose(peg, 0, 0, at);
@@ -359,7 +360,7 @@ describe('the track', () => {
     });
 
     it('moves a sweeper across and back, a gate open and shut, and a wheel round, with time', () => {
-      const out = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      const out = pose0();
       const sweeper = track.segments[2].obstacles.find((o) => o.motion.kind === 'sweep')!;
       const across = [0, 0.25, 0.5, 0.75].map(
         (f) => pose(sweeper, f * (sweeper.motion as { period: number }).period, 0, out).across,
@@ -386,8 +387,40 @@ describe('the track', () => {
       }
     });
 
+    it('is met, as it comes down, as the arm that is drawn: the rod from its axle, tip and all', () => {
+      const paddle = track.segments[4].obstacles.find((o) => o.motion.kind === 'paddle')!;
+      const m = paddle.motion as { period: number; axle: number; arm: number; turn: number };
+      const ball = RADIUS;
+      const out = pose0();
+      // the arm worked out the long way round, from where it hangs: how far a marble's middle, sitting `a` along
+      // the chute at the height of the middles, is from the rod between the axle and the tip
+      const away = (theta: number, a: number) => {
+        const tip = [Math.sin(theta) * m.arm, m.axle - Math.cos(theta) * m.arm];
+        const along = tip[0],
+          up = tip[1] - m.axle;
+        const len = Math.hypot(along, up);
+        const s = Math.min(Math.max(((a - 0) * along + (0 - m.axle) * up) / (len * len), 0), 1);
+        return Math.hypot(a - s * along, 0 - (m.axle + s * up));
+      };
+      let seen = 0;
+      for (let k = 0; k < 60; k++) {
+        const t = (k / 60) * m.period;
+        pose(paddle, t, 0, out, ball);
+        const theta = Math.PI * 2 * ((((t / m.period + m.turn) % 1) + 1) % 1) - Math.PI;
+        // where the arm is solid at a marble's height, as the pose has it, against where a marble really touches it
+        for (let n = -40; n <= 40; n++) {
+          const a = paddle.along + n * 0.05;
+          const touches = away(theta, a - paddle.along) < paddle.radius + ball;
+          const inPose = out.present && Math.abs(a - out.along) < out.radius + ball;
+          expect(inPose, `at ${t.toFixed(2)} s, ${(a - paddle.along).toFixed(2)} from the axle`).toBe(touches);
+          if (touches) seen++;
+        }
+      }
+      expect(seen, 'and it is down some of the time, or this proves nothing').toBeGreaterThan(100);
+    });
+
     it('keeps time for each moving piece apart, so a race can start them anywhere in their turn', () => {
-      const out = { along: 0, across: 0, da: 0, dc: 0, half: 0, va: 0, vc: 0, present: true };
+      const out = pose0();
       const sweeper = track.segments[2].obstacles.find((o) => o.motion.kind === 'sweep')!;
       expect(sweeper.slot).toBeGreaterThanOrEqual(0);
       expect(pose(sweeper, 0, 0, out).across).not.toBeCloseTo(pose(sweeper, 0, 0.25, { ...out }).across, 2);

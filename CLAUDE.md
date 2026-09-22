@@ -357,9 +357,15 @@ ever builds on the end. Open, and belonging with those:
   quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
   worst since the gate in `Marbles.jumped`, and `checkMarbles` rules on it.
   The funnel's two jumps, into its bowl and out of its hole, were this. A
-  push is counted as explained, and one is still big: a wheel's paddle
-  comes down on a marble all at once and shoves it clear. That is next
-  through `/bug`, and then pushes are held to half a marble a step as well.
+  push is counted as explained, and some are still big. Measured over every
+  run and catalog piece on 24 seeds, what a thing in the way shoves a marble
+  in one step was: a wheel 0.63, a gate 0.61, a sweeper 0.48, a peg 0.34,
+  and marbles parting one another in a crowd up to about 0.9, against half a
+  marble of 0.45. The wheel's was the paddle appearing whole rather than
+  coming down, and is fixed; the gate's and the sweeper's are their own
+  bugs, still open, and the crowd's is the settling's. Pushes are held to
+  half a marble a step only once all of those are done, since a rule the
+  gate and the sweeper break would be a rule written red.
   A crowd squeezing into the neck of a gate's pen was the other: held there
   by a shut gate, the whole field spread out across the pen's full width,
   and closing that down to the chute's over the last fifth of the piece
@@ -379,9 +385,22 @@ ever builds on the end. Open, and belonging with those:
 - **A wheel is a gate that turns.** A marble that catches a paddle up is
   held until the paddle lifts out, and those that come close together are
   gathered abreast behind it and let go at once. It stands right across its
-  pen, and holds every marble from half a second to a second and a third;
-  over one half of its pen, the field came down the other half after a bend
-  and went by untouched.
+  pen, and holds every marble from about half a second to a second and a
+  half; over one half of its pen, the field came down the other half after a
+  bend and went by untouched. What a marble meets is the arm the scene
+  draws: `pose` takes the radius of the ball put to it (`RADIUS`, from the
+  solver) and works out where the arm — a rod swung from its axle, rounded
+  at the tip — is solid at the height of the marbles' middles, into
+  `Pose.radius`. Taken instead as that slice alone, as it was, a paddle was
+  not there at all until its tip reached a marble's middle and then was
+  there whole, and one coming down where a marble sat shoved it its own
+  reach, 0.63, in a single step. The arm takes up more of the pen than the
+  slice did, so the axle stands at 1.35 and the arm is 1.81, just long
+  enough for the tip to dip to the floor: at 1.1 the true arm pressed a
+  crowd into itself over 3,798 frames of 24 seeds out of a gate and into a
+  funnel, and at 1.35 none. `test/track.test.ts` holds the arm to the same
+  geometry worked out the long way round, a marble's middle against the rod,
+  at sixty moments of the turn and eighty places along the chute.
 - **The lane at the end is felt and a tilt.** Whatever a marble crosses the
   line at, it is slowed to a crawl (`LANE_PULL / LANE_BRAKE`) and creeps on
   to its place; without the tilt it stopped short of the queue, and

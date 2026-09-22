@@ -167,8 +167,9 @@ test.describe('what it looks like', () => {
       g.release();
       g.follow(false);
       g.step(584);
-      // looking down its pen, so the wheel is seen right across it from wall to wall, with the field at it
-      g.look(13.25, -28.05, -25.5, { azimuth: -Math.PI / 2, polar: 0.75, radius: 14 });
+      // from the side, where the paddles are edge on: down the pen they stand right across it from wall to wall,
+      // and a field gathered behind one is under the one before it and hidden
+      g.look(13.25, -28.05, -25.5, { azimuth: 0, polar: 0.9, radius: 16 });
       g.step(1);
       return g.marbles().filter((m) => m.segment === 8).length;
     });

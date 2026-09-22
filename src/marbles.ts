@@ -679,7 +679,7 @@ export class Marbles {
     const seg = this.track.segments[this.segment[i]];
     let hit = false;
     for (const ob of seg.obstacles) {
-      const p = pose(ob, this.t, ob.slot >= 0 ? this.phase[ob.slot] : 0, this.at);
+      const p = pose(ob, this.t, ob.slot >= 0 ? this.phase[ob.slot] : 0, this.at, RADIUS);
       if (!p.present) continue;
       // the nearest point on the rod to the marble, and the way from it to the marble
       const pa = this.along[i] - p.along,
@@ -688,7 +688,7 @@ export class Marbles {
       const qa = pa - p.da * s,
         qc = pc - p.dc * s;
       const d = Math.hypot(qa, qc);
-      const reach = ob.radius + RADIUS;
+      const reach = p.radius + RADIUS;
       if (d >= reach) continue;
       let na = d > 1e-6 ? qa / d : -1,
         nc = d > 1e-6 ? qc / d : 0;
@@ -1468,13 +1468,13 @@ export function checkMarbles(marbles: Marbles): string[] {
     if (state !== RACING) continue;
     // nothing sits inside a peg, a sweeper, a shut gate or a wheel's paddle, beyond the give a push leaves
     for (const ob of piece.obstacles) {
-      pose(ob, marbles.t, ob.slot >= 0 ? marbles.phase[ob.slot] : 0, at);
+      pose(ob, marbles.t, ob.slot >= 0 ? marbles.phase[ob.slot] : 0, at, RADIUS);
       if (!at.present) continue;
       const pa = marbles.along[i] - at.along,
         pc = marbles.across[i] - at.across;
       const s = Math.min(Math.max(pa * at.da + pc * at.dc, -at.half), at.half);
       const d = Math.hypot(pa - at.da * s, pc - at.dc * s);
-      if (d < ob.radius + RADIUS - 0.05)
+      if (d < at.radius + RADIUS - 0.05)
         problems.push(`marble ${i} is ${d.toFixed(3)} from the middle of a ${ob.motion.kind}, inside it`);
     }
   }

@@ -674,6 +674,43 @@ describe('the marbles', () => {
       }
     });
 
+    it('comes down on a marble without shoving it more than half a marble in a step, wherever it sits under the wheel', () => {
+      const run = chain(['start', 'ramp', 'wheel', 'straight', 'finish']);
+      const axle = compile(run).segments[2].obstacles[0].along;
+      let worst = 0,
+        where = '';
+      // a marble that cannot roll, anywhere from ahead of the axle to well behind where a paddle first comes down,
+      // held there a whole turn of the wheel: whatever moves it, a paddle moved
+      for (let behind = -0.6; behind <= 2; behind += 0.1)
+        for (const across of [-1, 0, 1]) {
+          const { marbles } = setOn(run, 2, axle - behind, across, 0);
+          marbles.friction = 1000;
+          const paddles = marbles.track.segments[2].obstacles;
+          marbles.phase[paddles[0].slot] = 0;
+          // set down clear of every paddle, as a marble always arrives, and not inside one already down
+          const set = pose0();
+          const clear = paddles.every((p) => {
+            pose(p, 0, 0, set, RADIUS);
+            return !set.present || Math.abs(marbles.along[0] - set.along) >= set.radius + RADIUS;
+          });
+          if (!clear) continue;
+          for (let f = 0; f < 5 * 60; f++) {
+            const was = marbles.segment[0];
+            const along = marbles.along[0],
+              side = marbles.across[0];
+            marbles.step(DT);
+            // off the wheel's own piece, where how far along means something else
+            if (marbles.segment[0] !== was) break;
+            const moved = Math.hypot(marbles.along[0] - along, marbles.across[0] - side);
+            if (moved > worst) {
+              worst = moved;
+              where = `${behind.toFixed(1)} behind the axle, ${across} across, frame ${f}`;
+            }
+          }
+        }
+      expect(worst, where).toBeLessThanOrEqual(RADIUS);
+    });
+
     it('holds back every marble that comes under the wheel, whichever side of the chute it comes in on', () => {
       /** How long a marble let go into the piece `across` its chute takes to cross it, the wheel's turn begun at `phase`. */
       const crossing = (kind: 'wheel' | 'ramp', across: number, phase: number) => {
@@ -699,13 +736,14 @@ describe('the marbles', () => {
     });
 
     it('gathers a whole field between two of its paddles without pressing any into another', () => {
-      // a field let out of a gate's pen together, and one crowding off the wheel into a bowl: with its axle lower,
-      // two paddles were down at once too close together for eight marbles to fit between them
+      // a field let out of a gate's pen together, and one crowding off the wheel into a bowl: the arm takes up
+      // more of the pen than its slice at a marble's height did, and with the axle lower two paddles were down at
+      // once too close together for eight marbles to fit between them
       for (const kinds of [
         ['start', 'gate', 'wheel', 'finish'],
         ['start', 'wheel', 'funnel', 'finish'],
       ] as const)
-        for (let seed = 1; seed <= 12; seed++) {
+        for (let seed = 1; seed <= 24; seed++) {
           const { marbles } = fieldOn(chain([...kinds]), seed);
           marbles.release();
           for (let f = 0; f < 60 * 60 && !marbles.over; f++) {

@@ -245,20 +245,79 @@ export interface Pose {
   half: number;
   va: number;
   vc: number;
+  /**
+   * How thick it is where the marbles' middles are, from its middle to its
+   * face: its own thickness for everything but a wheel's paddle, whose slice
+   * at that height grows as it comes down.
+   */
+  radius: number;
   present: boolean;
 }
 
 /** A pose to read into, so reading one makes nothing. */
 export function pose0(): Pose {
-  return { along: 0, across: 0, da: 1, dc: 0, half: 0, va: 0, vc: 0, present: true };
+  return { along: 0, across: 0, da: 1, dc: 0, half: 0, va: 0, vc: 0, radius: 0, present: true };
 }
+
+/**
+ * Where along the chute a wheel's paddle is solid, at the height of a
+ * marble's middle, for a ball of `ball` against it: the arm as a rod swung
+ * `theta` from straight down about an axle `axle` above that height, `arm`
+ * long and `thick` from its middle to its face. Its ends are rounded, so as
+ * the tip comes down on a marble the part of it the marble meets grows from
+ * nothing, as the paddle travels, rather than being there all at once.
+ * Into `span`, from the axle's own place along the chute; whether any of it
+ * is down there at all.
+ */
+function paddleSpan(axle: number, arm: number, thick: number, theta: number, span: number[]): boolean {
+  const s = Math.sin(theta),
+    c = Math.cos(theta);
+  let lo = Infinity,
+    hi = -Infinity;
+  const take = (a: number, b: number) => {
+    if (b <= a) return;
+    lo = Math.min(lo, a);
+    hi = Math.max(hi, b);
+  };
+  // the rounded end at the tip, and the one at the axle, wherever either comes down to a marble's middle
+  const tip = axle - arm * c;
+  if (Math.abs(tip) < thick) {
+    const w = Math.sqrt(thick * thick - tip * tip);
+    take(arm * s - w, arm * s + w);
+  }
+  if (Math.abs(axle) < thick) {
+    const w = Math.sqrt(thick * thick - axle * axle);
+    take(-w, w);
+  }
+  // the arm between them: within `thick` of the line it lies along, and between its two ends
+  if (Math.abs(c) > 1e-9) {
+    let from = (axle * s - thick) / c,
+      to = (axle * s + thick) / c;
+    if (from > to) [from, to] = [to, from];
+    if (Math.abs(s) > 1e-9) {
+      let end = -(axle * c) / s,
+        other = (arm - axle * c) / s;
+      if (end > other) [end, other] = [other, end];
+      take(Math.max(from, end), Math.min(to, other));
+    } else if (axle * c >= 0 && axle * c <= arm) take(from, to);
+  }
+  span[0] = lo;
+  span[1] = hi;
+  return hi > lo;
+}
+
+/** A span to read into, and the same a moment on, so reading a paddle makes nothing. */
+const span = [0, 0],
+  later = [0, 0];
+/** How long after a moment a paddle is read again, to tell how fast it goes on. */
+const SOON = 1e-4;
 
 /**
  * Where an obstacle is at race time `t`, its turn begun at `phase` of the way
  * round. Pure: the same moment and phase give the same pose, which is what
  * keeps a race that meets a moving piece the same from the same seed.
  */
-export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
+export function pose(ob: Obstacle, t: number, phase: number, out: Pose, ball = 0): Pose {
   out.along = ob.along;
   out.across = ob.across;
   out.da = Math.cos(ob.angle);
@@ -266,6 +325,7 @@ export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
   out.half = ob.half;
   out.va = 0;
   out.vc = 0;
+  out.radius = ob.radius;
   out.present = true;
   const m = ob.motion;
   switch (m.kind) {
@@ -299,12 +359,19 @@ export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
       // from straight down, round the way that carries a paddle on along the chute at the bottom of its turn
       const f = (((t / m.period + phase + m.turn) % 1) + 1) % 1;
       const theta = Math.PI * 2 * f - Math.PI;
-      const c = Math.cos(theta);
-      // down in the chute only while it reaches as low as a marble's middle
-      out.present = c > 0 && m.arm * c >= m.axle;
+      // in the way wherever the arm, as a rod swung from its axle, reaches a ball whose middle is at a marble's
+      // height: the wheel that is drawn. Taken as the arm's slice through that height alone, a paddle was not
+      // there at all until its tip got down to a marble's middle and then was there whole, so one that came down
+      // where a marble sat shoved it its own whole reach, 0.63, in a single step
+      out.present = paddleSpan(m.axle, m.arm, ob.radius + ball, theta, span);
       if (!out.present) return out;
-      out.along = ob.along + m.axle * Math.tan(theta);
-      out.va = (m.axle * ((Math.PI * 2) / m.period)) / (c * c);
+      out.along = ob.along + (span[0] + span[1]) / 2;
+      out.radius = (span[1] - span[0]) / 2 - ball;
+      // how fast it goes on, read a moment on: its middle's own pace, and not how fast its faces part as it comes
+      // down, which at the first touch of its tip is without limit and would throw whatever it touched
+      const soon = theta + ((Math.PI * 2) / m.period) * SOON;
+      if (paddleSpan(m.axle, m.arm, ob.radius + ball, soon, later))
+        out.va = ((later[0] + later[1]) / 2 - (span[0] + span[1]) / 2) / SOON;
       return out;
     }
   }
@@ -623,15 +690,21 @@ export const PEG = 0.22;
  * pen is either side of the middle; how far its paddles reach across, which
  * is the pen less a paddle's own thickness, so no marble gets round an end;
  * how thick a paddle is, how high the axle stands above a marble's middle,
- * how long a paddle is, and how long the wheel takes to go round. The axle's
- * height sets how far apart two paddles are along the pen while both are
- * down: at 1 they were 2.0 apart, and a whole field could not fit between
- * them in two rows, so the one coming down pressed marbles into each other.
- * At 1.1 they are 2.2 apart, and a paddle only just long enough to dip to the
- * floor is still down for more than a quarter of a turn, so there is never a
- * moment with none down for a marble to slip under.
+ * how long a paddle is — just far enough to dip to the floor — and how long
+ * the wheel takes to go round.
+ *
+ * The axle's height sets how far apart two paddles are along the pen while
+ * both are down, and so whether a whole field fits between them: at 1 they
+ * were 2.0 apart and the one coming down pressed marbles into each other,
+ * and at 1.1 they were 2.2 apart, which was room enough while a paddle was
+ * only its slice at the height of the marbles' middles. Met as the arm it is
+ * drawn as, which is what `pose` now hands the solver, a paddle takes up more
+ * of the pen than that slice did, and at 1.1 a crowd was pressed together
+ * again — 3,798 frames of it over 24 seeds out of a gate and into a funnel.
+ * At 1.35, with the arm grown to match, none is, and the wheel still holds
+ * every marble from about half a second to a second and a half.
  */
-export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.1, arm: 1.56, period: 4.8 };
+export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.35, arm: 1.81, period: 4.8 };
 
 /**
  * Rows of pegs, each row shifted half a gap from the one before, so that a
