@@ -102,6 +102,9 @@ change meant to move it, and the commit says why. Look at every picture.
   meets them in, so what is drawn is what a marble hits.
 - `src/cameras.ts` is the split screen's cameras, one to every picked
   marble, without the screen.
+- `src/designer.ts` is a run the player builds, a piece at a time, and the
+  designs they keep: what may go on the end, what is refused outright, and
+  what a design read back from a save has to be before it is put on.
 - `src/debug.ts` is `window.game`, the test API. `src/invariants.ts` lists
   the rules that must always hold. `src/autopilot.ts` plays the game by
   itself, for the gates.
@@ -110,9 +113,10 @@ change meant to move it, and the commit says why. Look at every picture.
   between a start and the end, for the board's second shelf; and
   `src/field.ts`, what the eight marbles are called and look like. A run's
   `id` is what the save knows it by, and never changes once a run has
-  shipped; a run the player designs will be the same shape. The save lives
-  in `progress.ts`: the races run, the run last put on, and the best time on
-  each run. Chance comes from `random.ts`, handed in.
+  shipped; a run the player designs is the same shape, kept in the save
+  under an id of its own. The save lives in `progress.ts`: the races run,
+  the run last put on, the best time on each run, and the designs kept.
+  Chance comes from `random.ts`, handed in.
 
 ## Skills
 
@@ -220,6 +224,36 @@ What to copy the shape of, when building something new:
   the same race whatever is picked, which a test holds it to. Costs a scene
   draw a view: about 1 ms at eight views, against 0.5 whole, in the perf
   spec.
+- **The designer:** `Designer` in `src/designer.ts`, driven by `Game`'s
+  `build`, `lay`, `undo`, `keep`, `leave` and `forget`, on a third shelf,
+  `'designs'`, whose runs are `progress.save.designs`. A piece goes on where
+  the last one hands a marble on (`open`, from `exitOf`), facing the way the
+  marble is going, so everything joins by construction and the turns do the
+  turning; taking one off takes the last, so the pieces are the undo and
+  `MAX_PIECES` its ceiling. `refuses` says no only to what the game could
+  not draw or race at all — past `MAX_PIECES`, `MOVING_MOST` of a moving
+  kind, or `MAX_SAMPLES` — and `check` says everything else, the same rules
+  every shipped run is held to, which the board shows as the run is built.
+  A run is kept only once `check` has nothing to say, so every design races;
+  `MAX_DESIGNS` (20) are kept, ids are `design-N` one past the highest, and a
+  design thrown away takes its best with it. While a run is being built it
+  is the run on, remade at every piece, and `release` does nothing; it is not
+  saved, and leaving or reloading throws it away. `readDesigns` checks every
+  design a save brings back as `check` would, since anyone can write a save.
+  The palette leaves out the splitter and the joiner: each opens or closes a
+  second end, and a builder with one open end cannot say which to build
+  from. Held by `test/designer.test.ts`, the invariants (no design id twice,
+  none over the cap, nothing let go down a run being built), the fuzzer's
+  `design` action, which stays at the builder three times in four while it
+  is there, since one that wandered off after every piece never kept a run,
+  `'designs kept'` and `'pieces being built'` in `scripts/leaks.ts`,
+  `test/saves/04-designs.json`, a stage in `smoke/progress.spec.ts`, the
+  `designer`, `design` and `designer-phone` pictures, and the frame of a
+  design being built and raced in the perf spec. On a phone the palette is
+  one row that scrolls sideways, so the builder stands no taller than the
+  board over a race. Every click checks the whole run again and compiles it
+  once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
+  click and never a frame.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
@@ -282,10 +316,12 @@ What to copy the shape of, when building something new:
 
 ## What comes next
 
-Five runs race, and up to eight players pick a marble each. Still to come,
-each through `/feature`: the designer, and patterns on the marbles, which
-want a change to artshape-render since it has no textures. Open, and
-belonging with those:
+Eight runs race, up to eight players pick a marble each, and a player can
+build and keep runs of their own. Still to come, each through `/feature`:
+patterns on the marbles, which want a change to artshape-render since it
+has no textures; and a designer that places a piece anywhere on the
+lattice, turned any way, splitters and joiners with it, where this one only
+ever builds on the end. Open, and belonging with those:
 
 - **The marbles are all the same, and are treated so.** No marble has form
   or any other property of its own. The field is stepped and parted in the
@@ -420,7 +456,10 @@ For anything new in the run, check what it does:
 - **building:** placed, moved, turned and taken away; placed overlapping
   what is already there, and placed with nothing underneath it; any piece
   after any other, which `test/joins.test.ts` races for every pair, and two
-  parts that pass through each other, which `check` refuses
+  parts that pass through each other, which `check` refuses. In the
+  designer: laid on the end and taken off again, laid after the end, laid
+  past a ceiling, a run kept, refused, left unkept, thrown away once kept,
+  and a design read back from a save that is not one
 - **let go and again:** the run released, stopped part way down, and
   released again from the same seed to the same result, marble for marble
 - **save:** saved, reloaded, and loaded from an old save without the field

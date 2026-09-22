@@ -103,6 +103,32 @@ test('draws the screen split in four and in eight within budget, with every marb
   expect(problems).toEqual([]);
 });
 
+test('draws a run being built, and a design raced, within budget', async ({ page }) => {
+  test.setTimeout(180_000);
+  const problems = watch(page);
+  await start(page, { seed: 11, paused: true });
+  const [building, raced] = await page.evaluate(async () => {
+    const g = window.game!;
+    g.build();
+    // every kind that moves, as many of each as a run may have, among boards and turns: the most a design can ask of a frame
+    const kinds = ['ramp', 'sweeper', 'curveLeft', 'gate', 'pegs', 'wheel', 'curveRight', 'bumps', 'drop'] as const;
+    for (let i = 0; i < 27; i++) g.lay(kinds[i % kinds.length]);
+    g.lay('finish');
+    g.step(2);
+    const building = await g.measureFrame();
+    const refused = g.keep('Busy');
+    if (refused.length) throw new Error(refused.join('; '));
+    g.release();
+    g.step(120);
+    return [building, await g.measureFrame()];
+  });
+  const ms = (n: number) => Math.round(n * 100) / 100;
+  console.log(`perf: a design, frame ${ms(building)} ms being built and ${ms(raced)} ms raced`);
+  expect(building, 'a run being built within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(raced, 'a design raced within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(problems).toEqual([]);
+});
+
 test('boots, draws and downloads within budget, and as it did before', async ({ page }, info) => {
   test.setTimeout(180_000);
   const problems = watch(page);

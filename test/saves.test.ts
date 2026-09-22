@@ -26,6 +26,8 @@ const KEPT: Record<string, Record<string, unknown>> = {
   // written when there was one best for the whole game: nobody can say which run it was set on, so it goes
   '02-race.json': { races: 12, run: '', bests: {} },
   '03-runs.json': { races: 30, run: 'the-tower', bests: { 'first-drop': 5.02, 'the-tower': 5.61 } },
+  // written once a player could build runs of their own: one kept, put on last, with a best on it
+  '04-designs.json': { races: 41, run: 'design-1', bests: { 'first-drop': 5.02, 'design-1': 4.4 } },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -55,14 +57,15 @@ describe('saves from every shape the game has written', () => {
         const game = new Game(new Progress(store));
         game.persist();
         const after = new Progress(memoryStore(store.json)).save;
-        const kept = Object.fromEntries(Object.entries(before.bests).filter(([id]) => RUNS.some((r) => r.id === id)));
-        expect(after).toEqual({ ...before, bests: kept, run: RUNS.some((r) => r.id === before.run) ? before.run : '' });
+        const known = (id: string) => RUNS.some((r) => r.id === id) || before.designs.some((r) => r.id === id);
+        const kept = Object.fromEntries(Object.entries(before.bests).filter(([id]) => known(id)));
+        expect(after).toEqual({ ...before, bests: kept, run: known(before.run) ? before.run : '' });
       });
     });
   }
 
   it('takes defaults for what an old save lacks, and shrugs at what it cannot read', () => {
-    const none = { races: 0, run: '', bests: {} };
+    const none = { races: 0, run: '', bests: {}, designs: [] };
     expect(new Progress(memoryStore('{"races": 3}')).save).toEqual({ ...none, races: 3 });
     expect(new Progress(memoryStore('not json')).save).toEqual(none);
     expect(new Progress(memoryStore('{"races": "lots"}')).save).toEqual(none);

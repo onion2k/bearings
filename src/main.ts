@@ -13,14 +13,15 @@ import { createApi } from './debug';
 import { MAX_SLOTS } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
-import { ABOUT } from './catalog';
+import { ABOUT, CATALOG } from './catalog';
+import { MAX_DESIGNS, PALETTE } from './designer';
 import { Game, type GameEvents, type Shelf } from './game';
 import { LOST, STALLED } from './marbles';
 import { Input } from './input';
 import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
-import { HALF_WIDTH } from './track';
+import { HALF_WIDTH, type Kind } from './track';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -49,6 +50,18 @@ const next = document.getElementById('next')!;
 const order = document.getElementById('order')!;
 const toRuns = document.getElementById('toRuns')!;
 const toPieces = document.getElementById('toPieces')!;
+const toDesigns = document.getElementById('toDesigns')!;
+const picker = document.getElementById('picker')!;
+const designTools = document.getElementById('designTools')!;
+const newDesign = document.getElementById('newDesign')!;
+const forgetDesign = document.getElementById('forget')!;
+const builder = document.getElementById('build')!;
+const designName = document.getElementById('designName') as HTMLInputElement;
+const palette = document.getElementById('palette')!;
+const undoPiece = document.getElementById('undo') as HTMLButtonElement;
+const keepDesign = document.getElementById('keep') as HTMLButtonElement;
+const leaveDesign = document.getElementById('leave')!;
+const problemList = document.getElementById('problems')!;
 const toSplit = document.getElementById('toSplit')!;
 const tags = document.getElementById('tags')!;
 const verdict = document.getElementById('verdict')!;
@@ -139,7 +152,7 @@ async function main() {
   // ?seed=N makes chance the same from before the field is drawn, for a test that wants the same race every run
   const seed = query.get('seed');
   const game = new Game(progress, events, seed !== null ? { random: seeded(+seed) } : {});
-  refresh = () => showOrder();
+  refresh = () => showBoard();
 
   // ---- the scene ----
 
@@ -281,7 +294,7 @@ async function main() {
     el.className = 'tag';
     el.append(document.createElement('i'), document.createTextNode(''));
     tags.append(el);
-    return { el, marble: -2, player: -2 };
+    return { el, marble: -2, player: -2, across: '' };
   });
   /**
    * The captions put over their views for the layout there is: over the top of each on a wide screen, where the
@@ -298,9 +311,8 @@ async function main() {
       c.marble = -2;
       if (s >= views) return;
       const cell = { x: s % columns, y: Math.floor(s / columns) };
-      // the first view's caption stays clear of the board over the top left, where a narrow view would put it
-      const across = `${(((cell.x + 0.5) / columns) * 100).toFixed(2)}%`;
-      c.el.style.left = s === 0 && !stacked ? `max(${across}, 290px)` : across;
+      c.across = `${(((cell.x + 0.5) / columns) * 100).toFixed(2)}%`;
+      c.el.style.left = c.across;
       c.el.style.top = `${(((cell.y + (stacked ? 1 : 0)) / rows) * 100).toFixed(2)}%`;
       c.el.style.marginTop = stacked ? '-26px' : '8px';
     });
@@ -319,6 +331,13 @@ async function main() {
       c.el.hidden = marble < 0;
       (c.el.firstChild as HTMLElement).style.background = swatchOf(marble);
       c.el.lastChild!.textContent = captionOf(marble, player);
+      // the first view's caption stays clear of the board over the top left, where a narrow view would put it: by
+      // how wide the board is and the caption is, both of which change, since a fixed clearance was overrun as soon
+      // as the board grew a tab
+      if (s === 0 && !stacked) {
+        const clear = board.getBoundingClientRect().right + 8 + c.el.offsetWidth / 2;
+        c.el.style.left = `max(${c.across}, ${Math.ceil(clear)}px)`;
+      }
     });
   };
   const resize = () => {
@@ -426,8 +445,6 @@ async function main() {
     // a run shows the best time on it, and a piece from the catalog says what it does instead
     bestLine.textContent =
       game.shelf === 'pieces' ? ABOUT[game.run] : best > 0 ? `best ${best.toFixed(2)}s` : 'no best yet';
-    toRuns.classList.toggle('on', game.shelf === 'runs');
-    toPieces.classList.toggle('on', game.shelf === 'pieces');
     const rows = game
       .standing()
       .map((i) => {
@@ -448,6 +465,74 @@ async function main() {
       .join('');
     order.innerHTML = rows;
     verdict.textContent = sayWho();
+  }
+
+  /**
+   * The board for whatever is on: the order of the race, with a designs
+   * shelf's own buttons under its title, or the builder in its place while a
+   * run is being built.
+   */
+  function showBoard() {
+    const building = game.designer !== null;
+    toRuns.classList.toggle('on', game.shelf === 'runs' && !building);
+    toPieces.classList.toggle('on', game.shelf === 'pieces');
+    toDesigns.classList.toggle('on', game.shelf === 'designs');
+    picker.hidden = building;
+    bestLine.hidden = building;
+    order.hidden = building;
+    verdict.hidden = building;
+    builder.hidden = !building;
+    board.classList.toggle('building', building);
+    designTools.hidden = building || game.shelf !== 'designs';
+    if (building) showBuild();
+    else showOrder();
+    // the board may have changed its width, and the first view's caption keeps clear of it by measuring it
+    for (const c of captions) c.marble = -2;
+  }
+
+  /** The builder the name was last cleared for: a new build starts with an empty name, showing the one it would get. */
+  let named: unknown = null;
+  /** One button to a kind of piece, made once; whether each can go on now changes as the run is built. */
+  const kinds = PALETTE.map((kind) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = CATALOG[kind].name;
+    b.dataset.kind = kind;
+    palette.append(b);
+    return b;
+  });
+
+  /** The builder: which pieces can go on the end, whether the run can be kept, and what is wrong with it if not. */
+  function showBuild() {
+    const designer = game.designer!;
+    if (named !== designer) {
+      named = designer;
+      designName.value = '';
+    }
+    designName.placeholder = designer.run.name;
+    for (const b of kinds) {
+      const kind = b.dataset.kind as Kind;
+      const refused = designer.refuses(kind);
+      b.disabled = refused !== '';
+      b.title = refused || CATALOG[kind].about;
+    }
+    undoPiece.disabled = designer.run.pieces.length <= 1;
+    const full = game.progress.save.designs.length >= MAX_DESIGNS;
+    const problems = full
+      ? [`${MAX_DESIGNS} designs are kept already: throw one away to keep another`]
+      : designer.problems();
+    keepDesign.disabled = problems.length > 0;
+    // the first few, which are what to put right first; the rest would only push the board down the screen
+    const lines = problems.slice(0, 3);
+    if (problems.length > 3) lines.push(`and ${problems.length - 3} more`);
+    problemList.replaceChildren(
+      ...(lines.length ? lines : ['sound, and ready to keep']).map((line) => {
+        const li = document.createElement('li');
+        li.textContent = line;
+        if (!lines.length) li.className = 'sound';
+        return li;
+      }),
+    );
   }
 
   /** The line under the board: how to pick before anyone has, and who won once it is over. */
@@ -471,7 +556,7 @@ async function main() {
   stats.hidden = false;
   help.hidden = false;
   title.textContent = game.track.name;
-  showOrder();
+  showBoard();
 
   // ---- each frame ----
 
@@ -507,23 +592,49 @@ async function main() {
       stats.textContent = `${smoothed.toFixed(1)} ms · ${game.marbles.finishers} home · ${game.progress.save.races} races`;
   }
 
+  /** The run on has changed, or the run being built has: built again, framed, and the board redrawn for it. */
+  const again = () => {
+    rebuild();
+    frameRun();
+    showBoard();
+  };
   /** Another run put on, by the arrows or by N: built, framed, and the board redrawn for it. */
   const step = (by: number) => {
     game.pick(game.run + by);
-    rebuild();
-    frameRun();
-    showOrder();
+    again();
   };
   prev.addEventListener('click', () => step(-1));
   next.addEventListener('click', () => step(1));
   /** The runs or the catalog of pieces on the board, put on where it was left, built and framed. */
   const shelve = (shelf: Shelf) => {
     game.browse(shelf);
-    rebuild();
-    frameRun();
-    showOrder();
+    again();
   };
   toRuns.addEventListener('click', () => shelve('runs'));
+  toDesigns.addEventListener('click', () => shelve('designs'));
+  newDesign.addEventListener('click', () => {
+    game.build();
+    again();
+  });
+  forgetDesign.addEventListener('click', () => {
+    game.forget(game.run);
+    again();
+  });
+  palette.addEventListener('click', (e) => {
+    const kind = (e.target as HTMLElement).closest('button')?.dataset.kind;
+    if (kind && game.lay(kind as Kind)) again();
+  });
+  undoPiece.addEventListener('click', () => {
+    if (game.undo()) again();
+  });
+  // a run that cannot be kept is not: the board already says why, and keeps saying it
+  keepDesign.addEventListener('click', () => {
+    if (game.keep(designName.value).length === 0) again();
+  });
+  leaveDesign.addEventListener('click', () => {
+    game.leave();
+    again();
+  });
   toSplit.addEventListener('click', cycleSplit);
   toPieces.addEventListener('click', () => shelve('pieces'));
   // a row of the board picked by a tap or a click, for the next player without a marble, or let go again
@@ -532,6 +643,8 @@ async function main() {
     if (row?.dataset.marble !== undefined) game.claim(Number(row.dataset.marble));
   });
   new Input((intent) => {
+    // a run being built is only left by its own buttons: a stray N or C would throw away what was not kept
+    if (game.designer && (intent === 'next' || intent === 'shelf')) return;
     if (intent === 'release') game.release();
     else if (intent === 'reset') game.reset();
     else if (intent === 'next') step(1);
@@ -540,7 +653,7 @@ async function main() {
     else {
       if (intent.pick < game.marbles.count) game.claim(game.standing()[intent.pick]);
     }
-    showOrder();
+    showBoard();
   });
 
   // ---- the test API, and the frame loop ----
@@ -562,11 +675,7 @@ async function main() {
     simulate,
     draw,
     frame: () => frames,
-    rebuild: () => {
-      rebuild();
-      frameRun();
-      showOrder();
-    },
+    rebuild: again,
     look(x, y, z, view) {
       follow = false;
       cam.target = [x, y, z];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_DESIGNS } from '../src/designer';
 import { checkInvariants } from '../src/invariants';
 import { FINISHED, RACING } from '../src/marbles';
 import { newGame, race, settle } from './helpers';
@@ -76,6 +77,32 @@ describe('what must always hold', () => {
     game.players[0] = 1;
     game.players[3] = 1;
     expect(checkInvariants(game).join('\n')).toMatch(/player 1 has marbles 0 and 3/);
+  });
+
+  it('reports a design on that is not one, two designs with one id, and more designs than are kept', () => {
+    const { game } = newGame(1);
+    game.build();
+    for (const k of ['ramp', 'finish'] as const) game.lay(k);
+    expect(game.keep('Mine')).toEqual([]);
+    expect(checkInvariants(game)).toEqual([]);
+    game.run = 3;
+    expect(checkInvariants(game).join('\n')).toMatch(/of 1 designs/);
+    game.run = 0;
+    const { designs } = game.progress.save;
+    designs.push({ ...designs[0] });
+    expect(checkInvariants(game).join('\n')).toMatch(/two designs are design-1/);
+    designs.length = 1;
+    for (let i = 0; i < MAX_DESIGNS; i++) designs.push({ ...designs[0], id: `design-${i + 2}` });
+    expect(checkInvariants(game).join('\n')).toMatch(/designs are kept/);
+  });
+
+  it('reports a field let go on a run that is still being built', () => {
+    const { game } = newGame(1);
+    game.build();
+    game.lay('ramp');
+    expect(checkInvariants(game)).toEqual([]);
+    game.marbles.release();
+    expect(checkInvariants(game).join('\n')).toMatch(/being built/);
   });
 
   it('reports a piece on that is not one of the pieces', () => {

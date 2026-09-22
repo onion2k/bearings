@@ -19,9 +19,10 @@
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MAX_SLOTS } from '../src/cameras';
+import { MAX_DESIGNS } from '../src/designer';
 import { MARBLES } from '../src/marbles';
 import { RUNS } from '../src/runs';
-import { MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
+import { MAX_PIECES, MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 
@@ -38,11 +39,16 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   'cameras followed': { ceiling: MAX_SLOTS },
   segments: { ceiling: MAX_SEGMENTS },
   samples: { ceiling: MAX_SAMPLES },
-  // the save is three fields and has to stay three, however long it is played
-  'save fields': { ceiling: 3 },
-  // a best for each run there is, and never one for a run there is not
-  'bests kept': { ceiling: RUNS.length },
-  'save bytes': { ceiling: 2_000 },
+  // the save is four fields and has to stay four, however long it is played
+  'save fields': { ceiling: 4 },
+  // a best for each run there is, the player's own among them, and never one for a run there is not
+  'bests kept': { ceiling: RUNS.length + MAX_DESIGNS },
+  // the designs a player keeps, which they throw away themselves to keep more
+  'designs kept': { ceiling: MAX_DESIGNS },
+  // the run being built is its own undo, so it can never hold more than a run may
+  'pieces being built': { ceiling: MAX_PIECES },
+  // what the save was before designs, and every design as long as a run may be, at the most a piece can take to write
+  'save bytes': { ceiling: 2_000 + MAX_DESIGNS * (100 + MAX_PIECES * 64) },
   // the catch-all for what is leaking and has no name here; noisy, so it is given a lot of room
   'heap MB': { ceiling: 300, steady: true },
 };
@@ -57,6 +63,8 @@ export function sizes(game: Game): Record<string, number> {
     samples: track.samples,
     'save fields': Object.keys(progress.save).length,
     'bests kept': Object.keys(progress.save.bests).length,
+    'designs kept': progress.save.designs.length,
+    'pieces being built': game.designer?.run.pieces.length ?? 0,
     'save bytes': JSON.stringify(progress.save).length,
     'heap MB': Math.round(process.memoryUsage().heapUsed / 1e5) / 10,
   };

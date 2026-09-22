@@ -1,12 +1,16 @@
 /**
  * What the player has to show for it, and where it is kept: the races run,
- * the run last put on, and the best winning time on each run, in the
- * browser's storage or, for the game run without a page, anywhere. Old saves
+ * the run last put on, the best winning time on each run, and the runs they
+ * have built themselves, in the browser's storage or, for the game run
+ * without a page, anywhere. Old saves
  * must still load: a field a save does not have takes its default, so a save
  * written before a field existed opens without complaint. A save written
  * when there was one best for the whole game has it dropped, since nobody
  * can say now which run it was set on.
  */
+import { readDesigns } from './designer';
+import type { Run } from './track';
+
 export interface Save {
   /** How many races have been run to the end. */
   races: number;
@@ -14,6 +18,8 @@ export interface Save {
   run: string;
   /** The best winning time on each run, in seconds, by the run's id. */
   bests: Record<string, number>;
+  /** The runs the player has built and kept, oldest first: never more than `MAX_DESIGNS`, and every one sound. */
+  designs: Run[];
 }
 
 /**
@@ -75,7 +81,7 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
   };
 }
 
-const fresh = (): Save => ({ races: 0, run: '', bests: {} });
+const fresh = (): Save => ({ races: 0, run: '', bests: {}, designs: [] });
 
 /** A number from a save, or the default where it is missing or not a number. */
 function number(from: Record<string, unknown>, key: string, or: number): number {
@@ -106,6 +112,7 @@ export class Progress {
     if (typeof bests === 'object' && bests !== null)
       for (const [id, time] of Object.entries(bests as Record<string, unknown>))
         if (ID.test(id) && typeof time === 'number' && Number.isFinite(time) && time > 0) this.save.bests[id] = time;
+    this.save.designs = readDesigns(from.designs);
   }
 
   get races() {

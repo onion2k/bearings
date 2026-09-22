@@ -17,6 +17,8 @@ import { checkInvariants } from './invariants';
 import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
 import { seeded } from './random';
 import { PIECES } from './catalog';
+import { PALETTE } from './designer';
+import type { Kind } from './track';
 import { RUNS } from './runs';
 
 declare global {
@@ -37,7 +39,7 @@ export interface GameState {
   run: number;
   runName: string;
   runId: string;
-  /** Which shelf is on the board: the runs, or the catalog of pieces. */
+  /** Which shelf is on the board: the runs, the catalog of pieces, or the player's own designs. */
   shelf: Shelf;
   /** How the race that is on stands. */
   waiting: number;
@@ -87,6 +89,18 @@ export interface Content {
   marbles: number;
 }
 
+/** The builder, as a test sees it. */
+export interface Designing {
+  building: boolean;
+  /** The run being built, by kind, the start first; empty while nothing is. */
+  pieces: Kind[];
+  /** What is wrong with it, in the player's terms; empty once it could be kept. */
+  problems: string[];
+  /** The kinds it can be built with. */
+  palette: Kind[];
+  designs: { id: string; name: string; pieces: number }[];
+}
+
 export interface GameApi {
   readonly version: 1;
   /** Booted, and the frame loop running. */
@@ -111,8 +125,22 @@ export interface GameApi {
 
   /** Put a run on, by its number on the shelf that is on the board. */
   pick(run: number): void;
-  /** The other shelf on the board, where it was left. */
+  /** Another shelf on the board, where it was left; the designs shelf with none on it is the builder. */
   browse(shelf: Shelf): void;
+  /** A run begun from a start gate, to build a piece at a time, and put on as it grows. */
+  build(): void;
+  /** A piece of `kind` on the end of the run being built; whether it went on. */
+  lay(kind: Kind): boolean;
+  /** The last piece of the run being built taken off; whether there was one. */
+  undo(): boolean;
+  /** The run being built kept and put on; what is wrong with it instead, and nothing kept, where anything is. */
+  keep(name?: string): string[];
+  /** The run being built thrown away, and the run it was begun from put back on. */
+  leave(): void;
+  /** A kept design thrown away, by its number on the designs shelf. */
+  forget(index: number): void;
+  /** The builder as it stands: whether a run is being built, its pieces, what is wrong with it, and the designs kept. */
+  designer(): Designing;
   /** Let them go: where each starts is drawn now. */
   release(): void;
   /** The field back on the start gate. */
@@ -264,6 +292,43 @@ export function createApi(host: DebugHost): GameApi {
     browse(shelf) {
       game.browse(shelf);
       host.rebuild();
+    },
+    build() {
+      game.build();
+      host.rebuild();
+    },
+    lay(kind) {
+      const went = game.lay(kind);
+      host.rebuild();
+      return went;
+    },
+    undo() {
+      const went = game.undo();
+      host.rebuild();
+      return went;
+    },
+    keep(name = '') {
+      const refused = game.keep(name);
+      host.rebuild();
+      return refused;
+    },
+    leave() {
+      game.leave();
+      host.rebuild();
+    },
+    forget(index) {
+      game.forget(index);
+      host.rebuild();
+    },
+    designer() {
+      const { designer } = game;
+      return {
+        building: designer !== null,
+        pieces: designer ? designer.run.pieces.map((p) => p.kind) : [],
+        problems: designer ? designer.problems() : [],
+        palette: [...PALETTE],
+        designs: game.progress.save.designs.map((d) => ({ id: d.id, name: d.name, pieces: d.pieces.length })),
+      };
     },
     release: () => game.release(),
     reset: () => game.reset(),

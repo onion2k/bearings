@@ -6,7 +6,7 @@ describe('the save', () => {
   it('counts every race run, and keeps only the best time on each run', () => {
     const p = new Progress(memoryStore());
     p.ran('first-drop', 6);
-    expect(p.save).toEqual({ races: 1, run: '', bests: { 'first-drop': 6 } });
+    expect(p.save).toEqual({ races: 1, run: '', bests: { 'first-drop': 6 }, designs: [] });
     p.ran('first-drop', 7);
     expect(p.best('first-drop'), 'a slower race is counted, and leaves the best alone').toBe(6);
     expect(p.races).toBe(2);
@@ -45,7 +45,7 @@ describe('the save', () => {
     const json =
       '{"races":3,"run":42,"bests":{"first-drop":5,"the-chute":-1,"Not An Id":4,"__proto__":{"polluted":1},"switchback":"fast"}}';
     const p = new Progress(memoryStore(json));
-    expect(p.save).toEqual({ races: 3, run: '', bests: { 'first-drop': 5 } });
+    expect(p.save).toEqual({ races: 3, run: '', bests: { 'first-drop': 5 }, designs: [] });
     expect(Object.getPrototypeOf(p.save.bests), 'no key in a save reaches the prototype').toBe(Object.prototype);
     expect(({} as Record<string, unknown>).polluted).toBe(undefined);
   });
@@ -56,7 +56,7 @@ describe('the save', () => {
     p.ran('first-drop', 4);
     p.persist();
     p.reset();
-    expect(p.save).toEqual({ races: 0, run: '', bests: {} });
+    expect(p.save).toEqual({ races: 0, run: '', bests: {}, designs: [] });
     expect(store.json).toBe(null);
   });
 });

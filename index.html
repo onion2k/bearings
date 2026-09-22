@@ -59,7 +59,7 @@
     min-width: 168px;
     font-size: 13px;
   }
-  /* the two shelves the board can show, the runs and the catalog of pieces, as a pair of tabs over the title */
+  /* the shelves the board can show, the runs, the catalog of pieces and the player's own, as tabs over the title */
   #shelves {
     display: flex;
     justify-content: center;
@@ -197,6 +197,86 @@
   #verdict:empty {
     display: none;
   }
+  /* the builder: a name, every piece that can go on the end, and what is wrong with the run as it stands. Like
+     the picker, everything in it takes the pointer back from the canvas */
+  #build {
+    width: 210px;
+  }
+  #build[hidden],
+  #designTools[hidden],
+  #picker[hidden] {
+    display: none;
+  }
+  #designName {
+    pointer-events: auto;
+    width: 100%;
+    margin: 0 0 6px;
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--gold);
+    font: inherit;
+    font-weight: 700;
+    text-align: center;
+  }
+  #palette {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+  }
+  #palette button,
+  .tools button {
+    pointer-events: auto;
+    border: 0;
+    border-radius: 6px;
+    padding: 3px 4px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--ink);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    cursor: pointer;
+  }
+  #palette button:hover:not(:disabled),
+  .tools button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  #palette button:disabled,
+  .tools button:disabled {
+    color: var(--dim);
+    opacity: 0.45;
+    cursor: default;
+  }
+  .tools {
+    display: flex;
+    gap: 3px;
+    margin: 6px 0 2px;
+  }
+  .tools button {
+    flex: 1;
+    font-weight: 600;
+  }
+  #keep:not(:disabled) {
+    background: var(--gold);
+    color: #19150a;
+  }
+  #problems {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  #problems li + li {
+    margin-top: 3px;
+  }
+  #problems li.sound {
+    color: var(--gold);
+    font-weight: 600;
+    text-align: center;
+  }
   #stats {
     top: 16px;
     right: 16px;
@@ -280,12 +360,34 @@
       display: none;
     }
   }
+  /* building on a phone: the whole width, and the pieces one row a thumb scrolls sideways, so the builder stands
+     no taller than the board does over a race and leaves the run it is building in view */
+  @media (max-width: 600px) {
+    #board.building {
+      right: 16px;
+    }
+    #build {
+      width: auto;
+    }
+    #palette {
+      display: flex;
+      overflow-x: auto;
+      scrollbar-width: none;
+      pointer-events: auto;
+    }
+    #palette button {
+      flex: none;
+      white-space: nowrap;
+      padding: 4px 8px;
+    }
+  }
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
 <div class="panel" id="board" hidden>
   <div id="shelves">
     <button id="toRuns" type="button" class="on">Runs</button>
     <button id="toPieces" type="button">Pieces</button>
+    <button id="toDesigns" type="button">Designs</button>
     <button id="toSplit" type="button" aria-label="Split the screen in four or eight, each view on a marble">
       Split
     </button>
@@ -296,6 +398,20 @@
     <button id="next" type="button" aria-label="The next run">›</button>
   </div>
   <div id="best"></div>
+  <div id="designTools" class="tools" hidden>
+    <button id="newDesign" type="button">Build another</button>
+    <button id="forget" type="button">Throw away</button>
+  </div>
+  <div id="build" hidden>
+    <input id="designName" type="text" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Its name" />
+    <div id="palette"></div>
+    <div class="tools">
+      <button id="undo" type="button">Undo</button>
+      <button id="keep" type="button">Keep</button>
+      <button id="leave" type="button">Leave</button>
+    </div>
+    <ul id="problems"></ul>
+  </div>
   <ol id="order"></ol>
   <div id="verdict"></div>
 </div>
@@ -303,7 +419,7 @@
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="help" hidden>
   <span>1</span>–<span>8</span> pick a marble · <span>space</span> let them go · <span>R</span> again ·
-  <span>C</span> pieces · <span>S</span> split screen · drag to orbit, wheel to zoom
+  <span>C</span> pieces · <span>S</span> split screen · Designs to build your own · drag to orbit, wheel to zoom
 </div>
 <div id="boot">
   <p id="bootMsg">starting WebGPU…</p>

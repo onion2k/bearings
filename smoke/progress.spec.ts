@@ -369,3 +369,97 @@ test('the split turned on with fewer than two picked chases the leader as if it 
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });
+
+test('a run built on the board a piece at a time, kept, raced, and put back on after a reload', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 5, paused: true });
+  const designer = () => page.evaluate(() => window.game!.designer());
+  const piece = (name: string) => page.locator('#palette').getByRole('button', { name, exact: true });
+
+  // the designs shelf, with nothing on it yet, is the builder: a start gate, and nothing to keep
+  await page.locator('#toDesigns').click();
+  expect((await designer()).building).toBe(true);
+  await expect(page.locator('#build')).toBeVisible();
+  await expect(page.locator('#order')).toBeHidden();
+  await expect(page.locator('#keep')).toBeDisabled();
+  await expect(page.locator('#undo')).toBeDisabled();
+  await expect(page.locator('#problems')).toContainText('no finish');
+
+  // built from the palette, each piece on where the last hands a marble on, the run framed as it grows
+  for (const name of ['Ramp', 'Peg board', 'Left turn', 'Ramp', 'The end']) await piece(name).click();
+  expect((await designer()).pieces).toEqual(['start', 'ramp', 'pegs', 'curveLeft', 'ramp', 'finish']);
+  await expect(page.locator('#problems')).toHaveText('sound, and ready to keep');
+  await expect(page.locator('#keep')).toBeEnabled();
+  await expect(piece('Ramp'), 'nothing goes on after the end').toBeDisabled();
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+
+  // the end taken off again, and put back
+  await page.locator('#undo').click();
+  await expect(page.locator('#keep')).toBeDisabled();
+  await expect(piece('Ramp')).toBeEnabled();
+  await piece('The end').click();
+
+  // nothing goes down a run still being built, and a key typed into its name is the name's and not the game's:
+  // this one has a space in it, which lets them go, an R, which sets up again, an N, which puts on the next run,
+  // and a 1, which picks a marble
+  await page.keyboard.press(' ');
+  expect((await page.evaluate(() => window.game!.state())).racing).toBe(0);
+  await page.locator('#designName').fill('');
+  await page.locator('#designName').pressSequentially('Down and round 1');
+  const state = await page.evaluate(() => window.game!.state());
+  expect(state.racing).toBe(0);
+  expect((await page.evaluate(() => window.game!.marbles())).every((m) => m.player === 0)).toBe(true);
+  expect((await designer()).building, 'still building, not put on to the next run').toBe(true);
+  // and out of the field, N and C, which would put on another run or shelf, do not throw away a run not yet kept
+  await page.locator('#designName').blur();
+  await page.keyboard.press('n');
+  await page.keyboard.press('c');
+  expect((await designer()).pieces.length, 'the run built so far, all of it').toBe(6);
+
+  // kept: on the designs shelf, under its name, with its own buttons, and raced like any run
+  await page.locator('#keep').click();
+  const kept = await designer();
+  expect(kept.building).toBe(false);
+  expect(kept.designs).toEqual([{ id: 'design-1', name: 'Down and round 1', pieces: 6 }]);
+  await expect(page.locator('#title')).toHaveText('Down and round 1');
+  await expect(page.locator('#designTools')).toBeVisible();
+  await expect(page.locator('#toDesigns')).toHaveClass(/on/);
+  const raced = await page.evaluate(() => {
+    const g = window.game!;
+    g.release();
+    g.settle(60);
+    g.save();
+    return [g.state(), g.invariants()] as const;
+  });
+  expect(raced[1]).toEqual([]);
+  expect(raced[0].over).toBe(true);
+  expect(raced[0].runId).toBe('design-1');
+  expect(raced[0].best).toBeGreaterThan(0);
+  await expect(page.locator('#best')).toContainText('best');
+
+  // a reload puts it back on, best and all
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.game?.ready ?? false), { timeout: 60_000 }).toBe(true);
+  const back = await page.evaluate(() => window.game!.state());
+  expect(back.shelf).toBe('designs');
+  expect(back.runId).toBe('design-1');
+  expect(back.best).toBeCloseTo(raced[0].best, 5);
+  await expect(page.locator('#title')).toHaveText('Down and round 1');
+
+  // thrown away: nothing left on the shelf, so the builder again, and the save forgets it and its best
+  await page.locator('#forget').click();
+  const gone = await designer();
+  expect(gone.building).toBe(true);
+  expect(gone.designs).toEqual([]);
+  const save = JSON.parse(await page.evaluate(() => window.game!.save())) as { bests: object; run: string };
+  expect(save.bests).not.toHaveProperty('design-1');
+  expect(save.run).toBe('');
+
+  // left unkept, back to the runs
+  await page.locator('#leave').click();
+  expect((await page.evaluate(() => window.game!.state())).shelf).toBe('runs');
+  await expect(page.locator('#build')).toBeHidden();
+  await expect(page.locator('#order')).toBeVisible();
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});

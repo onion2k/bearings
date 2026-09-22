@@ -9,15 +9,15 @@
  * all of that is the marbles' own rules, in `checkMarbles`. The
  * places given out are 1, 2, 3 and so on with none repeated, and only to
  * marbles that got there. No player has two marbles, nor any marble two
- * players. The save only ever grew.
+ * players. The save only ever grew, and keeps no more designs than it may,
+ * no two under one id. Nothing is let go down a run still being built.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import type { Game } from './game';
-import { FINISHED, checkMarbles } from './marbles';
-import { PIECES } from './catalog';
-import { RUNS } from './runs';
+import { MAX_DESIGNS } from './designer';
+import { FINISHED, WAITING, checkMarbles } from './marbles';
 import { checkTrack } from './track';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -78,13 +78,31 @@ export function checkInvariants(game: Game): string[] {
   });
   report('the cameras', cameras);
 
-  // the run on is one of the runs there are, and it is the one the save says, or the save says none yet
-  const list = game.shelf === 'runs' ? RUNS : PIECES;
-  if (!Number.isInteger(game.run) || game.run < 0 || game.run >= list.length)
+  // the run on is one of the runs on its shelf, and it is the one the save says, or the save says none yet; a run
+  // being built is the builder's own, and nothing goes down it until it is kept
+  const { list } = game;
+  if (game.designer) {
+    if (track.name !== game.designer.run.name)
+      out.push(`${game.designer.run.name} is being built, and ${track.name} is on`);
+    for (let i = 0; i < marbles.count; i++)
+      if (marbles.state[i] !== WAITING) {
+        out.push(`marble ${i} was let go down a run still being built`);
+        break;
+      }
+  } else if (!Number.isInteger(game.run) || game.run < 0 || game.run >= list.length)
     out.push(`run ${game.run} is on, of ${list.length} ${game.shelf}`);
   else if (track.name !== list[game.run].name) out.push(`run ${game.run} is on, and the track is ${track.name}`);
-  else if (game.shelf === 'runs' && progress.save.run !== '' && progress.save.run !== list[game.run].id)
+  else if (game.shelf !== 'pieces' && progress.save.run !== '' && progress.save.run !== list[game.run].id)
     out.push(`the save says ${progress.save.run} is on, and ${list[game.run].id} is`);
+
+  // the designs are as many as a save keeps at most, each under an id of its own
+  const { designs } = progress.save;
+  if (designs.length > MAX_DESIGNS) out.push(`${designs.length} designs are kept, of ${MAX_DESIGNS} at most`);
+  const ids = new Set<string>();
+  for (const d of designs) {
+    if (ids.has(d.id)) out.push(`two designs are ${d.id}`);
+    ids.add(d.id);
+  }
 
   const { races, bests } = progress.save;
   if (!Number.isInteger(races) || races < 0) out.push(`${races} races have been run`);

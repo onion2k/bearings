@@ -362,6 +362,39 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the builder, a run part built, with what is still wrong with it', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['ramp', 'pegs', 'curveLeft', 'drop', 'sweeper'] as const) g.lay(k);
+      g.step(2);
+    });
+    await expect(page.locator('#problems')).toContainText('no finish');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('designer.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a design kept, on its shelf, the field part way down it', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['ramp', 'pegs', 'curveLeft', 'drop', 'sweeper', 'curveRight', 'ramp', 'finish'] as const)
+        g.lay(k);
+      g.keep('Round the sweeper');
+      g.release();
+      g.step(150);
+    });
+    await expect(page.locator('#title')).toHaveText('Round the sweeper');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('design.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
     test('the board and the run, at the width of a phone', async ({ page }) => {
@@ -405,6 +438,20 @@ test.describe('what it looks like', () => {
       });
       await hideStats(page);
       await expect(page).toHaveScreenshot('split-six-phone.png', TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+
+    test('the builder, at the width of a phone', async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true });
+      await page.evaluate(() => {
+        const g = window.game!;
+        g.browse('designs');
+        for (const k of ['ramp', 'pegs', 'curveLeft', 'drop'] as const) g.lay(k);
+        g.step(2);
+      });
+      await hideStats(page);
+      await expect(page).toHaveScreenshot('designer-phone.png', TOLERANCE);
       expect(problems).toEqual([]);
     });
   });
