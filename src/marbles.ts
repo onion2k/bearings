@@ -157,6 +157,15 @@ export const JUMP = 0.25;
 export const SHOVE = RADIUS;
 
 /**
+ * How far everything that pushes a marble may move it in one step, all told:
+ * its own width. A crowd pressed together by something in the way has to be
+ * parted, and the marble at the end of the press goes furthest; parting a
+ * pair evenly and letting the walls refuse what they would, which the run
+ * then made up for along its length, once carried one 1.12 in a step.
+ */
+export const HEAVE = RADIUS * 2;
+
+/**
  * How slowly a marble may be going, and for how long, before the run is
  * called on it. A run that cannot be finished has to be noticed and said,
  * because the alternative is a race nobody is ever told is over. It is
@@ -288,7 +297,12 @@ export class Marbles {
   private readonly fromY: Float32Array;
   private readonly fromZ: Float32Array;
   private readonly went: Float32Array;
-  private readonly pushed: Float32Array;
+  /**
+   * How far everything that pushed each marble moved it this step, all told:
+   * the things in the way, the walls, and the others in a crowd being parted.
+   * What `HEAVE` is the ceiling on, and `checkMarbles` rules on.
+   */
+  readonly pushed: Float32Array;
   /**
    * The furthest a thing in the way has moved a marble in one shove since the
    * field was set on the gate, and which piece did it: what `SHOVE` is the
@@ -1273,8 +1287,16 @@ export class Marbles {
     const nx = d > 1e-6 ? da / d : 0,
       ny = d > 1e-6 ? dc / d : 1;
     const half = (touch - d) / 2;
-    this.across[a] = Math.min(wallA, Math.max(-wallA, this.across[a] - ny * half));
-    this.across[b] = Math.min(wallB, Math.max(-wallB, this.across[b] + ny * half));
+    // across the channel, each takes what room it has toward its own wall, and whatever one cannot take the
+    // other does: split evenly and clamped, a marble already on the wall took none of it and the pair stayed
+    // inside each other, which the run had then to make up for along its length — the furthest travelling part
+    // of settling a crowd
+    const roomA = ny > 0 ? this.across[a] + wallA : wallA - this.across[a];
+    const roomB = ny > 0 ? wallB - this.across[b] : this.across[b] + wallB;
+    const takeA = Math.min(half + Math.max(0, half - roomB), roomA);
+    const takeB = Math.min(half + Math.max(0, half - roomA), roomB);
+    this.across[a] = Math.min(wallA, Math.max(-wallA, this.across[a] - ny * takeA));
+    this.across[b] = Math.min(wallB, Math.max(-wallB, this.across[b] + ny * takeB));
     // along the run, exactly as far again as leaves them touching with the gap across that the walls allowed
     const across = this.across[b] - this.across[a];
     const need = Math.sqrt(Math.max(0, touch * touch - across * across));
@@ -1464,6 +1486,9 @@ export function checkMarbles(marbles: Marbles): string[] {
       problems.push(
         `marble ${i} was shoved ${marbles.shoved[i].toFixed(3)} in one go by something in the way on piece ${marbles.shovedOn[i]}`,
       );
+    // nothing is moved further than its own width in a step by everything that pushes it, however tight the crowd
+    if (marbles.pushed[i] > HEAVE)
+      problems.push(`marble ${i} was pushed ${marbles.pushed[i].toFixed(3)} in one step, further than its own width`);
     if (marbles.jumped[i] > JUMP)
       problems.push(
         `marble ${i} moved ${marbles.jumped[i].toFixed(3)} further in a step than its speed and what pushed it explain, on to piece ${marbles.jumpedOn[i]}`,

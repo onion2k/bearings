@@ -333,10 +333,12 @@ async function main() {
       c.el.lastChild!.textContent = captionOf(marble, player);
       // the first view's caption stays clear of the board over the top left, where a narrow view would put it: by
       // how wide the board is and the caption is, both of which change, since a fixed clearance was overrun as soon
-      // as the board grew a tab
+      // as the board grew a tab. It never leaves its own view for it, though: pushed clear at eight views, whose
+      // columns are narrow, it ended up over the view beside it, naming a marble that was not in it
       if (s === 0 && !stacked) {
         const clear = board.getBoundingClientRect().right + 8 + c.el.offsetWidth / 2;
-        c.el.style.left = `max(${c.across}, ${Math.ceil(clear)}px)`;
+        const edge = quarterWidth / (devicePixelRatio > 1.5 ? 1.5 : devicePixelRatio || 1) - c.el.offsetWidth / 2 - 8;
+        c.el.style.left = `min(max(${c.across}, ${Math.ceil(clear)}px), ${Math.floor(edge)}px)`;
       }
     });
   };

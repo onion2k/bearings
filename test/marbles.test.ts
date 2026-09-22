@@ -4,6 +4,7 @@ import {
   FINISHED,
   FLYING,
   GRAVITY,
+  HEAVE,
   LOST,
   Marbles,
   RACING,
@@ -673,6 +674,33 @@ describe('the marbles', () => {
         }
         expect(marbles.segment[0], `phase ${phase}: through the wheel in the end`).toBeGreaterThan(2);
       }
+    });
+
+    it('parts a crowd it has pressed together without carrying one of them off', () => {
+      // a paddle, a bar or a peg presses a field together, and the settling has to part it again. Split evenly
+      // and clamped to the walls, a marble already on its wall took none of the parting across the channel, and
+      // the run made up for it along its length instead: on the wheel, seed 6, one was carried 1.12 in a step,
+      // further than its own width, and 11 marble-steps in 3.3 million went further still
+      let worst = 0,
+        where = '';
+      for (const kinds of [
+        ['start', 'wheel', 'finish'],
+        ['start', 'gate', 'pegs', 'finish'],
+      ] as const)
+        for (let seed = 1; seed <= 12; seed++) {
+          const { marbles } = fieldOn(chain([...kinds]), seed);
+          marbles.release();
+          for (let f = 0; f < 30 * 60 && !marbles.over; f++) {
+            marbles.step(DT);
+            for (let i = 0; i < marbles.count; i++)
+              if (marbles.pushed[i] > worst) {
+                worst = marbles.pushed[i];
+                where = `${kinds.join(', ')}, seed ${seed}, frame ${f}, marble ${i}`;
+              }
+            expect(checkMarbles(marbles), `${kinds.join(', ')}, seed ${seed}, frame ${f}`).toEqual([]);
+          }
+        }
+      expect(worst, where).toBeLessThanOrEqual(HEAVE);
     });
 
     it('lets a marble out from under its closing bar without throwing it back up the run', () => {

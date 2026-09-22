@@ -351,7 +351,9 @@ ever builds on the end. Open, and belonging with those:
   has crossed it. A marble cannot drop out of a funnel on to one sat under
   the hole, nor on to one still falling; it waits in the hole. A new piece that pinches the channel
   meets all of this first, and racing every pair is what found each of
-  these.
+  these. Parting a pair shares the correction across the channel by the room
+  each has toward its own wall, so that what the walls refuse is not left for
+  the run's length to make up.
 - **Nothing jumps, but a push still can.** A marble may move no further in
   a step than its own speed and what pushed it explain, give or take a
   quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
@@ -370,9 +372,20 @@ ever builds on the end. Open, and belonging with those:
   accord; over every run and catalog piece on 24 seeds no marble is ever
   left sitting inside anything. Measured the same way, the worst single
   shove is now a gate's 0.45, a sweeper's 0.36, a peg's 0.34 and a wheel's
-  0.29. What a whole step comes to is still more than that — 1.12 at worst,
-  a shove and then the settling parting a crowd that the shove pressed
-  together — and that is the settling's own business, still open.
+  0.29. What a whole step comes to, a shove and then the settling parting the
+  crowd it pressed together, is held by a second ceiling: `HEAVE`, a marble's
+  own width, kept per marble in `Marbles.pushed` and ruled on by
+  `checkMarbles`. It was the parting that carried one furthest: split evenly
+  and clamped to the walls, a marble already on its wall took none of the
+  correction across the channel and the run made up for it along its length
+  instead, which is the furthest travelling part of settling a crowd. Each of
+  a pair now takes what room it has toward its own wall and whatever the
+  other cannot, which halves it: the worst step was 1.12 and is 0.80, no
+  marble is moved its own width any more (11 marble-steps in 3.3 million
+  were), and 35 of those 3.3 million still go past half a marble, all of them
+  a field squeezed in a pen or on a board. Holding every push to half a
+  marble a step would mean letting marbles sit inside each other by up to
+  0.14 where the rule allows 0.05, so it is not done.
   A crowd squeezing into the neck of a gate's pen was the other: held there
   by a shut gate, the whole field spread out across the pen's full width,
   and closing that down to the chute's over the last fifth of the piece

@@ -166,7 +166,7 @@ test.describe('what it looks like', () => {
       g.pick(4);
       g.release();
       g.follow(false);
-      g.step(584);
+      g.step(640);
       // from the side, where the paddles are edge on: down the pen they stand right across it from wall to wall,
       // and a field gathered behind one is under the one before it and hidden
       g.look(13.25, -28.05, -25.5, { azimuth: 0, polar: 0.9, radius: 16 });
@@ -187,7 +187,7 @@ test.describe('what it looks like', () => {
       g.pick(3);
       g.release();
       g.follow(false);
-      g.step(284);
+      g.step(278);
       // side on to the first jump, from its lip to its own landing
       g.look(33, 0, -14.5, { azimuth: -1.2, polar: 1.1, radius: 22 });
       g.step(1);
