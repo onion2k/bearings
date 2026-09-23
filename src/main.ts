@@ -14,6 +14,7 @@ import { MAX_SLOTS } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT, CATALOG } from './catalog';
+import type { Rapier } from './physics';
 import { MAX_DESIGNS, PALETTE } from './designer';
 import { Game, type GameEvents, type Shelf } from './game';
 import { LOST, STALLED } from './marbles';
@@ -151,7 +152,16 @@ async function main() {
   };
   // ?seed=N makes chance the same from before the field is drawn, for a test that wants the same race every run
   const seed = query.get('seed');
-  const game = new Game(progress, events, seed !== null ? { random: seeded(+seed) } : {});
+  // ?physics=1 races on Rapier wherever it can: three quarters of a megabyte, fetched only when asked for, and
+  // only until every run races on it, when it will be part of the boot
+  let physics: Rapier | undefined;
+  if (query.has('physics')) {
+    bootMsg.textContent = 'loading physics…';
+    const rapier = (await import('@dimforge/rapier3d-compat')).default;
+    await rapier.init();
+    physics = rapier;
+  }
+  const game = new Game(progress, events, { ...(seed !== null ? { random: seeded(+seed) } : {}), physics });
   refresh = () => showBoard();
 
   // ---- the scene ----

@@ -351,6 +351,43 @@ test('the screen splits to a view for every picked marble, follows them through 
   expect(problems).toEqual([]);
 });
 
+test('a piece raced under physics through the page: every marble home, in order, and the solver where physics cannot go', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  await start(page, { seed: 7, paused: true, physics: true });
+  // First Drop has a peg board, which physics cannot race yet: the solver has it, as it always did
+  expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
+  await page.evaluate(() => {
+    const g = window.game!;
+    g.browse('pieces');
+    g.pick(g.content().catalog.indexOf('Left turn'));
+  });
+  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
+  await page.evaluate(() => window.game!.release());
+  await play(page, 60, 'the off under physics');
+  const away = await page.evaluate(() => window.game!.state());
+  expect(away.racing, 'they are away').toBeGreaterThan(0);
+  const took = await page.evaluate(() => window.game!.settle(30));
+  expect(took).toBeGreaterThan(0);
+  const done = await page.evaluate(() => window.game!.state());
+  expect(done.over).toBe(true);
+  expect(done.finished, 'every marble home').toBe(8);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  // placed in the order they came, and the board says so
+  const places = await page.evaluate(() => window.game!.marbles().map((m) => m.place));
+  expect([...places].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  await expect(page.locator('#order li').first()).toHaveClass(/won/);
+  // and back to the solver for a piece physics has not got to, with nothing left of the world behind
+  await page.evaluate(() => {
+    const g = window.game!;
+    g.pick(g.content().catalog.indexOf('Peg board'));
+  });
+  expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
 test('the split turned on with fewer than two picked chases the leader as if it were off', async ({ page }) => {
   const problems = watch(page);
   await start(page, { seed: 3, paused: true });

@@ -20,4 +20,7 @@ export default defineConfig({
     fs: { allow: ['.', ...packages.map(at)] },
   },
   optimizeDeps: { exclude: packages },
+  // Rapier is a megabyte of WASM in one chunk, fetched only when the race is physics: the perf gate holds the
+  // download to its budget, so the bundler's own warning at half that is noise
+  build: { chunkSizeWarningLimit: 1200 },
 });

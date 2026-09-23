@@ -11,7 +11,10 @@ The marbles ride a track solver of the game's own, in `src/marbles.ts`, and
 not artshape-physics, which the template came with: its floor is flat tiers,
 one height a tile, so a marble on it never feels a slope, and a marble run is
 nothing but slopes. The template's stub, a sled shoving balls into a hole, is
-gone; the gates it held have each been handed the race instead.
+gone; the gates it held have each been handed the race instead. The race is
+now crossing over to real physics, Rapier behind the same `Race` the solver
+stands behind, a kind of piece at a time: the plan is in six parts in
+`~/.claude/plans/rapier-in-six.md`, and the first has landed.
 
 ## The factory
 
@@ -45,7 +48,7 @@ Numbers, held by gates, on this machine at 1280×800:
 | Property                                            | Budget                         | Held by      |
 | --------------------------------------------------- | ------------------------------ | ------------ |
 | Boot, page start to the frame loop running          | 3000 ms                        | `perf`       |
-| Download, scripts and styles gzipped                | 400 kB                         | `perf`       |
+| Download, scripts and styles gzipped                | 1200 kB                        | `perf`       |
 | A frame drawn, lower quartile, on every run         | 8 ms                           | `perf`       |
 | The race, a frame, against the reference arithmetic | baseline ± 15%                 | `bench`      |
 | Pace, each run's minutes to see ten races through   | baseline ± 20%, run by run     | `pace:check` |
@@ -54,11 +57,14 @@ Numbers, held by gates, on this machine at 1280×800:
 A budget is what the game may cost at all; a baseline is what it cost at
 the last commit, held both ways, so a step toward a budget is noticed as
 much as a step over it. The perf tolerances are the measured wobble of a
-headless boot and a GPU frame, and say so in the file.
+headless boot and a GPU frame, and say so in the file. The download was 400
+until the race began crossing over to Rapier, which is a megabyte of WASM
+in a chunk of its own, fetched only while `?physics=1` asks for it: accepted
+for what real physics buys, and the budget is what that leaves.
 
 ## Commands
 
-    npm run dev            the game at http://localhost:5198
+    npm run dev            the game at http://localhost:5198; ?physics=1 races on Rapier wherever it can
     npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~10 s)
     npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~30 s)
     npm test               unit tests (Vitest, test/)
@@ -100,6 +106,13 @@ change meant to move it, and the commit says why. Look at every picture.
   the marbles roll on; stands the pegs; and places the marbles and, every
   frame, the sweepers, gates and wheels from the same `pose` the solver
   meets them in, so what is drawn is what a marble hits.
+- `src/race.ts` is what a race is to everything that is not the engine
+  racing it, and two engines stand behind it: `src/marbles.ts`, the solver,
+  and `src/physics.ts`, Rapier. `Game` is given Rapier or not
+  (`options.physics`, handed in since it is a megabyte the page fetches only
+  when asked), and races a run on physics wherever `Physics.supports` every
+  piece of it, the solver otherwise; `game.engine` says which, as does
+  `engine()` in the test API.
 - `src/cameras.ts` is the split screen's cameras, one to every picked
   marble, without the screen.
 - `src/designer.ts` is a run the player builds, a piece at a time, and the
@@ -254,6 +267,41 @@ What to copy the shape of, when building something new:
   board over a race. Every click checks the whole run again and compiles it
   once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
   click and never a frame.
+- **The race as physics:** `Physics` in `src/physics.ts`, a `Race` like the
+  solver, with nothing acting on a ball after the gate opens but gravity,
+  the air and what it touches: the air's drag is the solver's own `DRAG`, a
+  share of the speed squared, on every ball alike, and gives a top speed of
+  `TERMINAL`, falling straight down; no felt, no nudge, no clamp, and `put`
+  is refused once they are away. The track is met as a mesh built from the
+  very samples the scene draws, compiled for physics (`PHYSICAL`): the
+  solver's twentieth of lean taken into the geometry (`leanTrack`), walls
+  `PHYSICS_WALL` high, and the lane at the end a trough — a V for a floor,
+  `Segment.trough` and `floor`, a chute wide, sloping a level down — rather
+  than a neck closing to single file, since a neck barely a marble wide fed
+  by a crowd of eight arches as a hopper does, polished or not, sloped or
+  not, closing from both sides or from one — every one of those was tried
+  on the four kinds and jammed on some seed. The field is therefore not
+  always in single file at the end under physics: a ball arriving alone
+  settles into the V's bottom, but two arriving abreast can sit on its sides
+  together, and a V too steep for that is a hopper again. The gate holds the
+  field in a zigzag under physics, each row's second a half space behind its
+  first, since level rows down a mirror-symmetric run arrive as
+  mirror-symmetric pairs; a sorter that lines a bunched field up without a
+  hopper is still to be designed, and belongs with the pieces of part 2.
+  What is drawn is whatever was compiled, `track.wall` and the trough too, so
+  the two engines are drawn as they are raced. A ball is held fixed on the
+  gate until the off, since the gate's own slope would set it going. Where
+  a ball is on the track (`segment`, `along`, `across`, for the cameras, the
+  board and the rules) is read back each step from the nearest sample of its
+  own segment or its neighbours. `check` rules on a ball faster than the air
+  allows, one into the floor, two inside each other, and the tallies; the
+  world is one of Rapier's own memory, let go of by `dispose` when another
+  run is put on, and `'physics worlds'` in `scripts/leaks.ts` holds it to
+  one. Four kinds race under it so far — start, straight, the turns and the
+  ramp — each raced alone on 24 seeds in `test/physics.test.ts`; `supports`
+  refuses a track with anything else on it. Rapier is deterministic on this
+  machine, to the bit, held by a test; across machines it is not verified.
+  The spike that decided all this is on branch `spike/rapier`.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
@@ -317,11 +365,19 @@ What to copy the shape of, when building something new:
 ## What comes next
 
 Eight runs race, up to eight players pick a marble each, and a player can
-build and keep runs of their own. Still to come, each through `/feature`:
-patterns on the marbles, which want a change to artshape-render since it
-has no textures; and a designer that places a piece anywhere on the
-lattice, turned any way, splitters and joiners with it, where this one only
-ever builds on the end. Open, and belonging with those:
+build and keep runs of their own. The race is crossing over to physics in
+six parts (`~/.claude/plans/rapier-in-six.md`): the engine behind the
+interface has landed; still to come are slopes and speed with a new brake
+kind, pegs and the funnel with First Drop and The Tower crossing, the moving
+parts as motored bodies with The Chute and Switchback, the jump reshaped and
+a lid with The Leap, and the branches, the Stress Test and the solver
+retired. Each piece is redesigned for physics rather than helped by a rule:
+when a piece fails under physics, the piece changes. After those, each
+through `/feature`: patterns on the marbles, which want a change to
+artshape-render since it has no textures; and a designer that places a
+piece anywhere on the lattice, turned any way, splitters and joiners with
+it, where this one only ever builds on the end. Open, and belonging with
+those:
 
 - **The marbles are all the same, and are treated so.** No marble has form
   or any other property of its own. The field is stepped and parted in the

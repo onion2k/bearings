@@ -23,6 +23,7 @@
 import { Cameras, MAX_SLOTS } from './cameras';
 import { Designer, MAX_DESIGNS, kept } from './designer';
 import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
+import { PHYSICAL, Physics, type Rapier } from './physics';
 import type { Race } from './race';
 import { Progress } from './progress';
 import type { Random } from './random';
@@ -58,7 +59,17 @@ export type Shelf = 'runs' | 'pieces' | 'designs';
 export interface GameOptions {
   /** Chance; Math.random unless told otherwise, and the tests always tell. */
   random?: Random;
+  /**
+   * Rapier, loaded and ready, for the race to be physics wherever physics can
+   * race the run yet; the solver races it otherwise. Handed in rather than
+   * imported, since it is three quarters of a megabyte the page fetches only
+   * when it is wanted, and the game in Node has no page.
+   */
+  physics?: Rapier;
 }
+
+/** Which engine races the run that is on. */
+export type Engine = 'solver' | 'physics';
 
 export class Game {
   /** Game time, in seconds. */
@@ -75,6 +86,9 @@ export class Game {
   private cameFrom: { shelf: Shelf; run: number } = { shelf: 'runs', run: 0 };
   track!: Track;
   marbles!: Race;
+  /** Which engine is racing the run that is on: physics wherever it can, if the game was given it. */
+  engine: Engine = 'solver';
+  private readonly physics: Rapier | null;
   /** Whether the race that is on has been counted into the save yet. */
   private counted = true;
   /**
@@ -107,6 +121,7 @@ export class Game {
     options: GameOptions = {},
   ) {
     this.random = options.random ?? Math.random;
+    this.physics = options.physics ?? null;
     // the run last put on, if the save names one there is, among the runs that ship or the player's own; loading
     // alone writes nothing, so a name the game cannot put on is only forgotten in memory until the next write
     const { save } = progress;
@@ -244,7 +259,12 @@ export class Game {
     this.mount(list[this.run]);
   }
 
-  /** `run` worked out, and a field drawn for its start gate. */
+  /**
+   * `run` worked out, and a field drawn for its start gate. Physics races it
+   * if the game has physics and physics can race every piece of it yet; the
+   * track is then compiled the way physics wants it, leaning and walled, and
+   * drawn that way too, so what is seen is what is raced.
+   */
   private mount(run: Run) {
     const events = {
       released: (n: number) => this.events.released?.(n),
@@ -253,10 +273,14 @@ export class Game {
       lost: (m: number, s: number) => this.events.lost?.(m, s),
     };
     const random = () => this.random();
-    // the race before this one let go of, where its engine holds anything outside the collector's reach
+    // the race before this one let go of: a physics world is memory of Rapier's own
     (this.marbles as Race | undefined)?.dispose?.();
-    this.track = compile(run);
-    this.marbles = new Marbles(this.track, events, { random });
+    const physical = this.physics && Physics.supports(compile(run)) ? this.physics : null;
+    this.engine = physical ? 'physics' : 'solver';
+    this.track = physical ? compile(run, PHYSICAL) : compile(run);
+    this.marbles = physical
+      ? new Physics(physical, this.track, events, { random })
+      : new Marbles(this.track, events, { random });
     this.counted = false;
     this.follow();
     this.events.picked?.(this.run, this.track.name);

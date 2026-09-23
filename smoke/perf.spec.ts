@@ -22,8 +22,13 @@ import { expect, test } from '@playwright/test';
 import { start, watch } from './game';
 
 const BASELINE = 'smoke/perf-baseline.json';
-/** What the game may cost at all, on this machine, whatever it cost before. */
-export const BUDGET = { bootMs: 3000, frameMs: 8, bundleKb: 400 };
+/**
+ * What the game may cost at all, on this machine, whatever it cost before.
+ * Three quarters of a megabyte of the download is Rapier, which the race is
+ * crossing over to a piece at a time: accepted, for what real physics buys,
+ * and the budget is what that leaves.
+ */
+export const BUDGET = { bootMs: 3000, frameMs: 8, bundleKb: 1200 };
 /**
  * How far a figure may move from the baseline before it is a change: a share,
  * and a slack for the noisy ones. A slack has to be as wide as the whole of a
@@ -126,6 +131,24 @@ test('draws a run being built, and a design raced, within budget', async ({ page
   console.log(`perf: a design, frame ${ms(building)} ms being built and ${ms(raced)} ms raced`);
   expect(building, 'a run being built within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(raced, 'a design raced within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(problems).toEqual([]);
+});
+
+test('draws a piece raced under physics within budget', async ({ page }) => {
+  test.setTimeout(180_000);
+  const problems = watch(page);
+  await start(page, { seed: 11, paused: true, physics: true });
+  const [engine, frame] = await page.evaluate(async () => {
+    const g = window.game!;
+    g.browse('pieces');
+    g.pick(g.content().catalog.indexOf('Ramp'));
+    g.release();
+    g.step(60);
+    return [g.engine(), await g.measureFrame()] as const;
+  });
+  expect(engine).toBe('physics');
+  console.log(`perf: physics, frame ${Math.round(frame * 100) / 100} ms with the field racing`);
+  expect(frame, 'a race under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(problems).toEqual([]);
 });
 

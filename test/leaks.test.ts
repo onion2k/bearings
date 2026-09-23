@@ -21,6 +21,7 @@ describe('what must stay bounded', () => {
       'bests kept',
       'designs kept',
       'pieces being built',
+      'physics worlds',
       'save bytes',
       'heap MB',
     ]) {

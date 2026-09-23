@@ -12,7 +12,7 @@
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import type { Game, Shelf } from './game';
+import type { Engine, Game, Shelf } from './game';
 import { checkInvariants } from './invariants';
 import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
 import { seeded } from './random';
@@ -170,6 +170,8 @@ export interface GameApi {
   cameras(): { on: boolean; views: number; marbles: number[]; targets: number[][] };
   /** Where the ordinary, unsplit camera is looking: a test's way of telling a chase still moving from one frozen. */
   chase(): [number, number, number];
+  /** Which engine is racing the run that is on: the solver, or physics where the page was given it and it can. */
+  engine(): Engine;
 }
 
 /** What the page gives the API that is not the game's: time, the camera and the renderer. */
@@ -370,6 +372,7 @@ export function createApi(host: DebugHost): GameApi {
     chase() {
       return host.chase();
     },
+    engine: () => game.engine,
   };
 }
 

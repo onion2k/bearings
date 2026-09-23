@@ -20,6 +20,7 @@ import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MAX_SLOTS } from '../src/cameras';
 import { MAX_DESIGNS } from '../src/designer';
+import { Physics } from '../src/physics';
 import { MARBLES } from '../src/marbles';
 import { RUNS } from '../src/runs';
 import { MAX_PIECES, MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
@@ -37,6 +38,8 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   marbles: { ceiling: MARBLES },
   // a camera to a marble at most, and never more however long the screen is split
   'cameras followed': { ceiling: MAX_SLOTS },
+  // one world of Rapier's, for the run that is on, and never one left behind by a run that was put away
+  'physics worlds': { ceiling: 1 },
   segments: { ceiling: MAX_SEGMENTS },
   samples: { ceiling: MAX_SAMPLES },
   // the save is four fields and has to stay four, however long it is played
@@ -59,6 +62,7 @@ export function sizes(game: Game): Record<string, number> {
   return {
     marbles: marbles.count,
     'cameras followed': game.cameras.marble.filter((m) => m >= 0).length,
+    'physics worlds': Physics.alive,
     segments: track.segments.length,
     samples: track.samples,
     'save fields': Object.keys(progress.save).length,

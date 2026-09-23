@@ -349,6 +349,28 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the ramp raced under physics: the field in a lane that is a trough, sloping to its stop', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, physics: true });
+    const home = await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('pieces');
+      g.pick(g.content().catalog.indexOf('Ramp'));
+      g.release();
+      g.follow(false);
+      g.settle(20);
+      // the lane at the end from the side, where the trough's V and its slope show, with the field lined up in it
+      g.look(15, 0, -7, { azimuth: 0.4, polar: 1.0, radius: 16 });
+      g.step(1);
+      return [g.engine(), g.state().finished] as const;
+    });
+    expect(home[0], 'the picture is of physics, or it is not this picture').toBe('physics');
+    expect(home[1], 'and of the field home').toBe(8);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-ramp.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
