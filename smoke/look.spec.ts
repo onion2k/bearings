@@ -371,6 +371,34 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('a drop under its grid and the brake after it, raced under physics: the field thrown from wall to wall', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, physics: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      // built rather than picked, since no shelf has a drop feeding a brake: the run being built is the run on
+      g.browse('designs');
+      for (const k of ['drop', 'brake', 'finish'] as const) g.lay(k);
+      // kept, since a run still being built is not let go
+      if (g.keep('Drop and brake').length) throw new Error('the design was refused');
+      g.release();
+      g.follow(false);
+      g.step(100);
+      // the drop and the brake from the side, the grid over the one and the field in the other
+      g.look(14, 0, -12, { azimuth: -1.2, polar: 0.75, radius: 26 });
+      g.step(1);
+      return [g.engine(), g.state().runName, g.state().racing + g.state().finished] as const;
+    });
+    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
+    expect(on[1]).toBe('Drop and brake');
+    expect(on[2], 'and of the field away').toBe(8);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-drop-brake.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

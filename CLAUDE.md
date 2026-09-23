@@ -65,7 +65,7 @@ for what real physics buys, and the budget is what that leaves.
 ## Commands
 
     npm run dev            the game at http://localhost:5198; ?physics=1 races on Rapier wherever it can
-    npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~10 s)
+    npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~15 s)
     npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~30 s)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
@@ -287,7 +287,8 @@ What to copy the shape of, when building something new:
   field in a zigzag under physics, each row's second a half space behind its
   first, since level rows down a mirror-symmetric run arrive as
   mirror-symmetric pairs; a sorter that lines a bunched field up without a
-  hopper is still to be designed, and belongs with the pieces of part 2.
+  hopper is still to be designed, if one is wanted at all, since the places
+  are given at the line and the lane only holds the field.
   What is drawn is whatever was compiled, `track.wall` and the trough too, so
   the two engines are drawn as they are raced. A ball is held fixed on the
   gate until the off, since the gate's own slope would set it going. Where
@@ -297,11 +298,53 @@ What to copy the shape of, when building something new:
   allows, one into the floor, two inside each other, and the tallies; the
   world is one of Rapier's own memory, let go of by `dispose` when another
   run is put on, and `'physics worlds'` in `scripts/leaks.ts` holds it to
-  one. Four kinds race under it so far — start, straight, the turns and the
-  ramp — each raced alone on 24 seeds in `test/physics.test.ts`; `supports`
-  refuses a track with anything else on it. Rapier is deterministic on this
-  machine, to the bit, held by a test; across machines it is not verified.
-  The spike that decided all this is on branch `spike/rapier`.
+  one. Every kind that is no more than a channel races under it — start,
+  straight, the turns, ramp, drop, the spirals, the shallows, narrow and
+  the brake — each raced alone on 24 seeds (`test/physics-slopes.test.ts`
+  and `test/physics-boards.test.ts`, two files so that they run on two
+  workers) and again fed by two drops, the fastest any one piece hands a
+  field on at (`test/physics-pieces.test.ts`, with what each kind is for;
+  `test/physics-helpers.ts` sets a field on a run of a test's own);
+  `supports` refuses a track with anything else on it. Rapier is deterministic on this machine, to the bit, held by a test;
+  across machines it is not verified. The mesh is made with Rapier's
+  `FIX_INTERNAL_EDGES`, without which a ball rolling from one triangle of
+  a flat floor to the next was bumped by the seam, and two balls let go
+  side by side reached the line a step apart. A lost ball is held fixed
+  where it fell out: left to fall it fell for ever, faster than the air
+  allows. The spike that decided all this is on branch `spike/rapier`.
+- **What physics asks of a shape:** `PHYSICS_SHAPES` in `src/track.ts`,
+  merged over `SHAPES` when a run is compiled for physics, and nothing the
+  solver sees. Every crest launches a ball at speed: a ball stays on a crest
+  of radius `r` only below `sqrt(GRAVITY r)`, which is 5 for the drop, 7 for
+  the ramp and 10 for a shallow, and a drop alone hands a field on at 13, two
+  drops at 22, so no rounding within a cell holds a ball on a drop: at two
+  drops' speed it cleared the whole cell and came down a level above
+  whatever was next, and a bend after it lost most of the field. So the
+  drop is under a **lid** (`Part.lid`, `Segment.lid`, a share of the part
+  to a share): a ceiling from wall top to wall top in the physics mesh, a
+  rule in `check` that no ball is through it, and a grid in `scene.ts`,
+  bars along and rungs across at the walls' height, whose undersides lie on
+  the ceiling. A ramp's hop at speed is left as it is, since the walls and
+  the straight after it catch it. The **spirals** are walled higher
+  (`Part.wall`, `Segment.wall`, `SPIRAL_WALL`): off a drop a ball rides the
+  outer wall 1.3 high and eight in 192 went over a wall of 1.2, none over
+  one of 1.8. Banking the floor was tried first and made it worse — a wall
+  square to a banked floor leans outward, and a ball pressed into it at
+  speed is shoved up and over — so there is no bank. The **narrow** is a
+  groove, the same trough the lane is: a neck barely a ball wide fed by a
+  crowd arched as a hopper and not one ball in 192 came through; the groove
+  sends 5% of a slow field out abreast of another where a plain shallow
+  sends 37%. The **brake** is a new kind, a board's fall with the channel
+  snaking from wall to wall (`brakeCurve`, `BRAKE_SWING` 0.6 every
+  `BRAKE_WAVE` 8), the honest way to take speed off, since a ball has no
+  rolling resistance to lose it to and a long descent otherwise only gets
+  faster: a field at 18.5 leaves it at 11.9, where a shallow of the same
+  fall lets it go at 19.6. Tighter snakes were tried; at a swing whose
+  radius of turn is under a chute's width the inner wall folds through
+  itself, and `test/track.test.ts` holds the constants to twice that. The
+  lane at the end takes a field straight off three drops with none thrown
+  out. The pictures are `physics-ramp.png` and `physics-drop-brake.png`,
+  and the perf spec measures the frame of both.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
@@ -367,10 +410,11 @@ What to copy the shape of, when building something new:
 Eight runs race, up to eight players pick a marble each, and a player can
 build and keep runs of their own. The race is crossing over to physics in
 six parts (`~/.claude/plans/rapier-in-six.md`): the engine behind the
-interface has landed; still to come are slopes and speed with a new brake
-kind, pegs and the funnel with First Drop and The Tower crossing, the moving
-parts as motored bodies with The Chute and Switchback, the jump reshaped and
-a lid with The Leap, and the branches, the Stress Test and the solver
+interface has landed, and every kind that is no more than a channel with
+it, the drop under a lid and the brake new; still to come are pegs and the
+funnel with First Drop and The Tower crossing, the moving parts as motored
+bodies with The Chute and Switchback, the jump reshaped and the lid on any
+piece with The Leap, and the branches, the Stress Test and the solver
 retired. Each piece is redesigned for physics rather than helped by a rule:
 when a piece fails under physics, the piece changes. After those, each
 through `/feature`: patterns on the marbles, which want a change to

@@ -134,21 +134,31 @@ test('draws a run being built, and a design raced, within budget', async ({ page
   expect(problems).toEqual([]);
 });
 
-test('draws a piece raced under physics within budget', async ({ page }) => {
+test('draws a piece raced under physics within budget, and a drop under its grid into a brake', async ({ page }) => {
   test.setTimeout(180_000);
   const problems = watch(page);
   await start(page, { seed: 11, paused: true, physics: true });
-  const [engine, frame] = await page.evaluate(async () => {
+  const [engine, frame, braked] = await page.evaluate(async () => {
     const g = window.game!;
     g.browse('pieces');
     g.pick(g.content().catalog.indexOf('Ramp'));
     g.release();
     g.step(60);
-    return [g.engine(), await g.measureFrame()] as const;
+    const frame = await g.measureFrame();
+    // the grid over a drop and the snaking channel of a brake are the most a physics piece has to draw yet
+    g.browse('designs');
+    for (const k of ['drop', 'brake', 'finish'] as const) g.lay(k);
+    // kept, since a run still being built is not let go
+    if (g.keep('Drop and brake').length) throw new Error('the design was refused');
+    g.release();
+    g.step(90);
+    return [g.engine(), frame, await g.measureFrame()] as const;
   });
   expect(engine).toBe('physics');
-  console.log(`perf: physics, frame ${Math.round(frame * 100) / 100} ms with the field racing`);
+  const ms = (n: number) => Math.round(n * 100) / 100;
+  console.log(`perf: physics, frame ${ms(frame)} ms on the ramp and ${ms(braked)} ms down a drop into a brake`);
   expect(frame, 'a race under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(braked, 'a drop and a brake under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(problems).toEqual([]);
 });
 

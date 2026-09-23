@@ -1,58 +1,21 @@
 /**
  * The race as physics: Rapier behind the same `Race` the solver stands
  * behind, with nothing acting on a marble after the gate opens but gravity,
- * the air and what it touches. Each kind of piece crosses over once it
- * races alone under physics as well as it does under the solver, on the
- * runs test's own measures; these are the first four.
+ * the air and what it touches. This is the engine itself: the track it is
+ * handed, the finish, the rules, the seed, and the game choosing it. What
+ * each kind of piece does under it is `physics-pieces.test.ts`.
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
 import { PHYSICAL, Physics, PHYSICS_WALL, TERMINAL } from '../src/physics';
 import { FINISHED, GRAVITY, LEAN, MARBLES, RADIUS, ROLLING } from '../src/marbles';
-import { seeded } from '../src/random';
-import { type Facing, type Kind, type Placed, type Run, compile, exitOf } from '../src/track';
+import { compile } from '../src/track';
 import { newGame } from './helpers';
+import { CROSSED, chain, fieldOn, raced } from './physics-helpers';
 
 await RAPIER.init();
 
 const DT = 1 / 60;
-const CROSSED: Kind[] = ['straight', 'curveLeft', 'curveRight', 'ramp'];
-
-function chain(kinds: Kind[]): Run {
-  const pieces: Placed[] = [];
-  let here = { x: 0, y: 0, z: 0, facing: 0 as Facing };
-  for (const kind of kinds) {
-    pieces.push({ kind, ...here });
-    const out = exitOf({ kind, ...here });
-    if (out) here = out;
-  }
-  return { id: 'made-up', name: 'made up', pieces };
-}
-
-/** A field on a run of the test's own, under physics, with a note of what happens. */
-function fieldOn(run: Run, seed = 1) {
-  const told: string[] = [];
-  const track = compile(run, PHYSICAL);
-  const race = new Physics(
-    RAPIER,
-    track,
-    {
-      released: (n) => told.push(`released ${n}`),
-      finished: (m, place, s) => told.push(`finished ${m} ${place} ${s.toFixed(2)}`),
-      stalled: (m) => told.push(`stalled ${m}`),
-      lost: (m) => told.push(`lost ${m}`),
-    },
-    { random: seeded(seed) },
-  );
-  return { race, track, told };
-}
-
-function raced(race: Physics, cap = 60) {
-  race.release();
-  let f = 0;
-  for (; f < cap * 60 && !race.over; f++) race.step(DT);
-  return f;
-}
 
 describe('the race as physics', () => {
   it('has the track it races on leaning as the solver leans, and walls as high as physics needs', () => {
@@ -70,21 +33,6 @@ describe('the race as physics', () => {
     expect(seg.tangents[2], 'a level straight now points a little down').toBeLessThan(-0.04);
     expect(Math.hypot(seg.tangents[0], seg.tangents[1], seg.tangents[2])).toBeCloseTo(1, 5);
   });
-
-  for (const kind of CROSSED)
-    it(`races every marble home over a ${kind} on its own, on 24 seeds, none lost and none stopped`, () => {
-      for (let seed = 1; seed <= 24; seed++) {
-        const { race, told } = fieldOn(chain(['start', kind, 'finish']), seed);
-        raced(race);
-        expect(race.over, `seed ${seed}: the race ended`).toBe(true);
-        expect(race.finishers, `seed ${seed}: every marble home`).toBe(MARBLES);
-        expect(
-          race.lost + race.stalled,
-          `seed ${seed}: ${told.filter((l) => !l.startsWith('finished')).join(', ')}`,
-        ).toBe(0);
-        expect(race.check(), `seed ${seed}`).toEqual([]);
-      }
-    });
 
   it('places the field in the order it came home, each with the time it took', () => {
     const { race, told } = fieldOn(chain(['start', 'ramp', 'straight', 'finish']));
@@ -107,18 +55,24 @@ describe('the race as physics', () => {
   });
 
   it('places two over the line in one step by which crossed first', () => {
-    const { race, track } = fieldOn(chain(['start', 'straight', 'finish']));
-    // two set still a unit short of the line, side by side, one a hair ahead: let go, they roll over it in the
-    // same step, and the hair decides
-    const line = track.segments[1].length;
-    // the one ahead is the higher numbered, so that taking them in order would place it wrong
-    expect(race.put(5, 1, line - 1, -0.5)).toBe(true);
-    expect(race.put(3, 1, line - 1.005, 0.5)).toBe(true);
-    race.release();
-    for (let f = 0; f < 300 && !(race.place[3] && race.place[5]); f++) race.step(DT);
-    expect(race.took[3], 'over the line in the same step, or this proves nothing').toBe(race.took[5]);
-    expect(race.place[5], 'the one that was ahead').toBe(1);
-    expect(race.place[3]).toBe(2);
+    // two set still a unit short of the line, side by side, one a hair ahead — the higher numbered, so that taking
+    // them in order would place it wrong — and let go, to roll over it together. Whether a step's boundary falls
+    // between the two crossings depends on the hair, so hairs are tried until one has them cross in the same step
+    let crossedTogether = false;
+    for (const hair of [0.005, 0.01, 0.015, 0.02, 0.003]) {
+      const { race, track } = fieldOn(chain(['start', 'straight', 'finish']));
+      const line = track.segments[1].length;
+      expect(race.put(5, 1, line - 1, -0.5)).toBe(true);
+      expect(race.put(3, 1, line - 1 - hair, 0.5)).toBe(true);
+      race.release();
+      for (let f = 0; f < 300 && !(race.place[3] && race.place[5]); f++) race.step(DT);
+      if (race.took[3] !== race.took[5]) continue;
+      crossedTogether = true;
+      expect(race.place[5], 'the one that was ahead').toBe(1);
+      expect(race.place[3]).toBe(2);
+      break;
+    }
+    expect(crossedTogether, 'some hair had them over the line in the same step, or this proves nothing').toBe(true);
   });
 
   it('gives the same race twice from the same seed, to the bit', () => {

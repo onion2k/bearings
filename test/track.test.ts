@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MARBLES, RADIUS } from '../src/marbles';
 import { FIRST } from '../src/runs';
+import { PHYSICAL } from '../src/physics';
 import {
+  BRAKE_SWING,
+  BRAKE_WAVE,
   CELL,
   HALF_WIDTH,
   LANE,
@@ -9,6 +12,7 @@ import {
   MAX_SAMPLES,
   MOVING_MOST,
   NARROW,
+  SPIRAL_WALL,
   type Facing,
   type Placed,
   type Run,
@@ -589,6 +593,55 @@ describe('the track', () => {
     let counted = 0;
     for (const seg of track.segments) counted += seg.arc.length;
     expect(counted).toBe(track.samples);
+  });
+
+  describe('the brake, and what physics asks of a shape', () => {
+    it('the brake hands on two cells along and a level down, at a chute’s width the whole way, snaking between', () => {
+      expect(exitOf({ kind: 'brake', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
+      const run = chain(['start', 'brake', 'straight', 'finish']);
+      expect(check(run)).toEqual([]);
+      const track = compile(run);
+      expect(checkTrack(track)).toEqual([]);
+      const seg = track.segments[1];
+      let swung = 0;
+      for (let i = 0; i < seg.arc.length; i++) {
+        expect(seg.width[i]).toBeCloseTo(HALF_WIDTH, 6);
+        swung = Math.max(swung, Math.abs(seg.points[i * 3 + 1]));
+      }
+      expect(swung, 'it swings as far as it says').toBeGreaterThan(BRAKE_SWING * 0.9);
+      expect(swung).toBeLessThanOrEqual(BRAKE_SWING + 1e-6);
+      // and its inner wall never folds back through itself: the swing's own radius of turn stays well past the
+      // half width, or the wall on the inside of a swing would have less than no room
+      const radius = 1 / (BRAKE_SWING * ((Math.PI * 2) / BRAKE_WAVE) ** 2);
+      expect(radius).toBeGreaterThan(HALF_WIDTH * 2);
+    });
+
+    it('compiled for physics, the drop is under a lid the whole way, a spiral is walled higher, and the narrow is a groove', () => {
+      const run = chain(['start', 'drop', 'spiralLeft', 'narrow', 'straight', 'finish']);
+      const physics = compile(run, PHYSICAL);
+      const plain = compile(run);
+      const drop = physics.segments[1];
+      expect(drop.lid).toEqual({ from: 0, upto: drop.length });
+      expect(physics.segments[2].wall).toBe(SPIRAL_WALL);
+      expect(physics.segments[3].trough).toBe(true);
+      for (const w of physics.segments[3].width) expect(w).toBeCloseTo(HALF_WIDTH, 6);
+      for (const s of [0, 1, 3, 4, 5]) expect(physics.segments[s].wall, `segment ${s}`).toBe(physics.wall);
+      // and none of it for the solver, whose marbles stay on the floor by rule and squeeze through the narrow
+      for (const seg of plain.segments) {
+        expect(seg.lid).toBeNull();
+        expect(seg.wall).toBe(plain.wall);
+      }
+      expect(plain.segments[3].trough).toBe(false);
+      expect(Math.min(...plain.segments[3].width)).toBeCloseTo(NARROW, 6);
+    });
+
+    it('a lid over part of a piece covers that share of its length', () => {
+      const track = compile(chain(['start', 'straight', 'finish']), {
+        shapes: { straight: { lid: { from: 0.25, upto: 0.5 } } },
+      });
+      const seg = track.segments[1];
+      expect(seg.lid).toEqual({ from: seg.length * 0.25, upto: seg.length * 0.5 });
+    });
   });
 
   describe('a splitter and a joiner', () => {

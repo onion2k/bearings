@@ -67,6 +67,7 @@ export type Kind =
   | 'shallowWide'
   | 'shallowBroad'
   | 'narrow'
+  | 'brake'
   | 'bumps'
   | 'finish';
 
@@ -121,6 +122,14 @@ export interface Segment {
   felt: { upto: number; speed: number } | null;
   /** A V for a floor rather than a flat one between walls: the lane at the end, under physics. */
   trough: boolean;
+  /**
+   * Covered from `from` to `upto` along it by a lid at the walls' height,
+   * which a ball that leaves the floor meets as a ceiling; null where it is
+   * open. The solver's marbles never leave the floor and take no notice.
+   */
+  lid: { from: number; upto: number } | null;
+  /** How high its walls stand: the track's own, unless the piece's shape asks for more. */
+  wall: number;
   /** How far the flat of the floor reaches from the middle at each sample: the channel's width, or a trough's bottom. */
   floor: Float32Array;
   /** How far along the whole run the segment begins: what orders one marble against another. */
@@ -186,6 +195,12 @@ export interface Compiled {
    * hopper is still to be designed.
    */
   physics?: boolean;
+  /**
+   * A kind of piece shaped otherwise than `SHAPES` has it, for this compile
+   * alone: what a physics variant of a kind is made of, and what a test or
+   * an experiment tries a shape with before it is made the kind's own.
+   */
+  shapes?: Partial<Record<Kind, Partial<Shape>>>;
 }
 
 /** How high the walls stand for the solver: past a marble's middle to hold it in, and not much further. */
@@ -479,7 +494,7 @@ export function spot(): Spot {
  * a funnel is the run in to its bowl, the bowl, and the floor under its hole,
  * so that each joins the pieces either side of it like any other piece does.
  */
-interface Part {
+export interface Part {
   rough: number;
   curve(t: number, out: number[]): void;
   /** It ends at a lip rather than a join: a marble comes down on the part or piece after it, across a gap. */
@@ -494,9 +509,28 @@ interface Part {
   mounds?: (Omit<Mound, 'along'> & { u: number })[];
   /** Felt over its first `upto` share, which brings whatever marble crosses it to `speed`, whatever it came in at. */
   felt?: { upto: number; speed: number };
+  /** A V for a floor rather than a flat one between walls, closing to it from a chute's over `TROUGH_IN`. */
+  trough?: boolean;
+  /**
+   * How high its walls stand, where higher than the track's own: a spiral's,
+   * under physics, since a ball at a drop's speed rides its outer wall
+   * higher than a chute's would hold. Banking the floor was tried for that
+   * first and made it worse: a wall square to a banked floor leans outward,
+   * and a ball pressed into it at speed is shoved up and over it.
+   */
+  wall?: number;
+  /**
+   * A lid over the part from `from` to `upto`, as shares of its length: a
+   * grid at the walls' height that a ball leaving the floor meets as a
+   * ceiling. What holds a ball on a crest no rounding can: over a drop a
+   * ball at two drops' speed clears the whole cell and comes down a level
+   * above whatever is next, and a crest it would stay on at that speed
+   * would be two cells across.
+   */
+  lid?: { from: number; upto: number };
 }
 
-interface Shape extends Part {
+export interface Shape extends Part {
   exit: { x: number; y: number; z: number; turn: number } | null;
   /** More parts of the same piece, in order, each begun `at` cells along, cells to the left and levels up from its entry. */
   then?: (Part & { at: { x: number; y: number; z: number } })[];
@@ -514,7 +548,7 @@ interface Shape extends Part {
 }
 
 /** A level run straight through: the start gate and the cup are this too, since both are somewhere a marble sits. */
-function straightCurve(t: number, out: number[]): void {
+export function straightCurve(t: number, out: number[]): void {
   out[0] = CELL * t;
   out[1] = 0;
   out[2] = 0;
@@ -579,6 +613,12 @@ function dropCurve(t: number, out: number[]): void {
 
 /** How far across a spiral's circle is from its middle: half a cell, so the whole tower stands in one. */
 const SPIRAL_RADIUS = CELL / 2;
+/**
+ * How high a spiral's walls stand under physics: half as high again as the
+ * rest of the run's. Off a drop into a spiral, a ball rides the outer wall
+ * 1.3 high at a wall of 1.2 and eight in 192 went over; at 1.8, none.
+ */
+export const SPIRAL_WALL = 1.8;
 
 /**
  * A spiral: once right round while it falls two levels, coming out where it
@@ -644,13 +684,42 @@ function jumpCurve(t: number, out: number[]): void {
 }
 
 /** A board: two cells along and a level down, eased at both ends, and gentle enough for marbles to bounce about on. */
-function boardCurve(t: number, out: number[]): void {
+export function boardCurve(t: number, out: number[]): void {
   out[0] = CELL * 2 * t;
   out[1] = 0;
   out[2] = (-LEVEL * (1 - Math.cos(Math.PI * t))) / 2;
   out[3] = CELL * 2;
   out[4] = 0;
   out[5] = (-LEVEL * Math.PI * Math.sin(Math.PI * t)) / 2;
+}
+
+/**
+ * How a brake snakes: how far the channel swings either side of straight,
+ * and how far along it goes from one swing to the next. Tighter, and its
+ * inner wall folds back through itself: the swing's own radius of turn,
+ * 1/(amp (2π/wave)²), has to stay well past a chute's half width. At 0.6
+ * every 8, a field arriving at 20 leaves at 11 and one at 27 at 10, on 24
+ * seeds with none lost; at 0.4 every 4, a radius of one, balls were lost.
+ */
+export const BRAKE_SWING = 0.6;
+export const BRAKE_WAVE = 8;
+
+/**
+ * A brake: a board's fall, two cells and a level, with the channel snaking
+ * from side to side along it, eased in from straight and out again. A ball
+ * with speed is thrown from wall to wall and gives most of it up; a slow
+ * one wanders through and keeps what it had. What takes speed off honestly,
+ * since a real ball on a real floor has nothing else to lose it to, and a
+ * long descent otherwise only ever gets faster.
+ */
+function brakeCurve(t: number, out: number[]): void {
+  boardCurve(t, out);
+  const L = CELL * 2;
+  const x = L * t,
+    k = (Math.PI * 2) / BRAKE_WAVE,
+    ease = Math.sin(Math.PI * t);
+  out[1] = BRAKE_SWING * ease * Math.sin(k * x);
+  out[4] = BRAKE_SWING * L * (ease * k * Math.cos(k * x) + (Math.PI / L) * Math.cos(Math.PI * t) * Math.sin(k * x));
 }
 
 /**
@@ -677,7 +746,7 @@ function forkCurve(side: number, t: number, out: number[]): void {
  * never meet a marble at a corner. Where it closes, the field is squeezed
  * back into single file, which is where a board does half its work.
  */
-function opening(wide: number, open: number, close: number): (t: number) => number {
+export function opening(wide: number, open: number, close: number): (t: number) => number {
   const ease = (x: number) => (1 - Math.cos(Math.PI * Math.min(Math.max(x, 0), 1))) / 2;
   return (t) =>
     HALF_WIDTH +
@@ -694,6 +763,8 @@ function opening(wide: number, open: number, close: number): (t: number) => numb
  */
 export const TROUGH_FLAT = 0.05;
 export const TROUGH_IN = 0.3;
+/** How high a trough's V reaches up its walls, which stand on above it: a ball on the V's side has a wall above it and not a lip. */
+export const TROUGH_DEPTH = 0.8;
 
 /**
  * How narrow a squeeze is, from its middle to its wall: a marble and a
@@ -1047,6 +1118,8 @@ const SHAPES: Record<Kind, Shape> = {
     curve: boardCurve,
     width: opening(NARROW, 0.3, 0.7),
   },
+  // the channel snaking from wall to wall down a board's fall: what a fast field is slowed by
+  brake: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 2.3, curve: brakeCurve },
   // a board with mounds in its floor, which turn a marble aside as it rolls over one, as a soft peg would
   bumps: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
@@ -1058,6 +1131,44 @@ const SHAPES: Record<Kind, Shape> = {
   // the end: past the line at its start, a lane one marble wide, where the field rolls up and waits in the order
   // it finished
   finish: { exit: null, rough: CELL * 2.1, curve: laneCurve, width: opening(LANE, 0.25, 1) },
+};
+
+/**
+ * How kinds are shaped for physics, where a real ball wants something the
+ * solver's marble did not: the lane at the end a trough, sloping a level
+ * down over its length, in place of a neck closing to single file, which a
+ * crowd of balls arches in as a hopper does. Merged over `SHAPES` when a
+ * run is compiled for physics.
+ */
+export const PHYSICS_SHAPES: Partial<Record<Kind, Partial<Shape>>> = {
+  // under a lid, the whole way: a ball at any speed leaves the crest of a fall this steep, and at two drops'
+  // speed clears the cell and comes down a level above whatever is next; no crest within a cell holds it
+  drop: { lid: { from: 0, upto: 1 } },
+  // walled higher, since a ball at a drop's speed rides a spiral's outer wall higher than a chute's holds
+  spiralLeft: { wall: SPIRAL_WALL },
+  spiralRight: { wall: SPIRAL_WALL },
+  // a groove rather than a squeeze: a neck barely a ball wide, fed by a crowd, arches as a hopper does, and
+  // not one ball in 192 came through it; a V a chute wide sorts most of the field into single file, since a
+  // ball alone settles into its bottom and only two arriving abreast can sit on its sides together
+  narrow: { trough: true },
+  // the lane is a cup: down a level over most of it and up again at the end, so that the field comes to rest in a
+  // dip and against each other, with no stop to be pressed into. A face at the end pressed the first ball into the
+  // corner where it met the trough's side and the wall, and out over the top
+  finish: {
+    trough: true,
+    curve: (t, out) => {
+      laneCurve(t, out);
+      const dip = 0.7;
+      if (t < dip) {
+        out[2] -= (LEVEL * t) / dip;
+        out[5] -= LEVEL / dip;
+      } else {
+        const back = (t - dip) / (1 - dip);
+        out[2] -= LEVEL * (1 - 0.5 * back * back);
+        out[5] -= LEVEL * (-back / (1 - dip));
+      }
+    },
+  },
 };
 
 /** Every kind of piece there is, in the order the catalog shows them. */
@@ -1106,26 +1217,30 @@ function portalKey(x: number, y: number, z: number, facing: Facing): string {
 
 /** One piece sampled into a segment, in the world's own units. */
 /** A piece's parts, each worked out into a segment of its own, in the order a marble meets them. */
-function sample(piece: Placed, index: number, physics: boolean): Segment[] {
-  const shape = SHAPES[piece.kind];
-  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 }, physics)];
-  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at, physics));
+function sample(piece: Placed, index: number, wall: number, physics: boolean, shapes: Compiled['shapes']): Segment[] {
+  const shape: Shape = {
+    ...SHAPES[piece.kind],
+    ...(physics ? PHYSICS_SHAPES[piece.kind] : {}),
+    ...shapes?.[piece.kind],
+  };
+  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 }, wall)];
+  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at, wall));
   // a splitter's second branch begins at the same entry as the first, not further along it
-  if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }, physics));
+  if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }, wall));
   // a joiner's second entry, off to one side of the one every other piece has, reaching the same exit as it
-  if (shape.joins) out.push(samplePart(piece, index, shape.joins, shape.joins.at, physics));
+  if (shape.joins) out.push(samplePart(piece, index, shape.joins, shape.joins.at, wall));
   return out;
 }
 
-/** One part of a piece, begun `at` cells along and to the left and levels up from the piece's entry. */
+/** One part of a piece, begun `at` cells along and to the left and levels up from the piece's entry, walled `wall` high unless its shape says higher. */
 function samplePart(
   piece: Placed,
   index: number,
   shape: Part,
   at: { x: number; y: number; z: number },
-  physics: boolean,
+  wall: number,
 ): Segment {
-  const trough = physics && piece.kind === 'finish';
+  const trough = shape.trough ?? false;
   const n = Math.max(8, Math.ceil(shape.rough / SAMPLE_EVERY)) + 1;
   const points = new Float32Array(n * 3),
     tangents = new Float32Array(n * 3),
@@ -1144,13 +1259,10 @@ function samplePart(
     shape.curve(i / (n - 1), local);
     width[i] = shape.width ? shape.width(i / (n - 1)) : HALF_WIDTH;
     floor[i] = width[i];
-    // under physics the lane at the end is a trough a chute wide, sloping a level down over its length, its
-    // floor closing from flat to the bottom of a V over its first stretch
+    // a trough is a chute wide, its floor closing from flat to the bottom of a V over its first stretch
     if (trough) {
       width[i] = HALF_WIDTH;
       floor[i] = Math.max(TROUGH_FLAT, HALF_WIDTH * (1 - i / (n - 1) / TROUGH_IN));
-      local[2] -= (LEVEL * i) / (n - 1);
-      local[5] -= LEVEL;
     }
     turnBy(piece.facing, local[0], local[1], turned);
     const o = i * 3;
@@ -1223,6 +1335,8 @@ function samplePart(
     mounds,
     felt: shape.felt ? { upto: shape.felt.upto * length, speed: shape.felt.speed } : null,
     trough,
+    lid: shape.lid ? { from: shape.lid.from * length, upto: shape.lid.upto * length } : null,
+    wall: Math.max(wall, shape.wall ?? 0),
   };
 }
 
@@ -1299,7 +1413,7 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
   function geometryOf(pieceIndex: number): Segment[] {
     let segs = segmentsByPiece.get(pieceIndex);
     if (!segs) {
-      segs = sample(run.pieces[pieceIndex], pieceIndex, options.physics ?? false);
+      segs = sample(run.pieces[pieceIndex], pieceIndex, track.wall, options.physics ?? false, options.shapes);
       segmentsByPiece.set(pieceIndex, segs);
     }
     return segs;
@@ -1436,7 +1550,7 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
  * drains, as the solver's own lean sees to. A shear, so joins stay joined:
  * where one segment ends and the next begins is the same distance along the
  * run, and lowered by the same amount. The tangents lean with the points,
- * and up is worked out again from them, square to the way as it was before.
+ * and up is squared to the leaned way again.
  */
 function leanTrack(track: Track, lean: number): void {
   for (const seg of track.segments) {
@@ -1450,19 +1564,16 @@ function leanTrack(track: Track, lean: number): void {
       seg.tangents[o] = tx / tl;
       seg.tangents[o + 1] = ty / tl;
       seg.tangents[o + 2] = tz / tl;
-      let ux = -seg.tangents[o] * seg.tangents[o + 2],
-        uy = -seg.tangents[o + 1] * seg.tangents[o + 2],
-        uz = 1 - seg.tangents[o + 2] * seg.tangents[o + 2];
-      const ul = Math.hypot(ux, uy, uz);
-      if (ul < 1e-6) {
-        ux = 1;
-        uy = 0;
-        uz = 0;
-      } else {
-        ux /= ul;
-        uy /= ul;
-        uz /= ul;
-      }
+      // up stays what it was, less whatever of it now lies along the leaned way
+      const along =
+        seg.ups[o] * seg.tangents[o] + seg.ups[o + 1] * seg.tangents[o + 1] + seg.ups[o + 2] * seg.tangents[o + 2];
+      let ux = seg.ups[o] - along * seg.tangents[o],
+        uy = seg.ups[o + 1] - along * seg.tangents[o + 1],
+        uz = seg.ups[o + 2] - along * seg.tangents[o + 2];
+      const ul = Math.hypot(ux, uy, uz) || 1;
+      ux /= ul;
+      uy /= ul;
+      uz /= ul;
       seg.ups[o] = ux;
       seg.ups[o + 1] = uy;
       seg.ups[o + 2] = uz;

@@ -20,6 +20,7 @@ import {
   MOUND,
   MOVING_MOST,
   PEG,
+  TROUGH_DEPTH,
   TROUGH_FLAT,
   WHEEL,
   type Obstacle,
@@ -76,14 +77,35 @@ const profile = (wall: number): readonly (readonly [number, number])[] => [
 /** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end under physics. */
 const trough = (wall: number): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH, wall],
+  [-HALF_WIDTH, TROUGH_DEPTH],
   [-TROUGH_FLAT, 0],
   [TROUGH_FLAT, 0],
+  [HALF_WIDTH, TROUGH_DEPTH],
   [HALF_WIDTH, wall],
   [HALF_WIDTH + SKIN, wall],
   [HALF_WIDTH + SKIN, -SKIN],
   [-HALF_WIDTH - SKIN, -SKIN],
   [-HALF_WIDTH - SKIN, wall],
   [-HALF_WIDTH, wall],
+];
+
+/**
+ * A lid's grid: bars along the covered stretch at the walls' height, close
+ * enough together that no ball fits between two, and rungs across it every
+ * so often. What the physics meets is a ceiling from wall top to wall top;
+ * the bars' undersides lie on it, so a ball seen against the grid is where
+ * it is.
+ */
+const BAR = 0.1,
+  BARS_ACROSS = [-0.8, 0, 0.8],
+  RUNG_EVERY = 1.5;
+/** A bar of the grid in section: a square stood on the walls' height, `across` from the middle. */
+const barOf = (across: number, wall: number): readonly (readonly [number, number])[] => [
+  [across - BAR / 2, wall],
+  [across + BAR / 2, wall],
+  [across + BAR / 2, wall + BAR],
+  [across - BAR / 2, wall + BAR],
+  [across - BAR / 2, wall],
 ];
 
 /** A jump's felt in section: a strip over the floor, wall to wall, a hair above it so it is not lost in it. */
@@ -133,6 +155,8 @@ export class Scene {
     const channel = new MeshBuilder();
     const bowls = new MeshBuilder();
     const felt = new MeshBuilder();
+    const grid = new MeshBuilder();
+    const rungs: number[] = [];
     const pegs: number[] = [];
     const posts: number[] = [];
     const mounds: number[] = [];
@@ -183,12 +207,32 @@ export class Scene {
           seg.tangents,
           seg.ups,
           seg.arc.length,
-          seg.trough ? trough(track.wall) : profile(track.wall),
+          seg.trough ? trough(seg.wall) : profile(seg.wall),
           channel,
           seg.width,
           HALF_WIDTH,
           seg.trough ? seg.floor : undefined,
         );
+      // a lid's grid over whatever stretch is covered: bars swept along the samples under it, and rungs across
+      if (seg.lid) {
+        let from = 0;
+        while (from < seg.arc.length - 1 && seg.arc[from] < seg.lid.from - 1e-6) from++;
+        let to = from;
+        while (to < seg.arc.length - 1 && seg.arc[to + 1] <= seg.lid.upto + 1e-6) to++;
+        const count = to - from + 1;
+        if (count > 1)
+          for (const across of BARS_ACROSS)
+            sweep(
+              seg.points.subarray(from * 3),
+              seg.tangents.subarray(from * 3),
+              seg.ups.subarray(from * 3),
+              count,
+              barOf(across, seg.wall),
+              grid,
+            );
+        for (let along = seg.lid.from + RUNG_EVERY / 2; along <= seg.lid.upto; along += RUNG_EVERY)
+          rungs.push(s, along);
+      }
       // a jump's felt, laid over the floor of its run-up as far as it goes
       if (seg.felt) {
         let to = 1;
@@ -220,6 +264,9 @@ export class Scene {
     const dividerAt = new Float32Array(Math.max(1, dividers.length / 2) * 16);
     for (let k = 0; k < dividers.length; k += 2)
       this.onTrack(track, dividerAt, k / 2, dividers[k], dividers[k + 1], 0, 0, 0);
+    const rungAt = new Float32Array(Math.max(1, rungs.length / 2) * 16);
+    for (let k = 0; k < rungs.length; k += 2)
+      this.onTrack(track, rungAt, k / 2, rungs[k], rungs[k + 1], 0, track.segments[rungs[k]].wall, Math.PI / 2);
     const moundAt = new Float32Array(Math.max(1, mounds.length / 3) * 16);
     for (let k = 0; k < mounds.length; k += 3)
       this.onTrack(track, moundAt, k / 3, mounds[k], mounds[k + 1], mounds[k + 2], 0, 0);
@@ -284,6 +331,17 @@ export class Scene {
     ];
     if (felt.vertexCount > 0)
       groups.push({ mesh: felt.build(), matrices: one, albedo: [0.12, 0.3, 0.16], roughness: 0.95 });
+    // the grid the same dark as the pegs, so it reads as ironwork over the channel and not part of it
+    if (grid.vertexCount > 0) {
+      groups.push({ mesh: grid.build(), matrices: one, albedo: [0.2, 0.2, 0.23], roughness: 0.5 });
+      groups.push({
+        mesh: bar((HALF_WIDTH + SKIN) * 2, BAR, BAR),
+        matrices: rungAt,
+        count: rungs.length / 2,
+        albedo: [0.2, 0.2, 0.23],
+        roughness: 0.5,
+      });
+    }
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)
       groups.push({ mesh: bowls.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.6 });

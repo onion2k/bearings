@@ -30,7 +30,7 @@ import {
 } from './marbles';
 import type { Random } from './random';
 import type { Race, RaceEvents, RaceOptions, Roll } from './race';
-import { type Compiled, HALF_WIDTH, type Track, at } from './track';
+import { type Compiled, HALF_WIDTH, TROUGH_DEPTH, type Track, at } from './track';
 
 /** Rapier, the module, once `init` has been awaited. */
 export type Rapier = typeof RAPIER_;
@@ -45,8 +45,18 @@ export const PHYSICS_WALL = 1.2;
 export const PHYSICAL: Compiled = { lean: LEAN, wall: PHYSICS_WALL, physics: true };
 /** How thick the channel's lips are, so a ball on the wall's top meets an edge and not a line. */
 const SKIN = 0.08;
-/** How many steps of the world go to one step of the game: a ball at speed against a thin floor wants more than one. */
-export const SUBSTEPS = 4;
+/**
+ * How many steps of the world go to one step of the game, unless told
+ * otherwise. At four, a ball at speed was found a hair inside another or
+ * into the floor now and then; at eight, never, over every kind on 24
+ * seeds, for 0.36 ms a frame against 0.18.
+ */
+export const SUBSTEPS = 8;
+
+export interface PhysicsOptions extends RaceOptions {
+  /** How many steps of the world to one of the game, for a test that wants to know what that buys. */
+  substeps?: number;
+}
 /** What a ball and the track grip each other with, and how much of a knock comes back. */
 const GRIP = 0.3;
 const GIVE = 0.05;
@@ -71,16 +81,44 @@ const OFF = 3;
 
 type V3 = [number, number, number];
 
-/** The channel of the given segments as one mesh: floor, two walls and their lips, and a stop at the end of the run. */
+/** A rotation from a right-handed frame, `x`, `y` and `z` as its columns, as a quaternion. */
+function frameQuat(x: V3, y: V3, z: V3): { x: number; y: number; z: number; w: number } {
+  const m00 = x[0],
+    m01 = y[0],
+    m02 = z[0],
+    m10 = x[1],
+    m11 = y[1],
+    m12 = z[1],
+    m20 = x[2],
+    m21 = y[2],
+    m22 = z[2];
+  const tr = m00 + m11 + m22;
+  if (tr > 0) {
+    const S = Math.sqrt(tr + 1) * 2;
+    return { w: S / 4, x: (m21 - m12) / S, y: (m02 - m20) / S, z: (m10 - m01) / S };
+  }
+  if (m00 > m11 && m00 > m22) {
+    const S = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    return { w: (m21 - m12) / S, x: S / 4, y: (m01 + m10) / S, z: (m02 + m20) / S };
+  }
+  if (m11 > m22) {
+    const S = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    return { w: (m02 - m20) / S, x: (m01 + m10) / S, y: S / 4, z: (m12 + m21) / S };
+  }
+  const S = Math.sqrt(1 + m22 - m00 - m11) * 2;
+  return { w: (m10 - m01) / S, x: (m02 + m20) / S, y: (m12 + m21) / S, z: S / 4 };
+}
+
+/** The channel of the given segments as one mesh: floor, two walls and their lips. */
 function channelMesh(track: Track, which: (s: number) => boolean): { verts: Float32Array; idx: Uint32Array } {
   const verts: number[] = [];
   const idx: number[] = [];
   const push = (p: V3, b: V3, u: V3, across: number, up: number) =>
     verts.push(p[0] + b[0] * across + u[0] * up, p[1] + b[1] * across + u[1] * up, p[2] + b[2] * across + u[2] * up);
-  const wall = track.wall;
   for (let s = 0; s < track.segments.length; s++) {
     if (!which(s)) continue;
     const seg = track.segments[s];
+    const { wall } = seg;
     const n = seg.arc.length;
     const base = verts.length / 3;
     for (let i = 0; i < n; i++) {
@@ -90,36 +128,31 @@ function channelMesh(track: Track, which: (s: number) => boolean): { verts: Floa
       const u: V3 = [seg.ups[o], seg.ups[o + 1], seg.ups[o + 2]];
       const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
       const w = seg.width[i];
-      // the section, six points a sample: outer lip, wall top, floor, floor, wall top, outer lip — or, for a
-      // trough, the floor's two points at the bottom of a V a chute wide and as deep as the walls are high
+      // the section, eight points a sample: outer lip, wall top, the foot of the wall, floor, floor, foot, wall
+      // top, outer lip. For a trough the floor's two points are the bottom of a V that rises to the walls' feet,
+      // and the walls stand on above it; for a flat channel the foot is a point half way up the wall
+      const foot = seg.trough ? TROUGH_DEPTH : wall / 2;
       push(p, b, u, -w - SKIN, wall);
       push(p, b, u, -w, wall);
+      push(p, b, u, -w, foot);
       push(p, b, u, -seg.floor[i], 0);
       push(p, b, u, seg.floor[i], 0);
+      push(p, b, u, w, foot);
       push(p, b, u, w, wall);
       push(p, b, u, w + SKIN, wall);
     }
-    for (let i = 0; i + 1 < n; i++)
-      for (let k = 0; k < 5; k++) {
-        const a = base + i * 6 + k,
-          c = base + (i + 1) * 6 + k;
+    for (let i = 0; i + 1 < n; i++) {
+      for (let k = 0; k < 7; k++) {
+        const a = base + i * 8 + k,
+          c = base + (i + 1) * 8 + k;
         idx.push(a, a + 1, c, a + 1, c + 1, c);
       }
-    // the end of the run is stopped, as the lane's stop stops the winner
-    if (seg.next < 0 && !seg.fork) {
-      const o = (n - 1) * 3;
-      const p: V3 = [seg.points[o], seg.points[o + 1], seg.points[o + 2]];
-      const t: V3 = [seg.tangents[o], seg.tangents[o + 1], seg.tangents[o + 2]];
-      const u: V3 = [seg.ups[o], seg.ups[o + 1], seg.ups[o + 2]];
-      const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
-      const w = seg.width[n - 1];
-      const e = verts.length / 3;
-      const q: V3 = [p[0] + t[0] * 0.05, p[1] + t[1] * 0.05, p[2] + t[2] * 0.05];
-      push(q, b, u, -w, 0);
-      push(q, b, u, w, 0);
-      push(q, b, u, w, wall);
-      push(q, b, u, -w, wall);
-      idx.push(e, e + 1, e + 2, e, e + 2, e + 3);
+      // under a lid, a ceiling from wall top to wall top, wherever both ends of the stretch are covered
+      if (seg.lid && seg.arc[i] >= seg.lid.from - 1e-6 && seg.arc[i + 1] <= seg.lid.upto + 1e-6) {
+        const a = base + i * 8 + 1,
+          c = base + (i + 1) * 8 + 1;
+        idx.push(a, c, a + 5, a + 5, c, c + 5);
+      }
     }
   }
   return { verts: new Float32Array(verts), idx: new Uint32Array(idx) };
@@ -158,14 +191,16 @@ export class Physics implements Race {
   private readonly crossed: number[] = [];
   /** Whether the gate has opened: after it, nothing may put a ball anywhere. */
   private released = false;
+  private readonly substeps: number;
 
   constructor(
     private readonly rapier: Rapier,
     readonly track: Track,
     private readonly events: RaceEvents = {},
-    options: RaceOptions = {},
+    options: PhysicsOptions = {},
   ) {
     const random = options.random ?? Math.random;
+    this.substeps = options.substeps ?? SUBSTEPS;
     this.count = options.count ?? MARBLES;
     const n = this.count;
     this.x = new Float32Array(n);
@@ -189,11 +224,40 @@ export class Physics implements Race {
 
     this.world = new rapier.World({ x: 0, y: 0, z: -GRAVITY });
     Physics.alive++;
+    // the mesh's own edges are told from its true ones, so a ball rolling from one triangle to the next on a
+    // flat floor is not bumped by the seam between them, as Rapier otherwise has it
+    const flags = rapier.TriMeshFlags.FIX_INTERNAL_EDGES;
+    // a run being built is a start gate and nothing else until a piece goes on, and a mesh of nothing is refused
     const run = channelMesh(track, (s) => s !== this.last);
-    this.world.createCollider(rapier.ColliderDesc.trimesh(run.verts, run.idx).setFriction(GRIP).setRestitution(GIVE));
+    if (run.idx.length > 0)
+      this.world.createCollider(
+        rapier.ColliderDesc.trimesh(run.verts, run.idx, flags).setFriction(GRIP).setRestitution(GIVE),
+      );
     const lane = channelMesh(track, (s) => s === this.last);
     this.world.createCollider(
-      rapier.ColliderDesc.trimesh(lane.verts, lane.idx).setFriction(POLISHED).setRestitution(GIVE),
+      rapier.ColliderDesc.trimesh(lane.verts, lane.idx, flags).setFriction(POLISHED).setRestitution(GIVE),
+    );
+    // the run ends in a cup, the lane rising again over its last stretch, so the field comes to rest in its dip and
+    // nothing presses on what stands at the end; a face at the foot of the slope had the whole field pressing the
+    // first ball into the corner it made with the trough and the wall, and out over the top. What stands at the
+    // end now only ever meets a ball that has come up the rise, slowly: a solid block, since a sheet was got through
+    const end = track.segments[this.last];
+    const o = (end.arc.length - 1) * 3;
+    const t: V3 = [end.tangents[o], end.tangents[o + 1], end.tangents[o + 2]];
+    const u: V3 = [end.ups[o], end.ups[o + 1], end.ups[o + 2]];
+    const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+    const STOP = 0.5;
+    const c: V3 = [
+      end.points[o] + t[0] * STOP + u[0] * end.wall,
+      end.points[o + 1] + t[1] * STOP + u[1] * end.wall,
+      end.points[o + 2] + t[2] * STOP + u[2] * end.wall,
+    ];
+    this.world.createCollider(
+      rapier.ColliderDesc.cuboid(STOP, end.width[end.width.length - 1] + SKIN, end.wall * 2)
+        .setTranslation(c[0], c[1], c[2])
+        .setRotation(frameQuat(t, b, u))
+        .setFriction(POLISHED)
+        .setRestitution(GIVE),
     );
     for (let i = 0; i < n; i++) {
       // held still until the off: a ball let go on the gate's own slope would set off on its own
@@ -320,9 +384,9 @@ export class Physics implements Race {
   step(dt: number): void {
     if (!this.away) return;
     this.t += dt;
-    this.world.timestep = dt / SUBSTEPS;
-    for (let k = 0; k < SUBSTEPS; k++) {
-      this.breathe(dt / SUBSTEPS);
+    this.world.timestep = dt / this.substeps;
+    for (let k = 0; k < this.substeps; k++) {
+      this.breathe(dt / this.substeps);
       this.world.step();
     }
     this.read();
@@ -332,7 +396,7 @@ export class Physics implements Race {
   /** The air's drag on every ball alike, a share of the speed squared, as the solver has it: what gives a run a top speed. */
   private breathe(dt: number): void {
     for (let i = 0; i < this.count; i++) {
-      if (this.state[i] !== RACING) continue;
+      if (this.state[i] !== RACING && this.state[i] !== FINISHED) continue;
       const body = this.balls[i];
       const v = body.linvel();
       const speed = Math.hypot(v.x, v.y, v.z);
@@ -413,6 +477,9 @@ export class Physics implements Race {
       ) {
         this.state[i] = LOST;
         this.lost++;
+        // held where it fell out, out of the race and out of the way: left to fall it fell for ever, faster than
+        // anything the air allows, since nothing below the run is there to stop it
+        this.balls[i].setBodyType(this.rapier.RigidBodyType.Fixed, true);
         this.events.lost?.(i, this.t);
         continue;
       }
@@ -495,7 +562,7 @@ export class Physics implements Race {
    * the game may do this once a race has begun, which is the rule `check`
    * holds, and a test has to be able to break it to see it hold.
    */
-  meddle(i: number, how: { speed?: number; at?: number }): void {
+  meddle(i: number, how: { speed?: number; at?: number; lift?: number }): void {
     const body = this.balls[i];
     if (how.speed !== undefined) {
       const v = body.linvel();
@@ -503,6 +570,15 @@ export class Physics implements Race {
       body.setLinvel({ x: (v.x / l) * how.speed, y: (v.y / l) * how.speed, z: (v.z / l) * how.speed }, true);
     }
     if (how.at !== undefined) body.setTranslation(this.balls[how.at].translation(), true);
+    if (how.lift !== undefined) {
+      const seg = this.track.segments[this.segment[i]];
+      const o = this.nearest(i) * 3;
+      const p = body.translation();
+      body.setTranslation(
+        { x: p.x + seg.ups[o] * how.lift, y: p.y + seg.ups[o + 1] * how.lift, z: p.z + seg.ups[o + 2] * how.lift },
+        true,
+      );
+    }
     this.read();
   }
 
@@ -533,6 +609,9 @@ export class Physics implements Race {
         seg.ups[o + 2] * (this.z[i] - seg.points[o + 2]);
       if (up < RADIUS - 0.1)
         problems.push(`ball ${i} is ${(RADIUS - up).toFixed(3)} into the floor of piece ${seg.piece}`);
+      // and under a lid, not through it: a lid is what holds a ball on a crest it would otherwise leave
+      if (seg.lid && this.along[i] >= seg.lid.from && this.along[i] <= seg.lid.upto && up > seg.wall - RADIUS + 0.1)
+        problems.push(`ball ${i} is ${(up + RADIUS - seg.wall).toFixed(3)} through the lid of piece ${seg.piece}`);
     }
     if (doing[FINISHED] !== this.finishers)
       problems.push(`${doing[FINISHED]} balls home, and ${this.finishers} counted`);

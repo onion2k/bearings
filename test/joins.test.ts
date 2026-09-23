@@ -73,7 +73,7 @@ describe('any piece after any other', () => {
  * is `check`'s business and not a bug in either piece.
  */
 describe('a splitter and a joiner', () => {
-  const onABranch: Kind[] = ['straight', 'ramp', 'drop', 'jump', 'wheel', 'shallow', 'shallowWide', 'narrow'];
+  const onABranch: Kind[] = ['straight', 'ramp', 'drop', 'jump', 'wheel', 'shallow', 'shallowWide', 'narrow', 'brake'];
   const tooWide: Kind[] = ['pegs', 'sweeper', 'gate', 'funnel', 'shallowBroad', 'bumps', 'spiralLeft', 'spiralRight'];
   // a turn changes which way `main` and `fork` face, so the same-kind trick that lines a joiner up with both
   // branches at once does not hold for one; it is out of scope for this run, not untested elsewhere, since

@@ -77,7 +77,7 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   drop: {
     name: 'Drop',
-    about: 'Down two levels in a cell: twice as steep as a ramp, and the quickest way to speed.',
+    about: 'Down two levels in a cell under a grid: twice as steep as a ramp, and the quickest way to speed.',
     among: alone('drop'),
   },
   spiralLeft: {
@@ -149,6 +149,12 @@ export const CATALOG: Record<Kind, Entry> = {
     name: 'Narrow',
     about: 'Squeezed to single file in its middle: two abreast going in come out one behind the other.',
     among: alone('narrow'),
+  },
+  brake: {
+    name: 'Brake',
+    about:
+      'The channel snaking from wall to wall down a shallow fall: a fast field is thrown about and comes out slow.',
+    among: alone('brake'),
   },
   bumps: {
     name: 'Bumps',

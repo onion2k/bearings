@@ -378,9 +378,29 @@ test('a piece raced under physics through the page: every marble home, in order,
   const places = await page.evaluate(() => window.game!.marbles().map((m) => m.place));
   expect([...places].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   await expect(page.locator('#order li').first()).toHaveClass(/won/);
+  // a run built of the pieces redesigned for physics races on physics too: a drop under its grid into a brake
+  await page.evaluate(() => {
+    const g = window.game!;
+    g.browse('designs');
+    for (const k of ['drop', 'brake', 'finish'] as const) g.lay(k);
+  });
+  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
+  expect(await page.evaluate(() => window.game!.designer().pieces)).toEqual(['start', 'drop', 'brake', 'finish']);
+  // kept, since a run still being built is not let go; the test's own save, in a browser of its own
+  expect(await page.evaluate(() => window.game!.keep('Drop and brake'))).toEqual([]);
+  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
+  await page.evaluate(() => window.game!.release());
+  await play(page, 60, 'the off down a drop and a brake under physics');
+  expect(await page.evaluate(() => window.game!.settle(30))).toBeGreaterThan(0);
+  const braked = await page.evaluate(() => window.game!.state());
+  expect(braked.over).toBe(true);
+  expect(braked.finished, 'every marble home off the drop and through the brake').toBe(8);
+  expect(braked.lost + braked.stalled).toBe(0);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   // and back to the solver for a piece physics has not got to, with nothing left of the world behind
   await page.evaluate(() => {
     const g = window.game!;
+    g.browse('pieces');
     g.pick(g.content().catalog.indexOf('Peg board'));
   });
   expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
