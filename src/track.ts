@@ -169,6 +169,8 @@ export interface Track {
   wall: number;
   /** How much every piece leans down along the run, taken into the geometry itself; 0 where it is not. */
   lean: number;
+  /** Whether it was worked out for physics: its pegs are cones, and drawn so. */
+  physics: boolean;
 }
 
 /**
@@ -789,20 +791,43 @@ function laneCurve(t: number, out: number[]): void {
  * marble rolling straight down it meets one row after another off the middle
  * of a mound, and is turned one way and then the other.
  */
-function moundRows(): (Omit<Mound, 'along'> & { u: number })[] {
+function moundRows(shape = MOUND): (Omit<Mound, 'along'> & { u: number })[] {
   const out: (Omit<Mound, 'along'> & { u: number })[] = [];
   [0.25, 0.4, 0.55, 0.7].forEach((u, r) => {
-    for (const across of r % 2 === 0 ? [-1.8, 0, 1.8] : [-0.9, 0.9]) out.push({ u, across, ...MOUND });
+    for (const across of r % 2 === 0 ? [-1.8, 0, 1.8] : [-0.9, 0.9]) out.push({ u, across, ...shape });
   });
   return out;
 }
 
 /** How far a mound spreads from its middle, and how high it stands there: every mound is this one, so one mesh draws them all. */
 export const MOUND = { radius: 0.75, height: 0.3 };
+/**
+ * A mound under physics, taller and narrower: the solver turns a marble
+ * aside by rule as it crosses one, but a real ball rolling over a low, wide
+ * rise at speed is barely deflected at all, the way a car over a shallow
+ * speed bump is not — every mound this shallow left a fast field's order
+ * on 24 seeds at 0.96, next to nothing changed. Steeper redirects more of
+ * an off-centre hit sideways: at this radius and height a fast field's
+ * order fell to 0.85 and a slow one's to 0.40, with no ball stopped or
+ * lost either way over 48 seeds.
+ */
+export const MOUND_PHYSICS = { radius: 0.5, height: 0.6 };
 
 /** How wide a peg board is, and its pegs: how thick, how far apart across and along, and in how many rows. */
 const BOARD = 3.6;
 export const PEG = 0.22;
+/** How tall a peg stands, drawn and, under physics, met. */
+export const PEG_HEIGHT = 0.8;
+/**
+ * A peg under physics is a cone, this wide at its foot, and not a post: a
+ * ball on a gentle board came to rest against a post as often as not, held
+ * there by the floor's own friction from as much as forty degrees off dead
+ * astern, and a steeper board or a polished post held more, not fewer. A
+ * cone's side leans in, so a ball pressed against it is pushed up and off.
+ * At 0.35 wide a ball wedged now and then between a cone and the next row's
+ * neighbour; at 0.28 none did in 192.
+ */
+export const PEG_CONE = 0.28;
 
 /**
  * A paddle wheel, which the scene draws as the solver has it: how wide its
@@ -831,12 +856,12 @@ export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.35, arm: 1.81
  * gaps are wider than a marble, so nothing can wedge; what a marble cannot
  * do is go down in a straight line.
  */
-function pegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
+function pegRows(radius = PEG): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
   const out: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] = [];
   const rows = [0.22, 0.34, 0.46, 0.58, 0.7];
   rows.forEach((u, r) => {
     const across = r % 2 === 0 ? [-2.4, -0.8, 0.8, 2.4] : [-1.6, 0, 1.6];
-    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius: PEG, motion: { kind: 'fixed' } });
+    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius, motion: { kind: 'fixed' } });
   });
   return out;
 }
@@ -1144,6 +1169,10 @@ export const PHYSICS_SHAPES: Partial<Record<Kind, Partial<Shape>>> = {
   // under a lid, the whole way: a ball at any speed leaves the crest of a fall this steep, and at two drops'
   // speed clears the cell and comes down a level above whatever is next; no crest within a cell holds it
   drop: { lid: { from: 0, upto: 1 } },
+  // the pegs cones, `PEG_CONE` wide at the foot: a ball comes to rest against a post and is pushed off a cone
+  pegs: { obstacles: pegRows(PEG_CONE) },
+  // the mounds steeper, `MOUND_PHYSICS`, since a shallow one barely turns a fast ball aside at all
+  bumps: { mounds: moundRows(MOUND_PHYSICS) },
   // walled higher, since a ball at a drop's speed rides a spiral's outer wall higher than a chute's holds
   spiralLeft: { wall: SPIRAL_WALL },
   spiralRight: { wall: SPIRAL_WALL },
@@ -1374,6 +1403,7 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
     slots: 0,
     wall: options.wall ?? WALL,
     lean,
+    physics: options.physics ?? false,
   };
   // every piece's own entry, and a joiner's second one besides, each to which piece and which of its segments
   const entries = new Map<string, { piece: number; part: number }>();

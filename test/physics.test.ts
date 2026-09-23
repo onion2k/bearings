@@ -124,7 +124,10 @@ describe('the race as physics', () => {
 
   it('knows which kinds it can race yet, and refuses the rest', () => {
     for (const kind of CROSSED) expect(Physics.supports(compile(chain(['start', kind, 'finish']))), kind).toBe(true);
-    for (const kind of ['pegs', 'jump', 'funnel', 'sweeper', 'gate', 'wheel', 'splitter'] as const)
+    // the funnel is its own case: `CROSSED` is also the list "fed by two drops" tries every kind at, which the
+    // funnel is deliberately left out of, but physics races it and `supports` says so
+    expect(Physics.supports(compile(chain(['start', 'funnel', 'finish']))), 'funnel').toBe(true);
+    for (const kind of ['jump', 'sweeper', 'gate', 'wheel', 'splitter'] as const)
       expect(
         Physics.supports(
           compile(
@@ -141,17 +144,17 @@ describe('the race as physics', () => {
 
   it('is what the game races on when it is given physics, and the solver where physics cannot go yet', () => {
     const { game } = newGame(1, null, { physics: RAPIER });
-    // First Drop has a peg board, which physics cannot race yet
+    // First Drop has a gate, which lifts, and physics cannot race a moving part yet
     expect(game.engine).toBe('solver');
     game.browse('pieces');
-    game.pick(game.list.findIndex((r) => r.id === 'piece-ramp'));
+    game.pick(game.list.findIndex((r) => r.id === 'piece-pegs'));
     expect(game.engine).toBe('physics');
     expect(game.track.wall).toBe(PHYSICS_WALL);
     game.release();
     for (let f = 0; f < 60 * 30 && !game.over; f++) game.step(DT);
     expect(game.marbles.finishers).toBe(MARBLES);
-    // and back to the solver for a piece physics has not got to
-    game.pick(game.list.findIndex((r) => r.id === 'piece-pegs'));
+    // and back to the solver for a piece with a moving part, which physics has not got to
+    game.pick(game.list.findIndex((r) => r.id === 'piece-sweeper'));
     expect(game.engine).toBe('solver');
     expect(game.track.wall).toBeLessThan(PHYSICS_WALL);
   });
@@ -160,7 +163,7 @@ describe('the race as physics', () => {
     // the tests above leave their own worlds behind, which is theirs to do; what counts is what the game adds
     const before = Physics.alive;
     const { game } = newGame(1, null, { physics: RAPIER });
-    const pieces = ['piece-ramp', 'piece-straight', 'piece-curve-left', 'piece-pegs', 'piece-curve-right'];
+    const pieces = ['piece-ramp', 'piece-pegs', 'piece-bumps', 'piece-funnel', 'piece-curve-left'];
     let most = 0;
     for (const id of pieces) {
       game.browse('pieces');

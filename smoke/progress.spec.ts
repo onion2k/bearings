@@ -356,7 +356,7 @@ test('a piece raced under physics through the page: every marble home, in order,
 }) => {
   const problems = watch(page);
   await start(page, { seed: 7, paused: true, physics: true });
-  // First Drop has a peg board, which physics cannot race yet: the solver has it, as it always did
+  // First Drop has a gate, which lifts: physics cannot race a moving part yet, so the solver has it
   expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
   await page.evaluate(() => {
     const g = window.game!;
@@ -397,11 +397,11 @@ test('a piece raced under physics through the page: every marble home, in order,
   expect(braked.finished, 'every marble home off the drop and through the brake').toBe(8);
   expect(braked.lost + braked.stalled).toBe(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
-  // and back to the solver for a piece physics has not got to, with nothing left of the world behind
+  // and back to the solver for a piece with a moving part, which physics has not got to, with nothing left of the world behind
   await page.evaluate(() => {
     const g = window.game!;
     g.browse('pieces');
-    g.pick(g.content().catalog.indexOf('Peg board'));
+    g.pick(g.content().catalog.indexOf('Sweeper'));
   });
   expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);

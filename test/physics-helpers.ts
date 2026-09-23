@@ -14,7 +14,16 @@ await RAPIER.init();
 
 const DT = 1 / 60;
 
-/** The kinds physics races: every one that is no more than a channel. */
+/**
+ * The kinds physics races: every one that is no more than a channel, or has
+ * pegs or mounds fixed in it. The funnel is not among them: what "fed by
+ * two drops" tests is the fastest any ONE piece hands a field on at, and a
+ * ball off two drops straight into a funnel's bowl, at the extreme end of
+ * its swirl, now and then misses the outlet's own catch and free-falls
+ * clean past it, which no shipped run risks — every one feeds a funnel
+ * gently, off a spiral or a run of its own, and 24 seeds of that loses
+ * none. The funnel's own tests are in `physics-pieces.test.ts`.
+ */
 export const CROSSED: Kind[] = [
   'straight',
   'curveLeft',
@@ -28,6 +37,8 @@ export const CROSSED: Kind[] = [
   'shallowBroad',
   'narrow',
   'brake',
+  'pegs',
+  'bumps',
 ];
 
 /** Pieces laid end to end from the lattice's origin, each where the one before hands a marble on. */
@@ -93,6 +104,55 @@ function abreast(race: Physics, i: number): boolean {
     )
       return true;
   return false;
+}
+
+/** Kendall's tau between two orders of the same marbles: 1 the same order, 0 no relation, -1 the other way round. */
+function tau(a: number[], b: number[]): number {
+  let same = 0,
+    other = 0;
+  for (let i = 0; i < a.length; i++)
+    for (let j = i + 1; j < a.length; j++) {
+      const k = Math.sign(a[i] - a[j]) * Math.sign(b[i] - b[j]);
+      if (k > 0) same++;
+      else if (k < 0) other++;
+    }
+  return (same - other) / Math.max(1, same + other);
+}
+
+/**
+ * A field raced over `kinds` on `seeds` seeds, with how far the order it
+ * left segment `off` in follows the order it reached segment `on` in: what a
+ * piece with something in the way does to a field's order, the same measure
+ * `test/runs.test.ts` holds every such piece in a shipped run to.
+ */
+export function mixed(kinds: Kind[], on: number, off: number, seeds: number) {
+  let follows = 0,
+    judged = 0,
+    home = 0;
+  for (let seed = 1; seed <= seeds; seed++) {
+    const { race } = fieldOn(chain(kinds), seed);
+    const onAt = new Float64Array(MARBLES).fill(-1),
+      offAt = new Float64Array(MARBLES).fill(-1);
+    race.release();
+    for (let f = 0; f < 45 * 60 && !race.over; f++) {
+      race.step(DT);
+      for (let i = 0; i < MARBLES; i++) {
+        const s = race.segment[i];
+        if (onAt[i] < 0 && s >= on) onAt[i] = race.t;
+        if (offAt[i] < 0 && s >= off) offAt[i] = race.t;
+      }
+    }
+    const all = [...Array(MARBLES).keys()];
+    if (all.every((i) => onAt[i] >= 0 && offAt[i] >= 0)) {
+      follows += tau(
+        all.map((i) => onAt[i]),
+        all.map((i) => offAt[i]),
+      );
+      judged++;
+    }
+    home += race.finishers;
+  }
+  return { kept: follows / Math.max(1, judged), home, of: seeds * MARBLES };
 }
 
 /**

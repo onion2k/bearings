@@ -298,20 +298,52 @@ What to copy the shape of, when building something new:
   allows, one into the floor, two inside each other, and the tallies; the
   world is one of Rapier's own memory, let go of by `dispose` when another
   run is put on, and `'physics worlds'` in `scripts/leaks.ts` holds it to
-  one. Every kind that is no more than a channel races under it — start,
-  straight, the turns, ramp, drop, the spirals, the shallows, narrow and
-  the brake — each raced alone on 24 seeds (`test/physics-slopes.test.ts`
-  and `test/physics-boards.test.ts`, two files so that they run on two
-  workers) and again fed by two drops, the fastest any one piece hands a
+  one. Every kind that is no more than a channel races under it, and now
+  every kind with pegs or mounds fixed in it, and a funnel — start,
+  straight, the turns, ramp, drop, the spirals, the shallows, narrow, the
+  brake, pegs, bumps and the funnel — each raced alone on 24 seeds
+  (`test/physics-slopes.test.ts`, `test/physics-boards.test.ts` and
+  `test/physics-obstacles.test.ts`, three files so that they run on
+  several workers, `physics-obstacles`'s own checking `check()` every five
+  frames through the race and not only at its end, since a peg's point or
+  a mound's crest is where a ball is most likely to read wrong for a
+  moment) and again fed by two drops, the fastest any one piece hands a
   field on at (`test/physics-pieces.test.ts`, with what each kind is for;
-  `test/physics-helpers.ts` sets a field on a run of a test's own);
-  `supports` refuses a track with anything else on it. Rapier is deterministic on this machine, to the bit, held by a test;
-  across machines it is not verified. The mesh is made with Rapier's
-  `FIX_INTERNAL_EDGES`, without which a ball rolling from one triangle of
-  a flat floor to the next was bumped by the seam, and two balls let go
-  side by side reached the line a step apart. A lost ball is held fixed
-  where it fell out: left to fall it fell for ever, faster than the air
-  allows. The spike that decided all this is on branch `spike/rapier`.
+  `test/physics-helpers.ts` sets a field on a run of a test's own, and
+  `mixed()` there is how far a field's order after a piece follows its
+  order before it, the same measure `test/runs.test.ts` holds a shipped
+  run's own pieces to); `supports` refuses a track with a moving part, a
+  jump, or a branch, still. Rapier is deterministic on this machine, to the
+  bit, held by a test; across machines it is not verified. The mesh is made
+  with Rapier's `FIX_INTERNAL_EDGES`, without which a ball rolling from one
+  triangle of a flat floor to the next was bumped by the seam, and two
+  balls let go side by side reached the line a step apart. A lost ball is
+  held fixed where it fell out: left to fall it fell for ever, faster than
+  the air allows. How far into its floor a ball may read as sitting before
+  `check` calls it through it, `FLOOR_GIVE`, is a tenth on a flat chute but
+  0.15 where it meets a cone's point or a mound's crest, less forgiving of
+  an angled strike: measured up to 0.128 over 48 seeds each, alone and fed
+  by two drops, with nothing else wrong. The spike that decided all this is
+  on branch `spike/rapier`.
+- **What a funnel is under physics:** its bowl (`bowlMesh`, the very mesh
+  `scene.ts` turns for drawing) is a trimesh collider of its own, not part
+  of the ordinary channel mesh, which leaves funnel segments out
+  (`channelMesh` skips `seg.funnel`); a peg (`obstacles`, `motion.kind ===
+'fixed'`) is a cone collider stood on the floor where the track has it;
+  and mounds, where a segment has them, are met as the very shape they are
+  drawn as, the floor's own mesh sampled across as often as it is along
+  (`channelMesh`'s `cols`, from `moundHeight`) rather than the two edge
+  points a plain channel needs. Falling through a funnel's hole and down
+  its throat is a drop no `Segment` represents, the same kind of gap a
+  jump's own lip leaves, only for as long as it takes rather than a fixed
+  distance: a ball can read as nowhere near any segment's own line while it
+  falls, on whichever segment happens to have the nearest sample to it at
+  that instant, one piece past the bowl or more before it lands on the
+  real geometry underneath it. `inThroat` in `physics.ts` gives it up to a
+  second of grace from the last time it was genuinely on the bowl or the
+  segment its hole hands on to, four times what landing ever took on any
+  seed tried, at any speed a run feeds a funnel; a ball still reading wrong
+  once that runs out is off the run for real, not a bookkeeping mistake.
 - **What physics asks of a shape:** `PHYSICS_SHAPES` in `src/track.ts`,
   merged over `SHAPES` when a run is compiled for physics, and nothing the
   solver sees. Every crest launches a ball at speed: a ball stays on a crest
@@ -343,8 +375,21 @@ What to copy the shape of, when building something new:
   radius of turn is under a chute's width the inner wall folds through
   itself, and `test/track.test.ts` holds the constants to twice that. The
   lane at the end takes a field straight off three drops with none thrown
-  out. The pictures are `physics-ramp.png` and `physics-drop-brake.png`,
-  and the perf spec measures the frame of both.
+  out. A **peg** is a cone under physics, `PEG_CONE` wide at its foot, not
+  the solver's post: a ball came to rest against a post, held there by the
+  floor's own friction from as much as forty degrees off dead astern, in 98
+  of 384 races over a board fed as gently as the gate ever feeds one, and a
+  steeper board or a polished post held more, not fewer; a cone's side
+  leans in, so a ball pressed against it is pushed up and off, and at 0.28
+  wide none did over 48 seeds either fed or alone. A **mound** is steeper
+  under physics too, `MOUND_PHYSICS`: a shallow, wide mound barely turns a
+  fast ball aside at all, the way a car over a shallow speed bump is not,
+  and left a fast field's order at 0.96, next to nothing changed; steeper
+  and narrower it turns more of an off-centre hit sideways, to 0.85 fast
+  and 0.40 slow, with nothing stopped or lost either way over 48 seeds. The
+  pictures are `physics-ramp.png`, `physics-drop-brake.png` and
+  `physics-pegs-bumps.png`, and the perf spec measures the frame of the
+  first two.
 - **The end of the run:** `finish` is the line and a lane one marble wide
   behind it. A marble is placed as it crosses, by which crossed first in
   the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
@@ -410,18 +455,41 @@ What to copy the shape of, when building something new:
 Eight runs race, up to eight players pick a marble each, and a player can
 build and keep runs of their own. The race is crossing over to physics in
 six parts (`~/.claude/plans/rapier-in-six.md`): the engine behind the
-interface has landed, and every kind that is no more than a channel with
-it, the drop under a lid and the brake new; still to come are pegs and the
-funnel with First Drop and The Tower crossing, the moving parts as motored
-bodies with The Chute and Switchback, the jump reshaped and the lid on any
-piece with The Leap, and the branches, the Stress Test and the solver
-retired. Each piece is redesigned for physics rather than helped by a rule:
-when a piece fails under physics, the piece changes. After those, each
-through `/feature`: patterns on the marbles, which want a change to
-artshape-render since it has no textures; and a designer that places a
-piece anywhere on the lattice, turned any way, splitters and joiners with
-it, where this one only ever builds on the end. Open, and belonging with
-those:
+interface has landed, every kind that is no more than a channel with it,
+the drop under a lid and the brake new, and now pegs, mounds and the
+funnel; still to come are the moving parts as motored bodies with The
+Chute and Switchback, the jump reshaped and the lid on any piece with The
+Leap, and the branches, the Stress Test and the solver retired. Each piece
+is redesigned for physics rather than helped by a rule: when a piece fails
+under physics, the piece changes.
+
+**No run has crossed yet, and part 3's own goal — First Drop and The
+Tower, rebuilt without their gates — is open.** Every design tried (a
+second peg board, a bumps board, a narrow squeeze, each early, late, or in
+place of the gate) raced every marble home, but the winner came from the
+back half of the grid on at most 1 of 24 races, where a run has to manage
+between 5 and 19. This held across every layout, which says it is not a
+layout to fix: under the solver, a peg or a paddle's strike comes off up
+to `RATTLE` off true by the race's own draw, uncorrelated with grid
+position, and a gate holds a crowd and releases it in whatever order the
+jostle gives it, which is what lets a race be won from anywhere. Physics
+has no `RATTLE`; what chaos it has comes only from real contact, which
+pegs and mounds now give it, enough to reorder the middle of a field
+(`follows` down to 0.3–0.5, within the bar) but not, on any layout tried,
+enough to put a back-half marble in front at the line — a moving gate is
+what did that, and physics has none yet, which is part 4's own delivery.
+Whether pegs and mounds alone can ever clear this bar, or whether First
+Drop and The Tower wait for a motored gate to cross, is a decision for the
+user; nothing is landed under either run's id until it is made. Every
+other part-3 delivery — cone pegs, steeper mounds, the funnel's bowl and
+throat, `supports` widened — is landed regardless, and racing pegs, bumps
+or a funnel to a standstill is `/bug` territory the same as any other kind.
+
+After the six parts, each through `/feature`: patterns on the marbles,
+which want a change to artshape-render since it has no textures; and a
+designer that places a piece anywhere on the lattice, turned any way,
+splitters and joiners with it, where this one only ever builds on the end.
+Open, and belonging with those:
 
 - **The marbles are all the same, and are treated so.** No marble has form
   or any other property of its own. The field is stepped and parted in the

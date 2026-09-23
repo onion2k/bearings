@@ -399,6 +399,32 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('pegs and bumps raced under physics: the pegs cones, the mounds steeper, so a fast field is thrown wide', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 5, paused: true, physics: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['drop', 'drop', 'pegs', 'bumps', 'finish'] as const) g.lay(k);
+      if (g.keep('Pegs and bumps').length) throw new Error('the design was refused');
+      g.release();
+      g.follow(false);
+      g.step(140);
+      // the pegs and the bumps from above, where a cone's point and a mound's steeper rise both show
+      g.look(24, 0, -8, { azimuth: -1.5, polar: 0.55, radius: 22 });
+      g.step(1);
+      return [g.engine(), g.state().runName, g.state().racing + g.state().finished] as const;
+    });
+    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
+    expect(on[1]).toBe('Pegs and bumps');
+    expect(on[2], 'and of the field away').toBe(8);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-pegs-bumps.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

@@ -28,9 +28,21 @@ import {
   STALLED,
   WAITING,
 } from './marbles';
+import { MeshBuilder } from 'artshape-render/mesh/types';
+import { bowl as bowlMesh } from './meshes';
 import type { Random } from './random';
 import type { Race, RaceEvents, RaceOptions, Roll } from './race';
-import { type Compiled, HALF_WIDTH, TROUGH_DEPTH, type Track, at } from './track';
+import {
+  type Compiled,
+  HALF_WIDTH,
+  PEG_HEIGHT,
+  SAMPLE_EVERY,
+  TROUGH_DEPTH,
+  type Track,
+  at,
+  bowlHeight,
+  moundHeight,
+} from './track';
 
 /** Rapier, the module, once `init` has been awaited. */
 export type Rapier = typeof RAPIER_;
@@ -60,6 +72,25 @@ export interface PhysicsOptions extends RaceOptions {
 /** What a ball and the track grip each other with, and how much of a knock comes back. */
 const GRIP = 0.3;
 const GIVE = 0.05;
+/**
+ * How far into its floor a ball may read as sitting before `check` calls it
+ * through it: a flat chute's own contact settles well inside a hundredth,
+ * but a cone's point and a mound's crest are less forgiving of an angled
+ * strike, and pressed hard against either a ball read as sunk up to 0.128
+ * over 48 seeds each, alone and fed by two drops, with nothing else wrong.
+ */
+const FLOOR_GIVE = 0.15;
+/**
+ * How long, after a ball was last on a funnel's bowl or what its hole hands
+ * on to, it is still taken as falling through the throat rather than resting
+ * on whatever segment happens to have the nearest sample to it: falling
+ * through a throat and landing took under a quarter of a second on every
+ * seed tried, off every speed a run feeds a funnel; this is four times that.
+ * While it falls it can read as nowhere near any segment's own line, on
+ * whichever segment the nearest sample happens to belong to, one piece past
+ * the bowl or more before it lands on the real geometry underneath it.
+ */
+const THROAT_GRACE = 1;
 /**
  * The lane at the end is polished: no grip at all. Its neck closes from a
  * chute's width to single file, and two balls arriving abreast wedged in it,
@@ -109,7 +140,19 @@ function frameQuat(x: V3, y: V3, z: V3): { x: number; y: number; z: number; w: n
   return { w: (m10 - m01) / S, x: (m02 + m20) / S, y: (m12 + m21) / S, z: S / 4 };
 }
 
-/** The channel of the given segments as one mesh: floor, two walls and their lips. */
+/** A right-handed frame with `t` along and `u` up, as a quaternion: what a thing stood on the track is turned by. */
+function standing(t: V3, u: V3): { x: number; y: number; z: number; w: number } {
+  const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+  // x across, y up and z back along, so that x cross y is z
+  const back: V3 = [-t[0], -t[1], -t[2]];
+  return frameQuat(b, u, back);
+}
+
+/**
+ * The channel of the given segments as one mesh: floor, two walls and their
+ * lips, and a ceiling wherever there is a lid. A bowl is not a channel and
+ * is left out, to be met as the surface the scene turns it from.
+ */
 function channelMesh(track: Track, which: (s: number) => boolean): { verts: Float32Array; idx: Uint32Array } {
   const verts: number[] = [];
   const idx: number[] = [];
@@ -118,8 +161,18 @@ function channelMesh(track: Track, which: (s: number) => boolean): { verts: Floa
   for (let s = 0; s < track.segments.length; s++) {
     if (!which(s)) continue;
     const seg = track.segments[s];
+    if (seg.funnel) continue;
     const { wall } = seg;
     const n = seg.arc.length;
+    // the floor is two points, its edges, unless mounds stand in it, when it is sampled as often across as the
+    // track is along, so that a mound is met as the shape it is drawn as
+    let widest = 0;
+    for (let i = 0; i < n; i++) widest = Math.max(widest, seg.floor[i]);
+    const cols = seg.mounds.length > 0 ? Math.max(2, Math.ceil((2 * widest) / SAMPLE_EVERY) + 1) : 2;
+    // the section: outer lip, wall top, the foot of the wall, the floor's columns, foot, wall top, outer lip.
+    // For a trough the floor's two points are the bottom of a V that rises to the walls' feet, and the walls
+    // stand on above it; for a flat channel the foot is a point half way up the wall
+    const P = cols + 6;
     const base = verts.length / 3;
     for (let i = 0; i < n; i++) {
       const o = i * 3;
@@ -128,30 +181,30 @@ function channelMesh(track: Track, which: (s: number) => boolean): { verts: Floa
       const u: V3 = [seg.ups[o], seg.ups[o + 1], seg.ups[o + 2]];
       const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
       const w = seg.width[i];
-      // the section, eight points a sample: outer lip, wall top, the foot of the wall, floor, floor, foot, wall
-      // top, outer lip. For a trough the floor's two points are the bottom of a V that rises to the walls' feet,
-      // and the walls stand on above it; for a flat channel the foot is a point half way up the wall
       const foot = seg.trough ? TROUGH_DEPTH : wall / 2;
       push(p, b, u, -w - SKIN, wall);
       push(p, b, u, -w, wall);
       push(p, b, u, -w, foot);
-      push(p, b, u, -seg.floor[i], 0);
-      push(p, b, u, seg.floor[i], 0);
+      for (let j = 0; j < cols; j++) {
+        const across = -seg.floor[i] + (2 * seg.floor[i] * j) / (cols - 1);
+        push(p, b, u, across, seg.mounds.length > 0 ? moundHeight(seg, seg.arc[i], across) : 0);
+      }
       push(p, b, u, w, foot);
       push(p, b, u, w, wall);
       push(p, b, u, w + SKIN, wall);
     }
     for (let i = 0; i + 1 < n; i++) {
-      for (let k = 0; k < 7; k++) {
-        const a = base + i * 8 + k,
-          c = base + (i + 1) * 8 + k;
+      for (let k = 0; k + 1 < P; k++) {
+        const a = base + i * P + k,
+          c = base + (i + 1) * P + k;
         idx.push(a, a + 1, c, a + 1, c + 1, c);
       }
       // under a lid, a ceiling from wall top to wall top, wherever both ends of the stretch are covered
       if (seg.lid && seg.arc[i] >= seg.lid.from - 1e-6 && seg.arc[i + 1] <= seg.lid.upto + 1e-6) {
-        const a = base + i * 8 + 1,
-          c = base + (i + 1) * 8 + 1;
-        idx.push(a, c, a + 5, a + 5, c, c + 5);
+        const a = base + i * P + 1,
+          c = base + (i + 1) * P + 1,
+          across = P - 3;
+        idx.push(a, c, a + across, a + across, c, c + across);
       }
     }
   }
@@ -184,6 +237,8 @@ export class Physics implements Race {
   private readonly balls: RAPIER_.RigidBody[] = [];
   /** How long each has been barely moving, and the lowest the run goes, below which a ball is off it. */
   private readonly crawling: Float32Array;
+  /** The sim time up to which each ball is still taken as falling through a funnel's throat, not yet landed. */
+  private readonly throatUntil: Float32Array;
   private readonly bottom: number;
   /** Where the run ends: the segment a ball is home on, and the one before it. */
   private readonly last: number;
@@ -216,6 +271,7 @@ export class Physics implements Race {
     this.grid = new Int32Array(n);
     this.phase = new Float32Array(track.slots);
     this.crawling = new Float32Array(n);
+    this.throatUntil = new Float32Array(n).fill(-1);
     let bottom = Infinity;
     for (const seg of track.segments)
       for (let k = 2; k < seg.points.length; k += 3) bottom = Math.min(bottom, seg.points[k]);
@@ -237,6 +293,63 @@ export class Physics implements Race {
     this.world.createCollider(
       rapier.ColliderDesc.trimesh(lane.verts, lane.idx, flags).setFriction(POLISHED).setRestitution(GIVE),
     );
+    track.segments.forEach((seg, s) => {
+      // what stands still in the way: a peg is a cone, its point up, stood on the floor where the track has it
+      for (const ob of seg.obstacles) {
+        if (ob.motion.kind !== 'fixed') continue;
+        const h = at(track, s, ob.along);
+        const t: V3 = [h.tx, h.ty, h.tz],
+          u: V3 = [h.ux, h.uy, h.uz];
+        const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+        const half = PEG_HEIGHT / 2;
+        this.world.createCollider(
+          rapier.ColliderDesc.cone(half, ob.radius)
+            .setTranslation(
+              h.x + b[0] * ob.across + u[0] * half,
+              h.y + b[1] * ob.across + u[1] * half,
+              h.z + b[2] * ob.across + u[2] * half,
+            )
+            .setRotation(standing(t, u))
+            .setFriction(GRIP)
+            .setRestitution(GIVE),
+        );
+      }
+      // a funnel's bowl, its rim wall and its throat: the very surface the scene turns, so what is drawn is met
+      if (seg.funnel) {
+        const bowl = seg.funnel;
+        const built = bowlMesh(
+          bowl.hole,
+          bowl.rim,
+          (r) => bowlHeight(bowl, r),
+          bowl.wall,
+          bowl.throat,
+          new MeshBuilder(),
+          [bowl.x, bowl.y, bowl.z],
+        ).build();
+        this.world.createCollider(
+          rapier.ColliderDesc.trimesh(built.positions, built.indices, flags).setFriction(GRIP).setRestitution(GIVE),
+        );
+      }
+      // the way out from under a funnel's hole is walled at its back, as the scene draws it, so a ball dropping
+      // out of the throat cannot bounce off the back of it
+      if (s > 0 && track.segments[s - 1].funnel) {
+        const t: V3 = [seg.tangents[0], seg.tangents[1], seg.tangents[2]];
+        const u: V3 = [seg.ups[0], seg.ups[1], seg.ups[2]];
+        const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+        const BACK = 0.12;
+        this.world.createCollider(
+          rapier.ColliderDesc.cuboid(BACK, HALF_WIDTH + SKIN, seg.wall / 2)
+            .setTranslation(
+              seg.points[0] - t[0] * BACK + u[0] * (seg.wall / 2),
+              seg.points[1] - t[1] * BACK + u[1] * (seg.wall / 2),
+              seg.points[2] - t[2] * BACK + u[2] * (seg.wall / 2),
+            )
+            .setRotation(frameQuat(t, b, u))
+            .setFriction(GRIP)
+            .setRestitution(GIVE),
+        );
+      }
+    });
     // the run ends in a cup, the lane rising again over its last stretch, so the field comes to rest in its dip and
     // nothing presses on what stands at the end; a face at the foot of the slope had the whole field pressing the
     // first ball into the corner it made with the trough and the wall, and out over the top. What stands at the
@@ -272,16 +385,18 @@ export class Physics implements Race {
     this.reset();
   }
 
-  /** Whether every piece of `track` is one physics races yet: so far, only what has no more to it than a channel. */
+  /**
+   * Whether every piece of `track` is one physics races yet: a channel, with
+   * pegs and mounds in it or not, and a funnel, whose run in is the one lip
+   * a ball may fly off. Not yet the parts that move, a jump, or a branch.
+   */
   static supports(track: Track): boolean {
     return track.segments.every(
       (s) =>
-        s.obstacles.length === 0 &&
-        !s.funnel &&
-        !s.flies &&
+        s.obstacles.every((ob) => ob.motion.kind === 'fixed') &&
+        (!s.flies || (s.next >= 0 && track.segments[s.next].funnel !== null)) &&
         !s.fork &&
         s.branch === 0 &&
-        s.mounds.length === 0 &&
         !s.felt,
     );
   }
@@ -327,6 +442,7 @@ export class Physics implements Race {
       this.place[i] = 0;
       this.took[i] = -1;
       this.crawling[i] = 0;
+      this.throatUntil[i] = -1;
       this.set(i, 0, along, across, true);
     }
     this.read();
@@ -467,13 +583,18 @@ export class Physics implements Race {
         this.crossed.push(i);
         continue;
       }
-      // below everything, or clean out of the channel: off the run, told of, given no place
+      // below everything, or clean out of the channel: off the run, told of, given no place. A bowl's own centre
+      // line is only for ordering, so a ball in one is off the run only if it is below everything; a segment
+      // that flies is left on purpose, so a ball still nearest its last sample while falling toward what comes
+      // after it is not through a floor that was never there to catch it; and a ball still falling through a
+      // funnel's throat, on to whichever segment happens to have the nearest sample to it before it has truly
+      // arrived anywhere, reads as far off that line as the throat is wide, which is no line it follows at all
+      const lenient = seg.flies || this.inThroat(i, this.segment[i]);
       const o = this.nearest(i) * 3;
       const under = this.z[i] - seg.points[o + 2];
       if (
         this.z[i] < this.bottom - OFF ||
-        Math.abs(this.across[i]) > seg.width[this.nearest(i)] + OFF ||
-        under < -THROUGH
+        (!lenient && (Math.abs(this.across[i]) > seg.width[this.nearest(i)] + OFF || under < -THROUGH))
       ) {
         this.state[i] = LOST;
         this.lost++;
@@ -504,6 +625,31 @@ export class Physics implements Race {
       }
       this.crossed.length = 0;
     }
+  }
+
+  /**
+   * Whether a segment is the one a funnel's bowl hands a ball on to: what
+   * the outlet is. A ball falls through the hole and the throat to land on
+   * it, a drop no `Segment` represents, so while it is still arriving it
+   * can read as far off this segment's own line as the throat is wide,
+   * exactly as it does on the bowl itself.
+   */
+  private afterBowl(segment: number): boolean {
+    return segment > 0 && this.track.segments[segment - 1].funnel !== null;
+  }
+
+  /**
+   * Whether ball `i` is still to be taken as falling through a funnel's
+   * throat: on the bowl or its outlet now, which keeps the grace period
+   * running, or within it from the last time it was.
+   */
+  private inThroat(i: number, segment: number): boolean {
+    const seg = this.track.segments[segment];
+    if (seg.funnel || this.afterBowl(segment)) {
+      this.throatUntil[i] = this.t + THROAT_GRACE;
+      return true;
+    }
+    return this.t < this.throatUntil[i];
   }
 
   /** The sample of a ball's own segment nearest to how far along it is. */
@@ -599,15 +745,17 @@ export class Physics implements Race {
         );
       if (state !== RACING && state !== FINISHED) continue;
       // on the track and not through its floor, beyond the give a contact leaves: a trough's floor is the V's
-      // sides, which its walls stand for
+      // sides, which its walls stand for, a segment that flies has no floor for a ball past its lip to be
+      // measured against, and a ball still falling through a funnel's throat, on to whichever segment happens
+      // to be nearest, has no floor there yet either
       const seg = this.track.segments[this.segment[i]];
-      if (seg.trough) continue;
+      if (seg.trough || seg.flies || this.inThroat(i, this.segment[i])) continue;
       const o = this.nearest(i) * 3;
       const up =
         seg.ups[o] * (this.x[i] - seg.points[o]) +
         seg.ups[o + 1] * (this.y[i] - seg.points[o + 1]) +
         seg.ups[o + 2] * (this.z[i] - seg.points[o + 2]);
-      if (up < RADIUS - 0.1)
+      if (up < RADIUS - FLOOR_GIVE)
         problems.push(`ball ${i} is ${(RADIUS - up).toFixed(3)} into the floor of piece ${seg.piece}`);
       // and under a lid, not through it: a lid is what holds a ball on a crest it would otherwise leave
       if (seg.lid && this.along[i] >= seg.lid.from && this.along[i] <= seg.lid.upto && up > seg.wall - RADIUS + 0.1)

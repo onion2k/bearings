@@ -125,6 +125,22 @@ export function post(radius: number, height: number, sides = 10): Mesh {
   return b.build();
 }
 
+/** A cone standing on z = 0, `radius` wide at its foot and `height` to its point: a peg under physics. */
+export function cone(radius: number, height: number, sides = 12): Mesh {
+  const b = new MeshBuilder();
+  const tip: V3 = [0, 0, height];
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    const p0: V3 = [Math.cos(a0) * radius, Math.sin(a0) * radius, 0],
+      p1: V3 = [Math.cos(a1) * radius, Math.sin(a1) * radius, 0];
+    // each side is a triangle, drawn as a quad whose top two corners are the one point
+    face(b, p0, p1, tip, tip);
+    face(b, [0, 0, 0], p1, p0, [0, 0, 0]);
+  }
+  return b.build();
+}
+
 /** A bar `length` along x, `thick` along y and `height` up z, centred along and across and standing on z = 0. */
 export function bar(length: number, thick: number, height: number): Mesh {
   const b = new MeshBuilder();

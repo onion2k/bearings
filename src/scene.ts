@@ -13,13 +13,15 @@ import { FIELD } from './field';
 import { MARBLES, RADIUS } from './marbles';
 import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
-import { bar, bowl as bowlMesh, mound, post, sphere, sweep, wheel } from './meshes';
+import { bar, bowl as bowlMesh, cone, mound, post, sphere, sweep, wheel } from './meshes';
 import {
   HALF_WIDTH,
   LANE,
   MOUND,
   MOVING_MOST,
   PEG,
+  PEG_CONE,
+  PEG_HEIGHT,
   TROUGH_DEPTH,
   TROUGH_FLAT,
   WHEEL,
@@ -42,9 +44,8 @@ import {
  */
 /** How thick the chute is, so it is a trough and not a sheet of paper. */
 const SKIN = 0.18;
-/** How tall a peg, a sweeper's paddle and a gate's bar stand. */
-const PEG_HEIGHT = 0.8,
-  PADDLE_HEIGHT = 0.7,
+/** How tall a sweeper's paddle and a gate's bar stand. */
+const PADDLE_HEIGHT = 0.7,
   GATE_HEIGHT = 0.8;
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
@@ -283,8 +284,9 @@ export class Scene {
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
       { mesh: channel.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.65 },
+      // a peg is a post for the solver and a cone under physics, which is what a ball there meets
       {
-        mesh: post(PEG, PEG_HEIGHT),
+        mesh: track.physics ? cone(PEG_CONE, PEG_HEIGHT) : post(PEG, PEG_HEIGHT),
         matrices: pegAt,
         count: pegs.length / 3,
         albedo: [0.2, 0.2, 0.23],
