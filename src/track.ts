@@ -119,6 +119,10 @@ export interface Segment {
   mounds: Mound[];
   /** Felt from its start to `upto` along it, bringing any marble on it to `speed`; null where there is none. */
   felt: { upto: number; speed: number } | null;
+  /** A V for a floor rather than a flat one between walls: the lane at the end, under physics. */
+  trough: boolean;
+  /** How far the flat of the floor reaches from the middle at each sample: the channel's width, or a trough's bottom. */
+  floor: Float32Array;
   /** How far along the whole run the segment begins: what orders one marble against another. */
   start: number;
   /** The segment a marble goes on to when it runs off the end, or -1 where the run finishes. */
@@ -152,7 +156,40 @@ export interface Track {
   samples: number;
   /** How many moving pieces keep time of their own: a race starts each somewhere in its turn. */
   slots: number;
+  /** How high its walls stand over the floor, drawn and, under physics, met. */
+  wall: number;
+  /** How much every piece leans down along the run, taken into the geometry itself; 0 where it is not. */
+  lean: number;
 }
+
+/**
+ * How a run is worked out for the engine that will race it. The solver leans
+ * every piece by a twentieth as an acceleration of its own and needs no lean
+ * in the geometry; physics has no such thing, so for it the lean goes into
+ * the points themselves, and the walls stand higher, since a real marble
+ * banking through a bend at speed climbs one the solver's marbles never
+ * could. What is drawn is whatever was compiled, so the two engines are
+ * drawn as they are raced.
+ */
+export interface Compiled {
+  lean?: number;
+  wall?: number;
+  /**
+   * For physics, whose marbles are real balls and not a solver's rule. The
+   * lane at the end is a trough — a V for a floor, a chute wide, sloping a
+   * level down over its length — rather than a neck closing to single file:
+   * a neck barely a marble wide, fed by a crowd of eight, arches as a hopper
+   * does, polished or not, sloped or not, closing from both sides or from
+   * one. A ball arriving alone settles into the V's bottom; two arriving
+   * abreast can sit on its sides together, so the field is not always in
+   * single file at the end, and a sorter that puts it there without a
+   * hopper is still to be designed.
+   */
+  physics?: boolean;
+}
+
+/** How high the walls stand for the solver: past a marble's middle to hold it in, and not much further. */
+export const WALL = 0.57;
 
 /**
  * How a thing in the way moves. A peg does not. A sweeper swings across the
@@ -648,6 +685,17 @@ function opening(wide: number, open: number, close: number): (t: number) => numb
 }
 
 /**
+ * A trough: how flat its bottom is either side of its middle, a hair so its
+ * two floor points are not one, and over how much of the lane it closes to
+ * that from a chute's flat floor, since a ball coming in at the wall met a
+ * V's side as a step when it began at once. Its top stays a chute's width:
+ * narrowed, so that its sides were too steep for two balls to sit on
+ * abreast, its walls converged as a hopper's do and the field arched in it.
+ */
+export const TROUGH_FLAT = 0.05;
+export const TROUGH_IN = 0.3;
+
+/**
  * How narrow a squeeze is, from its middle to its wall: a marble and a
  * tenth, so a marble fits and two cannot pass. And the end of the run's lane,
  * the same, so the field waits in it in single file.
@@ -1058,25 +1106,33 @@ function portalKey(x: number, y: number, z: number, facing: Facing): string {
 
 /** One piece sampled into a segment, in the world's own units. */
 /** A piece's parts, each worked out into a segment of its own, in the order a marble meets them. */
-function sample(piece: Placed, index: number): Segment[] {
+function sample(piece: Placed, index: number, physics: boolean): Segment[] {
   const shape = SHAPES[piece.kind];
-  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 })];
-  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at));
+  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 }, physics)];
+  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at, physics));
   // a splitter's second branch begins at the same entry as the first, not further along it
-  if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }));
+  if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }, physics));
   // a joiner's second entry, off to one side of the one every other piece has, reaching the same exit as it
-  if (shape.joins) out.push(samplePart(piece, index, shape.joins, shape.joins.at));
+  if (shape.joins) out.push(samplePart(piece, index, shape.joins, shape.joins.at, physics));
   return out;
 }
 
 /** One part of a piece, begun `at` cells along and to the left and levels up from the piece's entry. */
-function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; y: number; z: number }): Segment {
+function samplePart(
+  piece: Placed,
+  index: number,
+  shape: Part,
+  at: { x: number; y: number; z: number },
+  physics: boolean,
+): Segment {
+  const trough = physics && piece.kind === 'finish';
   const n = Math.max(8, Math.ceil(shape.rough / SAMPLE_EVERY)) + 1;
   const points = new Float32Array(n * 3),
     tangents = new Float32Array(n * 3),
     ups = new Float32Array(n * 3),
     arc = new Float32Array(n),
-    width = new Float32Array(n);
+    width = new Float32Array(n),
+    floor = new Float32Array(n);
   const local: number[] = [0, 0, 0, 0, 0, 0];
   const turned: number[] = [0, 0];
   // where the part begins: its piece's entry, moved on by `at` in the piece's own frame
@@ -1087,6 +1143,15 @@ function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; 
   for (let i = 0; i < n; i++) {
     shape.curve(i / (n - 1), local);
     width[i] = shape.width ? shape.width(i / (n - 1)) : HALF_WIDTH;
+    floor[i] = width[i];
+    // under physics the lane at the end is a trough a chute wide, sloping a level down over its length, its
+    // floor closing from flat to the bottom of a V over its first stretch
+    if (trough) {
+      width[i] = HALF_WIDTH;
+      floor[i] = Math.max(TROUGH_FLAT, HALF_WIDTH * (1 - i / (n - 1) / TROUGH_IN));
+      local[2] -= (LEVEL * i) / (n - 1);
+      local[5] -= LEVEL;
+    }
     turnBy(piece.facing, local[0], local[1], turned);
     const o = i * 3;
     points[o] = ox + turned[0];
@@ -1152,10 +1217,12 @@ function samplePart(piece: Placed, index: number, shape: Part, at: { x: number; 
     flies: !!shape.flies,
     gap: 0,
     width,
+    floor,
     obstacles,
     funnel,
     mounds,
     felt: shape.felt ? { upto: shape.felt.upto * length, speed: shape.felt.speed } : null,
+    trough,
   };
 }
 
@@ -1182,8 +1249,18 @@ function sideOf(
  * `check` is what says what is wrong with it. `problems`, given, is told of
  * anything a splitter or joiner gets wrong on the way, which `check` reads.
  */
-export function compile(run: Run, problems?: string[]): Track {
-  const track: Track = { name: run.name, segments: [], length: 0, samples: 0, slots: 0 };
+export function compile(run: Run, options: Compiled & { problems?: string[] } = {}): Track {
+  const { problems } = options;
+  const lean = options.lean ?? 0;
+  const track: Track = {
+    name: run.name,
+    segments: [],
+    length: 0,
+    samples: 0,
+    slots: 0,
+    wall: options.wall ?? WALL,
+    lean,
+  };
   // every piece's own entry, and a joiner's second one besides, each to which piece and which of its segments
   const entries = new Map<string, { piece: number; part: number }>();
   run.pieces.forEach((p, i) => {
@@ -1222,7 +1299,7 @@ export function compile(run: Run, problems?: string[]): Track {
   function geometryOf(pieceIndex: number): Segment[] {
     let segs = segmentsByPiece.get(pieceIndex);
     if (!segs) {
-      segs = sample(run.pieces[pieceIndex], pieceIndex);
+      segs = sample(run.pieces[pieceIndex], pieceIndex, options.physics ?? false);
       segmentsByPiece.set(pieceIndex, segs);
     }
     return segs;
@@ -1349,7 +1426,49 @@ export function compile(run: Run, problems?: string[]): Track {
   commit(start, segs, 0, 0);
   onwardDone.add(start);
   continueFrom(start, segs, 0, 0);
+  if (lean > 0) leanTrack(track, lean);
   return track;
+}
+
+/**
+ * The lean taken into the geometry: every sample lowered by `lean` times how
+ * far along the run it is, so that a level piece slopes and a queue on it
+ * drains, as the solver's own lean sees to. A shear, so joins stay joined:
+ * where one segment ends and the next begins is the same distance along the
+ * run, and lowered by the same amount. The tangents lean with the points,
+ * and up is worked out again from them, square to the way as it was before.
+ */
+function leanTrack(track: Track, lean: number): void {
+  for (const seg of track.segments) {
+    for (let i = 0; i < seg.arc.length; i++) {
+      const o = i * 3;
+      seg.points[o + 2] -= lean * (seg.start + seg.arc[i]);
+      const tx = seg.tangents[o],
+        ty = seg.tangents[o + 1],
+        tz = seg.tangents[o + 2] - lean * Math.hypot(seg.tangents[o], seg.tangents[o + 1]);
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      seg.tangents[o] = tx / tl;
+      seg.tangents[o + 1] = ty / tl;
+      seg.tangents[o + 2] = tz / tl;
+      let ux = -seg.tangents[o] * seg.tangents[o + 2],
+        uy = -seg.tangents[o + 1] * seg.tangents[o + 2],
+        uz = 1 - seg.tangents[o + 2] * seg.tangents[o + 2];
+      const ul = Math.hypot(ux, uy, uz);
+      if (ul < 1e-6) {
+        ux = 1;
+        uy = 0;
+        uz = 0;
+      } else {
+        ux /= ul;
+        uy /= ul;
+        uz /= ul;
+      }
+      seg.ups[o] = ux;
+      seg.ups[o + 1] = uy;
+      seg.ups[o + 2] = uz;
+    }
+    if (seg.funnel) seg.funnel.z -= lean * seg.start;
+  }
 }
 
 /** Where along the track a distance falls: the sample at or before it. */
@@ -1490,7 +1609,7 @@ export function check(run: Run): string[] {
   // working the whole thing out finds what the walk above cannot, on the far side of a splitter: a branch that
   // never reaches a joiner, or reaches one a different distance along than the branch that closes it does
   const forked: string[] = [];
-  const track = compile(run, forked);
+  const track = compile(run, { problems: forked });
   problems.push(...forked);
 
   // a run that walks clean can still pass through itself, where two parts that do not join come to the same place

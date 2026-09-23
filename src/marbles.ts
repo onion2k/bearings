@@ -33,6 +33,7 @@ import {
   widthAt,
 } from './track';
 import { type Random, seeded } from './random';
+import type { Race, RaceEvents, RaceOptions, Roll } from './race';
 
 /** How many marbles race. */
 export const MARBLES = 8;
@@ -176,22 +177,8 @@ export const CRAWL = 0.05;
 export const PATIENCE = 6;
 
 /** What happens in a race, for whoever shows it. Every one may be left out. */
-export interface RaceEvents {
-  /** They were let go. */
-  released?(count: number): void;
-  /** A marble reached the cup: which one, in which place, and how long it took. */
-  finished?(marble: number, place: number, seconds: number): void;
-  /** A marble came to rest short of the cup, and is not going to get there. */
-  stalled?(marble: number, seconds: number): void;
-  /** A marble off a jump came down nowhere it could land: off the run altogether. */
-  lost?(marble: number, seconds: number): void;
-}
-
-export interface MarblesOptions {
-  count?: number;
-  /** Chance, for the small differences between one marble and another. */
-  random?: Random;
-}
+export type { RaceEvents } from './race';
+export type MarblesOptions = RaceOptions;
 
 /**
  * How far below its rim a bowl's floor is under a marble whose middle is `r`
@@ -214,7 +201,7 @@ function floorUnder(bowl: Bowl, r: number): number {
  * the caller reads straight out for drawing, checking and hashing, indexed
  * by which marble it is.
  */
-export class Marbles {
+export class Marbles implements Race {
   readonly count: number;
   /** Which segment each is on. */
   readonly segment: Int32Array;
@@ -317,6 +304,8 @@ export class Marbles {
   private readonly order: Int32Array;
   /** Which slot on the start each marble drew. */
   readonly grid: Int32Array;
+  /** Whether the gate has opened: after it, nothing may put a marble anywhere. */
+  private released = false;
   /**
    * The field in the order of its slots on the grid, which is the order it
    * is stepped and parted in. Taken by marble instead, the lower-numbered of
@@ -415,6 +404,7 @@ export class Marbles {
 
   /** Everything back on the start, waiting, with the race not yet run. */
   reset() {
+    this.released = false;
     this.t = 0;
     this.rattle = seeded(this.rattleFrom);
     this.crossing = 0;
@@ -457,6 +447,7 @@ export class Marbles {
 
   /** Let them go. */
   release() {
+    this.released = true;
     let let_go = 0;
     for (let i = 0; i < this.count; i++)
       if (this.state[i] === WAITING) {
@@ -1446,6 +1437,49 @@ export class Marbles {
   }
 
   /** Who is winning: the marbles still racing, the one furthest on first. */
+  /** A marble put where a test wants it, still, before the off; refused once they are away. */
+  put(marble: number, segment: number, along: number, across: number): boolean {
+    if (marble < 0 || marble >= this.count || this.released) return false;
+    this.segment[marble] = Math.min(Math.max(segment, 0), this.track.segments.length - 1);
+    this.along[marble] = along;
+    this.across[marble] = across;
+    this.speed[marble] = 0;
+    this.drift[marble] = 0;
+    this.state[marble] = RACING;
+    this.write();
+    return true;
+  }
+
+  /** Which way a marble is turned: it rolls about whatever lies across its way, which is what makes the turn look like rolling and not spinning. */
+  roll(i: number, out: Roll): Roll {
+    if (this.state[i] === FLYING || this.state[i] === SWIRLING) {
+      // off the track, the way across its way is square to where it is going, on the level
+      out.ax = -this.vy[i];
+      out.ay = this.vx[i];
+      out.az = 0;
+    } else {
+      const seg = this.track.segments[this.segment[i]];
+      const o =
+        Math.min(Math.max(0, Math.round((this.along[i] / seg.length) * (seg.arc.length - 1))), seg.arc.length - 1) * 3;
+      const tx = seg.tangents[o],
+        ty = seg.tangents[o + 1],
+        tz = seg.tangents[o + 2];
+      const ux = seg.ups[o],
+        uy = seg.ups[o + 1],
+        uz = seg.ups[o + 2];
+      out.ax = ty * uz - tz * uy;
+      out.ay = tz * ux - tx * uz;
+      out.az = tx * uy - ty * ux;
+    }
+    out.angle = this.rolled[i];
+    return out;
+  }
+
+  /** What must always hold of the field as it stands. */
+  check(): string[] {
+    return checkMarbles(this);
+  }
+
   running(): number[] {
     const racing: number[] = [];
     for (let i = 0; i < this.count; i++)

@@ -53,6 +53,7 @@ export function sweep(
   into = new MeshBuilder(),
   widths?: Float32Array,
   base = 0,
+  floors?: Float32Array,
 ): MeshBuilder {
   const b = into;
   const at = (i: number, k: number): V3 => {
@@ -70,7 +71,13 @@ export function sweep(
     // where the channel is wider than `base`, every point of the section moves out by the difference, walls
     // and skin together, so a board is the same trough as a chute, only wider
     const [section, up] = profile[k];
-    const across = widths ? Math.sign(section) * (Math.abs(section) - base + widths[i]) : section;
+    // a point on the floor sits at the floor's own reach where that is given, which is how a trough closes in
+    const across =
+      floors && up === 0 && Math.abs(section) < base
+        ? Math.sign(section) * floors[i]
+        : widths
+          ? Math.sign(section) * (Math.abs(section) - base + widths[i])
+          : section;
     return [
       points[o] + bx * across + ux * up,
       points[o + 1] + by * across + uy * up,

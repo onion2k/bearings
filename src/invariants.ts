@@ -6,7 +6,7 @@
  * are. Every marble is a number, on a piece of the track, inside the channel,
  * not inside another marble, never further in a step than its speed and what
  * pushed it take it, and doing exactly one thing, with the tallies agreeing —
- * all of that is the marbles' own rules, in `checkMarbles`. The
+ * all of that is the race's own rules, each engine's `check`. The
  * places given out are 1, 2, 3 and so on with none repeated, and only to
  * marbles that got there. No player has two marbles, nor any marble two
  * players. The save only ever grew, and keeps no more designs than it may,
@@ -17,7 +17,7 @@
  */
 import type { Game } from './game';
 import { MAX_DESIGNS } from './designer';
-import { FINISHED, WAITING, checkMarbles } from './marbles';
+import { FINISHED, WAITING } from './marbles';
 import { checkTrack } from './track';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -33,7 +33,7 @@ export function checkInvariants(game: Game): string[] {
   };
 
   report('the track', checkTrack(track));
-  report('a marble', checkMarbles(marbles));
+  report('a marble', marbles.check());
 
   // the places are handed out once each, in order, and only to marbles that got there
   const places = new Map<number, number>();

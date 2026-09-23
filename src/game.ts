@@ -23,6 +23,7 @@
 import { Cameras, MAX_SLOTS } from './cameras';
 import { Designer, MAX_DESIGNS, kept } from './designer';
 import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
+import type { Race } from './race';
 import { Progress } from './progress';
 import type { Random } from './random';
 import { PIECES } from './catalog';
@@ -73,7 +74,7 @@ export class Game {
   designer: Designer | null = null;
   private cameFrom: { shelf: Shelf; run: number } = { shelf: 'runs', run: 0 };
   track!: Track;
-  marbles!: Marbles;
+  marbles!: Race;
   /** Whether the race that is on has been counted into the save yet. */
   private counted = true;
   /**
@@ -245,17 +246,17 @@ export class Game {
 
   /** `run` worked out, and a field drawn for its start gate. */
   private mount(run: Run) {
+    const events = {
+      released: (n: number) => this.events.released?.(n),
+      finished: (m: number, place: number, s: number) => this.events.finished?.(m, place, s),
+      stalled: (m: number, s: number) => this.events.stalled?.(m, s),
+      lost: (m: number, s: number) => this.events.lost?.(m, s),
+    };
+    const random = () => this.random();
+    // the race before this one let go of, where its engine holds anything outside the collector's reach
+    (this.marbles as Race | undefined)?.dispose?.();
     this.track = compile(run);
-    this.marbles = new Marbles(
-      this.track,
-      {
-        released: (n) => this.events.released?.(n),
-        finished: (m, place, s) => this.events.finished?.(m, place, s),
-        stalled: (m, s) => this.events.stalled?.(m, s),
-        lost: (m, s) => this.events.lost?.(m, s),
-      },
-      { random: () => this.random() },
-    );
+    this.marbles = new Marbles(this.track, events, { random });
     this.counted = false;
     this.follow();
     this.events.picked?.(this.run, this.track.name);

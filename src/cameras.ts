@@ -10,7 +10,7 @@
  * other. A pick can only change before the off, so once the field is away a
  * camera's marble is fixed for the race, whatever becomes of it.
  */
-import type { Marbles } from './marbles';
+import type { Race } from './race';
 
 /** The most cameras there are: one to every marble of a full field. */
 export const MAX_SLOTS = 8;
@@ -58,7 +58,7 @@ export class Cameras {
    * `home` with none; put on it outright the first time, so a view starts on
    * its marble rather than arriving from wherever the last run left it.
    */
-  ease(marbles: Marbles, home: readonly number[], chase: number) {
+  ease(marbles: Race, home: readonly number[], chase: number) {
     for (let s = 0; s < this.count; s++) {
       const m = this.marble[s];
       const at = s * 3;

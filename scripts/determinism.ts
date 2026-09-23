@@ -67,13 +67,10 @@ export function hashGame(game: Game): string {
     eat(marbles.along[i]);
     eat(marbles.across[i]);
     eat(marbles.speed[i]);
-    eat(marbles.drift[i]);
     eat(marbles.x[i]);
     eat(marbles.y[i]);
     eat(marbles.z[i]);
-    eat(marbles.vx[i]);
-    eat(marbles.vy[i]);
-    eat(marbles.vz[i]);
+    eat(marbles.took[i]);
     eat(marbles.state[i]);
     eat(marbles.place[i]);
   }

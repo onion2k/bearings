@@ -10,7 +10,8 @@
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { MeshBuilder } from 'artshape-render/mesh/types';
 import { FIELD } from './field';
-import { FLYING, MARBLES, RADIUS, SWIRLING, type Marbles } from './marbles';
+import { MARBLES, RADIUS } from './marbles';
+import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
 import { bar, bowl as bowlMesh, mound, post, sphere, sweep, wheel } from './meshes';
 import {
@@ -19,6 +20,7 @@ import {
   MOUND,
   MOVING_MOST,
   PEG,
+  TROUGH_FLAT,
   WHEEL,
   type Obstacle,
   type Pose,
@@ -37,7 +39,6 @@ import {
  * marble high hides everything of a marble but its crown from any camera
  * above it, and half the field is always against one wall or the other.
  */
-const WALL = RADIUS + 0.12;
 /** How thick the chute is, so it is a trough and not a sheet of paper. */
 const SKIN = 0.18;
 /** How tall a peg, a sweeper's paddle and a gate's bar stand. */
@@ -60,16 +61,29 @@ const DIVIDER = 2.2,
  * Down one wall, across the floor, up the other, then back along the
  * outside, so the trough has a thickness to it when seen from below.
  */
-const PROFILE: readonly (readonly [number, number])[] = [
-  [-HALF_WIDTH, WALL],
+const profile = (wall: number): readonly (readonly [number, number])[] => [
+  [-HALF_WIDTH, wall],
   [-HALF_WIDTH, 0],
   [HALF_WIDTH, 0],
-  [HALF_WIDTH, WALL],
-  [HALF_WIDTH + SKIN, WALL],
+  [HALF_WIDTH, wall],
+  [HALF_WIDTH + SKIN, wall],
   [HALF_WIDTH + SKIN, -SKIN],
   [-HALF_WIDTH - SKIN, -SKIN],
-  [-HALF_WIDTH - SKIN, WALL],
-  [-HALF_WIDTH, WALL],
+  [-HALF_WIDTH - SKIN, wall],
+  [-HALF_WIDTH, wall],
+];
+
+/** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end under physics. */
+const trough = (wall: number): readonly (readonly [number, number])[] => [
+  [-HALF_WIDTH, wall],
+  [-TROUGH_FLAT, 0],
+  [TROUGH_FLAT, 0],
+  [HALF_WIDTH, wall],
+  [HALF_WIDTH + SKIN, wall],
+  [HALF_WIDTH + SKIN, -SKIN],
+  [-HALF_WIDTH - SKIN, -SKIN],
+  [-HALF_WIDTH - SKIN, wall],
+  [-HALF_WIDTH, wall],
 ];
 
 /** A jump's felt in section: a strip over the floor, wall to wall, a hair above it so it is not lost in it. */
@@ -163,7 +177,18 @@ export class Scene {
           bowl.y,
           bowl.z,
         ]);
-      else sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, PROFILE, channel, seg.width, HALF_WIDTH);
+      else
+        sweep(
+          seg.points,
+          seg.tangents,
+          seg.ups,
+          seg.arc.length,
+          seg.trough ? trough(track.wall) : profile(track.wall),
+          channel,
+          seg.width,
+          HALF_WIDTH,
+          seg.trough ? seg.floor : undefined,
+        );
       // a jump's felt, laid over the floor of its run-up as far as it goes
       if (seg.felt) {
         let to = 1;
@@ -228,7 +253,7 @@ export class Scene {
       // the same grey as the walls either side of it, so it reads as one of them rather than something laid
       // over the channel
       {
-        mesh: bar(DIVIDER, DIVIDER_THICK, WALL),
+        mesh: bar(DIVIDER, DIVIDER_THICK, track.wall),
         matrices: dividerAt,
         count: dividers.length / 2,
         albedo: [0.42, 0.44, 0.5],
@@ -243,9 +268,14 @@ export class Scene {
         roughness: 0.65,
       },
       { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
-      { mesh: bar((LANE + SKIN) * 2, 0.24, WALL + 0.08), matrices: stopAt, albedo: [0.25, 0.25, 0.28], roughness: 0.5 },
       {
-        mesh: bar((HALF_WIDTH + SKIN) * 2, 0.24, WALL),
+        mesh: bar((LANE + SKIN) * 2, 0.24, track.wall + 0.08),
+        matrices: stopAt,
+        albedo: [0.25, 0.25, 0.28],
+        roughness: 0.5,
+      },
+      {
+        mesh: bar((HALF_WIDTH + SKIN) * 2, 0.24, track.wall),
         matrices: backAt,
         count: backs.length,
         albedo: [0.42, 0.44, 0.5],
@@ -352,34 +382,14 @@ export class Scene {
     );
   }
 
-  /** Every marble where it is this frame, turned as far as it has rolled: how many were placed. */
-  write(marbles: Marbles): number {
+  /** A roll to read into, so drawing a marble makes nothing. */
+  private readonly turned: Roll = { ax: 0, ay: 0, az: 0, angle: 0 };
+
+  /** Every marble where it is this frame, turned as the race has it: how many were placed. */
+  write(marbles: Race): number {
     for (let i = 0; i < marbles.count; i++) {
-      // it rolls about whatever lies across its way, which is what makes the turn look like rolling and not spinning
-      let ax: number, ay: number, az: number;
-      if (marbles.state[i] === FLYING || marbles.state[i] === SWIRLING) {
-        // off the track, the way across its way is square to where it is going, on the level
-        ax = -marbles.vy[i];
-        ay = marbles.vx[i];
-        az = 0;
-      } else {
-        const seg = marbles.track.segments[marbles.segment[i]];
-        const o =
-          Math.min(
-            Math.max(0, Math.round((marbles.along[i] / seg.length) * (seg.arc.length - 1))),
-            seg.arc.length - 1,
-          ) * 3;
-        const tx = seg.tangents[o],
-          ty = seg.tangents[o + 1],
-          tz = seg.tangents[o + 2];
-        const ux = seg.ups[o],
-          uy = seg.ups[o + 1],
-          uz = seg.ups[o + 2];
-        ax = ty * uz - tz * uy;
-        ay = tz * ux - tx * uz;
-        az = tx * uy - ty * ux;
-      }
-      spin(this.marbles, i, marbles.x[i], marbles.y[i], marbles.z[i], ax, ay, az, marbles.rolled[i]);
+      const r = marbles.roll(i, this.turned);
+      spin(this.marbles, i, marbles.x[i], marbles.y[i], marbles.z[i], r.ax, r.ay, r.az, r.angle);
     }
     return marbles.count;
   }
@@ -389,7 +399,7 @@ export class Scene {
    * paddles across the board, the gates' bars slid shut or aside, and the
    * wheels turned. How many of each there are.
    */
-  moving(marbles: Marbles): [number, number, number] {
+  moving(marbles: Race): [number, number, number] {
     const { track } = marbles;
     const phase = (ob: Obstacle) => (ob.slot >= 0 ? marbles.phase[ob.slot] : 0);
     const now = (part: Part): Pose => pose(part.ob, marbles.t, phase(part.ob), this.at);

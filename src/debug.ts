@@ -334,14 +334,7 @@ export function createApi(host: DebugHost): GameApi {
     reset: () => game.reset(),
     claim: (marble) => game.claim(marble),
     place(marble, segment, along, across = 0) {
-      const { marbles } = game;
-      if (marble < 0 || marble >= marbles.count) return;
-      marbles.segment[marble] = Math.min(Math.max(segment, 0), game.track.segments.length - 1);
-      marbles.along[marble] = along;
-      marbles.across[marble] = across;
-      marbles.speed[marble] = 0;
-      marbles.drift[marble] = 0;
-      if (marbles.state[marble] === WAITING) marbles.state[marble] = RACING;
+      game.marbles.put(marble, segment, along, across);
     },
     settle(seconds = 60) {
       const frames = Math.ceil(seconds * 60);
