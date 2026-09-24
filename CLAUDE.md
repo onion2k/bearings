@@ -7,14 +7,15 @@ TypeScript, Vite, and WebGPU through
 says what the game is; this file says how it is made. The house rules in
 `~/.claude/CLAUDE.md` apply too.
 
-The marbles ride a track solver of the game's own, in `src/marbles.ts`, and
-not artshape-physics, which the template came with: its floor is flat tiers,
-one height a tile, so a marble on it never feels a slope, and a marble run is
-nothing but slopes. The template's stub, a sled shoving balls into a hole, is
-gone; the gates it held have each been handed the race instead. The race is
-now crossing over to real physics, Rapier behind the same `Race` the solver
-stands behind, a kind of piece at a time: the plan is in six parts in
-`~/.claude/plans/rapier-in-six.md`, and the first four have landed.
+The marbles are balls in Rapier (`@dimforge/rapier3d-compat`), in
+`src/physics.ts`: nothing acts on one after the gate opens but gravity, the
+air and what it touches, and what a rule might have done the pieces do by
+their shape. The race rode a track solver of the game's own until it crossed
+over to Rapier in six parts (`~/.claude/plans/rapier-in-six.md`), all
+landed; the spike that decided it is on branch `spike/rapier`, and the solver
+is in the history before it went. The template came with artshape-physics,
+whose floor is flat tiers, one height a tile, and a marble run is nothing but
+slopes.
 
 ## The factory
 
@@ -58,15 +59,17 @@ A budget is what the game may cost at all; a baseline is what it cost at
 the last commit, held both ways, so a step toward a budget is noticed as
 much as a step over it. The perf tolerances are the measured wobble of a
 headless boot and a GPU frame, and say so in the file. The download was 400
-until the race began crossing over to Rapier, which is a megabyte of WASM
-in a chunk of its own, fetched only while `?physics=1` asks for it: accepted
-for what real physics buys, and the budget is what that leaves.
+until the race crossed over to Rapier, a megabyte of WASM in a chunk of its
+own, fetched at the start of every boot while the GPU starts: accepted for
+what real physics buys, and the budget is what that leaves. A frame of the
+race costs about 0.35 ms, the Stress Test's 0.41.
 
 ## Commands
 
-    npm run dev            the game at http://localhost:5198; ?physics=1 races on Rapier wherever it can
-    npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~30 s)
-    npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~30 s)
+    npm run dev            the game at http://localhost:5198
+    npm run check:quick    formatting, types, lint, unit tests but the judged runs and the pairs (the pre-commit hook; ~95 s)
+    npm run test:runs      every run judged over 60 races, and every pair of kinds raced (test/physics-judged-N, -pairs-N; ~4.5 min)
+    npm run check          all of it: check:quick, test:runs, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~8.5 min)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
@@ -88,31 +91,30 @@ change meant to move it, and the commit says why. Look at every picture.
   marble starts is drawn at the off, after the picks, so a pick is one in
   eight whatever the run favours. It tells what happened through
   `GameEvents`, and knows nothing of the renderer or the page.
-- `src/marbles.ts` is the race itself: every marble as how far along its
-  segment it is and how far across the channel, with gravity taken along the
-  track; what stands in the way on a piece, pegs and moving parts, as
-  capsules in the piece's own plane; and a funnel's bowl as a plane of its
-  own, where a marble circles until it is slow enough to drop. `src/track.ts`
-  works a run of pieces out into that track — the lattice, the kinds of
-  piece, the segments with their frames, how wide each is at every sample,
-  what stands on it and how it moves (`pose`), and what may be wrong with a
-  run. Neither takes anything from the renderer, so the same run is drawn,
-  raced and measured from one working out.
+- `src/physics.ts` is the race itself: every marble a ball in a Rapier
+  world, the track met as a mesh built from the very samples the scene draws,
+  and each moving part a body driven toward its clock by a motor of limited
+  strength. Where each ball is on the track (`segment`, `along`, `across`)
+  is read back from its position every step, for the cameras, the board and
+  the rules. `src/track.ts` works a run of pieces out into that track — the
+  lattice, the kinds of piece, the segments with their frames, how wide each
+  is at every sample, what stands on it and where its clock has it (`pose`),
+  and what may be wrong with a run. Neither takes anything from the
+  renderer, so the same run is drawn, raced and measured from one working
+  out.
 - `src/main.ts` is the page. It turns events into words on the board, puts
   a run on from the arrows either side of its name, frames each run to fit
   the screen whatever its shape, and draws the frame. There is no game logic
   here. `src/scene.ts` sweeps the channel along the track's own samples, as
   wide as the track says at each; turns each funnel's bowl from the height
   the marbles roll on; stands the pegs; and places the marbles and, every
-  frame, the sweepers, gates and wheels from the same `pose` the solver
-  meets them in, so what is drawn is what a marble hits.
+  frame, the sweepers, gates and wheels where the race says they are
+  (`Race.where`), so what is drawn is what a marble hits.
 - `src/race.ts` is what a race is to everything that is not the engine
-  racing it, and two engines stand behind it: `src/marbles.ts`, the solver,
-  and `src/physics.ts`, Rapier. `Game` is given Rapier or not
-  (`options.physics`, handed in since it is a megabyte the page fetches only
-  when asked), and races a run on physics wherever `Physics.supports` every
-  piece of it, the solver otherwise; `game.engine` says which, as does
-  `engine()` in the test API.
+  racing it, and the facts every part shares: how many marbles, how big one
+  is, gravity, the air, and what a marble can be doing. `Game` is handed
+  Rapier, loaded, as its first argument, by whoever wires it up: the page at
+  its boot, and Node in a test or a script.
 - `src/cameras.ts` is the split screen's cameras, one to every picked
   marble, without the screen.
 - `src/designer.ts` is a run the player builds, a piece at a time, and the
@@ -142,69 +144,61 @@ before anything is written; **/commit** commits in the house style.
 
 What to copy the shape of, when building something new:
 
-- **On the run: a marble.** Its state is typed arrays in `marbles.ts`,
-  stepped by `game.ts`, drawn by `scene.ts` with its look from `field.ts`,
-  its rules in `checkMarbles` and `invariants.ts`, read by `marbles()` in
-  `debug.ts`, hashed in `scripts/determinism.ts`, counted in
-  `scripts/leaks.ts`, and pictured in `smoke/look.spec.ts`. One kind of
-  thing, eight places, and a new thing on the run goes to all of them.
+- **On the run: a marble.** A ball in `physics.ts`, a body in the world
+  with its reading on the track kept in typed arrays; stepped by `game.ts`,
+  drawn by `scene.ts` with its look from `field.ts`, its rules in
+  `Physics.check` and `invariants.ts`, read by `marbles()` in `debug.ts`,
+  hashed in `scripts/determinism.ts`, counted in `scripts/leaks.ts`, and
+  pictured in `smoke/look.spec.ts`. One kind of thing, eight places, and a
+  new thing on the run goes to all of them.
 - **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
-  it hands a marble on, and the curve it follows — and every path over the
-  kinds gets it for nothing, because they are a `Record<Kind, Shape>` and not
-  a switch anyone can forget to add to. A piece may be two parts (`then`),
-  each its own segment, so that it joins whatever is either side of it: a
-  jump is its run-up, which `flies` off a lip after `felt` that brings any
-  marble to the same pace, and its own landing board beyond the air; a
-  funnel is a run in that `flies` off a lip over its bowl, then the bowl,
-  whose rim's wall stands as high as the lip, so that whatever comes off it
-  at whatever speed comes down inside, and then a ramp of its own under the
-  hole, which a marble falls through the bowl's `throat` on to and is
-  carried off down, a cell beyond the hole and a level below. A board is the same
-  plus `width`; pegs and moving parts are `obstacles`, each with a
-  `Motion` that `pose` turns into where it is at a moment, from a phase the
-  race draws from its seed; a funnel is `bowl`; lumps in a floor are
-  `mounds`. A width may pinch below a chute's, down to single file
-  (`NARROW`), but is a chute's wherever one piece meets another. A new kind
-  needs an entry in `CATALOG` too, which the compiler insists on; the
-  catalog's test then races it by itself, and `test/joins.test.ts` races it
-  after and before every other kind there is. `check` refuses a run whose
-  parts pass through each other. Copy that shape for anything the game has
-  several of.
+  it hands a marble on, the curve it follows, and what a real ball asks of
+  it — and every path over the kinds gets it for nothing, because they are
+  a `Record<Kind, Shape>` and not a switch anyone can forget to add to. A
+  piece may be two parts (`then`), each its own segment, so that it joins
+  whatever is either side of it: a jump is its run-up, which `flies` off a
+  lip, and its own landing board beyond the air; a funnel is a run in that
+  `flies` off a lip over its bowl, then the bowl, whose rim's wall stands as
+  high as the lip, so that whatever comes off it at whatever speed comes
+  down inside, and then a ramp of its own under the hole, which a marble
+  falls through the bowl's `throat` on to and is carried off down, a cell
+  beyond the hole and a level below. A board is the same plus `width`; pegs
+  and moving parts are `obstacles`, each with a `Motion` that `pose` turns
+  into where its clock has it at a moment, from a phase the race draws from
+  its seed; a funnel is `bowl`; lumps in a floor are `mounds`; a V for a
+  floor is `trough`; a ceiling is `lid`; walls higher than a chute's are
+  `wall`. No channel is narrower than a chute, and every one is a chute's
+  width wherever one piece meets another. A new kind needs an entry in
+  `CATALOG` too, which the compiler insists on; the catalog's test then
+  races it by itself, and `test/physics-pairs.ts` races it after and before
+  every other kind there is, fed from the gate and off two drops. `check`
+  refuses a run whose parts pass through each other. Copy that shape for
+  anything the game has several of.
 - **A branch in the track: the splitter and the joiner.** The one place
   `compile` is a graph and not a line: a splitter's own segment carries
-  `fork` — `a` to whichever side of the middle the field is on as it reaches
-  it, `b` to the other — in place of the one `next` every other segment has,
-  and the segments either side of it carry `branch`, a lane tag that keeps
-  `settle`'s pairwise checks and `checkMarbles`'s "inside each other" from
-  reading two marbles on separate branches as touching just because their
-  `far` — cumulative length along the run — happens to overlap while the
-  branches run in parallel. A joiner's second entry is matched to the
-  splitter's own fork lane by position, the same way every other piece's
-  entry is; the two are held to about the same length (`start`, within 15%
-  of the longer or one unit, whichever is more), not exactly, since a lane
-  moved a cell across is inherently about half again longer than a plain
-  straight of the same span. Both are shown together on the catalog's
-  shelf (`CATALOG`'s `laid`, an `Entry` field that lays a shelf piece out by
-  hand instead of chaining `among`, since neither piece means anything
-  alone). A kind at a chute's width can stand on a branch — proven by
-  placing the same kind on both, which lines a joiner up with both at once
-  since a facing-preserving kind hands the same lattice offset on from
-  either entry — but a kind wider than the cell a splitter opens between its
-  two lanes cannot, which `check` refuses rather than racing them through
-  each other; nor can a kind that turns, since the joiner's own facing then
-  no longer lines up with both branches' true offset. `test/joins.test.ts`'s
-  `a splitter and a joiner` covers what its blanket pairwise matrix cannot.
-  Both keep a chute's own width the whole way — narrowing the channel down
-  to fit the lattice cell between them was tried first, and pinched two
-  marbles still side by side from the wide chute before it before they had
-  anywhere near enough of the piece to settle apart in. Since the channel
-  itself cannot be a chute wide each while barely a lattice cell apart, the
-  wall a marble looked to run through is covered instead, in `scene.ts`, by
-  a solid wedge (`bar`, from `DIVIDER`/`DIVIDER_THICK`) stood on the point
-  the two lanes share — the splitter's own `fork` segment's far end, or
-  wherever two segments of different branches hand on to the same one next.
-  A change to how it looks, not to the track or the solver, and nothing a
-  test races through: only `smoke/look.spec.ts`'s own pictures see it.
+  `fork` — `a` and `b`, its two lanes — in place of the one `next` every
+  other segment has, and the segments either side of it carry `branch`, a
+  lane tag that keeps the rules from reading two balls on separate lanes as
+  touching just because their `far` — cumulative length along the run —
+  happens to overlap while the lanes run in parallel. A joiner's second
+  entry is matched to the splitter's own fork lane by position, the same way
+  every other piece's entry is; the two are held to about the same length
+  (`start`, within 15% of the longer or one unit, whichever is more), not
+  exactly, since a lane moved a cell across is about half again longer than
+  a plain straight of the same span, and each lane leans at its own rate
+  (`branchLean`) so that both reach the joiner at one height: at the one
+  rate, the longer arrived 0.28 lower, and The Fork's field stopped against
+  the step. Where the two lanes overlap, a wall of one that would stand
+  inside the other is left open (`Segment.open`, `openWalls`), met and drawn
+  so, and they part at the crotch where their inner walls meet, as a real Y
+  does. Both are shown together on the catalog's shelf (`CATALOG`'s `laid`,
+  an `Entry` field that lays a shelf piece out by hand instead of chaining
+  `among`, since neither piece means anything alone). A kind at a chute's
+  width that keeps its facing can stand on a branch — proven by placing the
+  same kind on both, `test/physics-branches.ts` — but a kind wider than the
+  cell a splitter opens between its lanes cannot, which `check` refuses
+  rather than racing them through each other; nor can a kind that turns,
+  since the joiner's own facing then no longer lines up with both lanes.
 - **The screen split, a view to every picked marble:** `src/cameras.ts` is
   which marbles are followed and where each camera looks, with no renderer
   in it. `Game.split` is the player's own intent, on or off; `Game.views`
@@ -267,187 +261,146 @@ What to copy the shape of, when building something new:
   board over a race. Every click checks the whole run again and compiles it
   once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
   click and never a frame.
-- **The race as physics:** `Physics` in `src/physics.ts`, a `Race` like the
-  solver, with nothing acting on a ball after the gate opens but gravity,
-  the air and what it touches: the air's drag is the solver's own `DRAG`, a
-  share of the speed squared, on every ball alike, and gives a top speed of
-  `TERMINAL`, falling straight down; no felt, no nudge, no clamp, and `put`
-  is refused once they are away. The track is met as a mesh built from the
-  very samples the scene draws, compiled for physics (`PHYSICAL`): the
-  solver's twentieth of lean taken into the geometry (`leanTrack`), walls
-  `PHYSICS_WALL` high, and the lane at the end a trough — a V for a floor,
-  `Segment.trough` and `floor`, a chute wide, sloping a level down — rather
-  than a neck closing to single file, since a neck barely a marble wide fed
-  by a crowd of eight arches as a hopper does, polished or not, sloped or
-  not, closing from both sides or from one — every one of those was tried
-  on the four kinds and jammed on some seed. The field is therefore not
-  always in single file at the end under physics: a ball arriving alone
-  settles into the V's bottom, but two arriving abreast can sit on its sides
-  together, and a V too steep for that is a hopper again. The gate holds the
-  field in a zigzag under physics, each row's second a half space behind its
-  first, since level rows down a mirror-symmetric run arrive as
-  mirror-symmetric pairs; a sorter that lines a bunched field up without a
-  hopper is still to be designed, if one is wanted at all, since the places
-  are given at the line and the lane only holds the field.
-  What is drawn is whatever was compiled, `track.wall` and the trough too, so
-  the two engines are drawn as they are raced. A ball is held fixed on the
-  gate until the off, since the gate's own slope would set it going. Where
-  a ball is on the track (`segment`, `along`, `across`, for the cameras, the
-  board and the rules) is read back each step from the nearest sample of its
-  own segment or its neighbours, and a ball whose position runs past the end
-  of that segment is on the next one: read against the last sample of the
-  piece it had left, a ball over a join into the lane's cup read as sunk into
-  the floor. It goes back a segment only if it is behind the join by that
-  segment's own measure too, since at a join that turns downward there is a
-  sliver past the end of one and short of the start of the other. `check` rules on a ball faster than the air
-  allows, one into the floor, two inside each other, and the tallies; the
+- **The race:** `Physics` in `src/physics.ts`, a `Race`, with nothing
+  acting on a ball after the gate opens but gravity, the air and what it
+  touches: the air's drag, `DRAG`, is a share of the speed squared on every
+  ball alike, and gives a top speed of `TERMINAL`, falling straight down; no
+  felt, no nudge, no clamp, and `put` is refused once they are away. The
+  track is met as a mesh built from the very samples the scene draws: the
+  lean taken into the geometry (`LEAN`, `leanTrack`, a twentieth, so a queue
+  on a level piece always drains), walls `WALL` high, and each triangle
+  wound to face the side a ball meets it from, since with Rapier's
+  `FIX_INTERNAL_EDGES` a ball passes through a triangle's back: the bowl's
+  floor was once wound facing down, and a ball that struck it went straight
+  through, which read for a whole part of the plan as a fast ball thrown wide
+  of the funnel's way out (`test/meshes.test.ts`). A block stood on the
+  track is turned by a frame of along, up by along, and up — a rotation; as
+  along, along by up, and up, a mirror, its quaternion was not of unit
+  length and Rapier met a block that was not the one placed, and a queue
+  pressed through the lane's end (a test holds every collider to a unit
+  quaternion). A ball is held fixed on the gate until the off, since the
+  gate's own slope would set it going; the gate holds the field in a
+  zigzag, each row's second a half space behind its first, since level rows
+  down a mirror-symmetric run arrive as mirror-symmetric pairs. Balls grip
+  the track at 0.3 and each other at next to nothing (`SLIP`, 0.02, with
+  Rapier's `Max` rule): a crowd pressed into a neck stands as an arch on the
+  friction between its balls, the way a hopper jams, and at 0.3 gates and
+  wheels fed fast stopped a field; with none at all, no queue in the lane
+  ever came to rest. Where a ball is on the track (`segment`, `along`,
+  `across`, for the cameras, the board and the rules) is read back each step
+  from the nearest sample of its own segment or its neighbours, how high it
+  is over its floor measured along the floor's own up; a ball whose position
+  runs past the end of its segment is on the next one, and goes back a
+  segment only if it is behind the join by that segment's own measure too,
+  since at a join that turns downward there is a sliver past the end of one
+  and short of the start of the other. `check` rules on a ball faster than
+  the air allows, one read off its piece or outside its channel, one into
+  the floor or through a grid, two inside each other, and the tallies. The
   world is one of Rapier's own memory, let go of by `dispose` when another
   run is put on, and `'physics worlds'` in `scripts/leaks.ts` holds it to
-  one. Every kind races under it but a jump and a branch — start, straight,
-  the turns, ramp, drop, the spirals, the shallows, narrow, the brake, pegs,
-  bumps, the funnel, the sweeper, the gate and the wheel — each raced alone
-  on 24 seeds (`test/physics-slopes.test.ts`, `-boards`, `-obstacles` and
-  `-moving`, the last two checking `check()` every five frames through the
-  race and not only at its end, since a peg's point, a mound's crest or a
-  part that moves is where a ball is most likely to read wrong for a
-  moment), again fed by two drops, the fastest any one piece hands a field
-  on at (`test/physics-fed-first.test.ts` and `-second`), and held to what
-  each kind is for in `test/physics-pieces.test.ts`; `test/physics-helpers.ts`
+  one. A lost ball is held fixed where it fell out: left to fall it fell
+  for ever, faster than the air allows. How far into its floor a ball may
+  read as sitting before `check` calls it through, `FLOOR_GIVE`, is 0.15,
+  where a cone's point or a mound's crest meets an angled strike: measured
+  up to 0.128 over 48 seeds each, with nothing else wrong. Rapier is
+  deterministic on this machine, to the bit, held by `npm run determinism`
+  and a test; across machines it is not verified. Each kind is raced alone
+  on 24 seeds (`test/physics-slopes.test.ts`, `-boards`, `-obstacles`,
+  `-moving`, `-funnel`, the rules checked every five frames), again fed by
+  two drops, the fastest any one piece hands a field on at
+  (`test/physics-fed-first.test.ts` and `-second`), held to what each is for
+  in `test/physics-pieces.test.ts`, and every pair of kinds raced both ways
+  in the full check (`test/physics-pairs.ts`); `test/physics-helpers.ts`
   sets a field on a run of a test's own, and `mixed()` there is how far a
-  field's order after a piece follows its order before it, the measure
-  `test/runs.test.ts` holds a shipped run's own pieces to. Every run that
-  comes with the game and physics can race — First Drop, The Chute, The
-  Tower and Switchback — is raced under physics on 24 seeds with every
-  marble home and no rule broken (`test/physics-runs-first.test.ts` and
-  `-second`); whether each is a race and not a procession under physics is
-  not asked there yet, since the grid still tells a great deal of who wins
-  and that is for tuning later. The tests are split across many files so
-  that they race on the machine's cores, and Vitest's own timeout is thirty
-  seconds (`vitest.config.ts`), since a test that races a field over 24
-  seeds took three to six on its own and failed at random at five under
-  the load of every other file racing beside it. Rapier is deterministic on this machine, to the
-  bit, held by a test; across machines it is not verified. The mesh is made
-  with Rapier's `FIX_INTERNAL_EDGES`, without which a ball rolling from one
-  triangle of a flat floor to the next was bumped by the seam, and two
-  balls let go side by side reached the line a step apart. A lost ball is
-  held fixed where it fell out: left to fall it fell for ever, faster than
-  the air allows. How far into its floor a ball may read as sitting before
-  `check` calls it through it, `FLOOR_GIVE`, is a tenth on a flat chute but
-  0.15 where it meets a cone's point or a mound's crest, less forgiving of
-  an angled strike: measured up to 0.128 over 48 seeds each, alone and fed
-  by two drops, with nothing else wrong. The spike that decided all this is
-  on branch `spike/rapier`.
-- **What a funnel is under physics:** its bowl (`bowlMesh`, the very mesh
-  `scene.ts` turns for drawing) is a trimesh collider of its own, not part
-  of the ordinary channel mesh, which leaves funnel segments out
-  (`channelMesh` skips `seg.funnel`); a peg (`obstacles`, `motion.kind ===
-'fixed'`) is a cone collider stood on the floor where the track has it;
-  and mounds, where a segment has them, are met as the very shape they are
-  drawn as, the floor's own mesh sampled across as often as it is along
-  (`channelMesh`'s `cols`, from `moundHeight`) rather than the two edge
-  points a plain channel needs. Falling through a funnel's hole and down
-  its throat is a drop no `Segment` represents, the same kind of gap a
-  jump's own lip leaves, only for as long as it takes rather than a fixed
-  distance: a ball can read as nowhere near any segment's own line while it
-  falls, on whichever segment happens to have the nearest sample to it at
-  that instant, one piece past the bowl or more before it lands on the
-  real geometry underneath it. `inThroat` in `physics.ts` gives it up to a
-  second of grace from the last time it was genuinely on the bowl or the
-  segment its hole hands on to, four times what landing ever took on any
-  seed tried, at any speed a run feeds a funnel; a ball still reading wrong
-  once that runs out is off the run for real, not a bookkeeping mistake.
-- **Parts that move, under physics:** each sweeper's paddle and gate's bar
-  is a body on a prismatic joint across its piece, and each wheel a body on
-  a revolute joint at its axle, its four paddles one body, each joined to a
-  fixed anchor, built in `Physics.build` and parked where its clockwork has
-  it at the off (`park`). A slide's motor is set every substep toward
-  where `pose` has it, its force capped (`SLIDE_FORCE`); a wheel's motor
-  turns at its pace, pushing in proportion to how far behind it is
-  (`WHEEL_GRIP`). So a ball caught between a part and a wall holds the part
-  back rather than being crushed, and the part catches up, or goes on at
-  its pace, once the ball is out: `test/physics-yield.test.ts` and
-  `-yield-wheel` hold each to having been held back by more than a ball's
-  width somewhere in 24 races and to being back on its clock after. A part
+  field's order after a piece follows its order before it. The tests are
+  split across many files so that they race on the machine's cores, a long
+  one yields to Vitest between races (`breathe`), and Vitest's own timeout
+  is thirty seconds (`vitest.config.ts`).
+- **What a funnel is:** its bowl (`bowlMesh`, the very mesh `scene.ts`
+  turns for drawing) is a trimesh collider of its own, not part of the
+  channel mesh; a peg is a cone collider stood on the floor; and mounds are
+  met as the very shape they are drawn as, the floor's own mesh sampled
+  across as often as it is along (`channelMesh`'s `cols`). Falling through a
+  funnel's hole and down its throat is a drop no `Segment` represents: a
+  ball can read as nowhere near any segment's own line while it falls, so
+  `inThroat` gives it up to a second of grace from the last time it was
+  genuinely on the bowl or the segment its hole hands on to, four times what
+  landing ever took; a ball still reading wrong once that runs out is off
+  the run for real.
+- **Parts that move:** each sweeper's paddle and gate's bar is a body on a
+  prismatic joint across its piece, and each wheel a body on a revolute
+  joint at its axle, its four paddles one body, each joined to a fixed
+  anchor, built in `Physics.build` and parked where its clockwork has it at
+  the off (`park`). A slide's motor is set every substep toward where `pose`
+  has it, its force capped (`SLIDE_FORCE`); a wheel's motor turns at its
+  pace, pushing in proportion to how far behind it is (`WHEEL_GRIP`). So a
+  ball caught between a part and a wall holds the part back rather than
+  being crushed, and the part catches up once the ball is out:
+  `test/physics-yield.test.ts` and `-yield-wheel` hold each to that. A part
   meets balls and nothing else (Rapier's collision groups, `TRACK`, `BALL`
   and `PART`), since a gate slides aside into its wall and a sweeper's ends
   swing through theirs. `Race.where` is where a part really is, and the
-  scene draws it there; the solver has no `where`, and the scene draws its
-  parts from the clock as it always did. A wheel's paddles are polished:
-  one coming down on a ball closes a wedge on it against the floor only a
-  quarter-turn from flat, which a ball squirts out of only if the paddle
-  grips it less than about 0.27, and at the track's own grip 48 of 192 were
-  held there and stopped the wheel. What physics asked of the pieces around
-  the parts is in `PHYSICS_SHAPES`: the sweeper's board walled at 1.8
-  (`SWEEPER_WALL`), since its paddle throws a fast ball over a wall of 1.2
-  where the board narrows; the gate's pen walled at 1.8 (`GATE_WALL`), since
-  a field let go at once runs up the pen's closing wall, and its bar halfway
-  down the piece (`GATE_AT`) rather than at 0.6, since a crowd let go from a
-  standstill into a neck closing over the ramp's flattening end arched in
-  it as a hopper does, all eight, where let go halfway down it has speed
-  first and the neck closes over twice the distance; and the wheel's pen
-  closing from 0.7 rather than 0.8 (`WHEEL_CLOSE`), for the same arch.
-  Fed straight off two drops a wheel's field still arched in its neck on
-  one seed in 48, which `test/physics-wheel.test.ts` holds to a number
-  rather than to nothing. The pictures are `physics-pen.png` and
-  `physics-wheel.png`, and the perf spec measures the frame on The Chute.
-- **What physics asks of a shape:** `PHYSICS_SHAPES` in `src/track.ts`,
-  merged over `SHAPES` when a run is compiled for physics, and nothing the
-  solver sees. Every crest launches a ball at speed: a ball stays on a crest
-  of radius `r` only below `sqrt(GRAVITY r)`, which is 5 for the drop, 7 for
-  the ramp and 10 for a shallow, and a drop alone hands a field on at 13, two
-  drops at 22, so no rounding within a cell holds a ball on a drop: at two
-  drops' speed it cleared the whole cell and came down a level above
-  whatever was next, and a bend after it lost most of the field. So the
-  drop is under a **lid** (`Part.lid`, `Segment.lid`, a share of the part
-  to a share): a ceiling from wall top to wall top in the physics mesh, a
-  rule in `check` that no ball is through it, and a grid in `scene.ts`,
-  bars along and rungs across at the walls' height, whose undersides lie on
-  the ceiling. A ramp's hop at speed is left as it is, since the walls and
-  the straight after it catch it. The **spirals** are walled higher
-  (`Part.wall`, `Segment.wall`, `SPIRAL_WALL`): off a drop a ball rides the
-  outer wall 1.3 high and eight in 192 went over a wall of 1.2, none over
-  one of 1.8. Banking the floor was tried first and made it worse — a wall
-  square to a banked floor leans outward, and a ball pressed into it at
-  speed is shoved up and over — so there is no bank. The **narrow** is a
-  groove, the same trough the lane is: a neck barely a ball wide fed by a
-  crowd arched as a hopper and not one ball in 192 came through; the groove
-  sends 5% of a slow field out abreast of another where a plain shallow
-  sends 37%. The **brake** is a new kind, a board's fall with the channel
-  snaking from wall to wall (`brakeCurve`, `BRAKE_SWING` 0.6 every
-  `BRAKE_WAVE` 8), the honest way to take speed off, since a ball has no
-  rolling resistance to lose it to and a long descent otherwise only gets
-  faster: a field at 18.5 leaves it at 11.9, where a shallow of the same
-  fall lets it go at 19.6. Tighter snakes were tried; at a swing whose
-  radius of turn is under a chute's width the inner wall folds through
-  itself, and `test/track.test.ts` holds the constants to twice that. The
-  lane at the end takes a field straight off three drops with none thrown
-  out. A **peg** is a cone under physics, `PEG_CONE` wide at its foot, not
-  the solver's post: a ball came to rest against a post, held there by the
-  floor's own friction from as much as forty degrees off dead astern, in 98
-  of 384 races over a board fed as gently as the gate ever feeds one, and a
-  steeper board or a polished post held more, not fewer; a cone's side
-  leans in, so a ball pressed against it is pushed up and off. A physics
-  board stands its cones `PEG_SPACING` (2.4) apart, where the solver's are
-  1.6: a gap wider than a ball and narrower than two wedged two balls
-  coming down abreast, in 28 of 192 races fed off a straight. Four rows,
-  staggered by half, the first with a cone on the middle so the stream
-  from the chute is split rather than aimed at a gap, and the last well
-  short of where the board closes, stop nothing over 48 seeds fed off the
-  gate, a straight, a ramp or two drops. A cone throws a fast ball up as
-  well as aside, so the board is walled at 2.2 (`PEG_WALL`): at 1.8, twelve
-  in 384 went over it off two drops. A **mound** is steeper
-  under physics too, `MOUND_PHYSICS`: a shallow, wide mound barely turns a
-  fast ball aside at all, the way a car over a shallow speed bump is not,
-  and left a fast field's order at 0.96, next to nothing changed; steeper
-  and narrower it turns more of an off-centre hit sideways, to 0.85 fast
-  and 0.40 slow, with nothing stopped or lost either way over 48 seeds. The
-  pictures are `physics-ramp.png`, `physics-drop-brake.png` and
-  `physics-pegs-bumps.png`, and the perf spec measures the frame of the
-  first two.
-- **The end of the run:** `finish` is the line and a lane one marble wide
-  behind it. A marble is placed as it crosses, by which crossed first in
-  the step, and rolls on down the lane (`lane` in `marbles.ts`) to wait a
-  marble's length behind the one that finished before it.
+  scene draws it there. A wheel's paddles are polished: one coming down on
+  a ball closes a wedge on it against the floor only a quarter-turn from
+  flat, which a ball squirts out of only if the paddle grips it less than
+  about 0.27. The gate's bar stands halfway down its piece (`GATE_AT`) and
+  its pen closes from the bar on, since a crowd let go from a standstill
+  into a neck over the ramp's flattening end arched as a hopper does; the
+  wheel's pen closes from 0.7 (`WHEEL_CLOSE`) for the same arch, and its
+  walls stand 2.4 (`WHEEL_WALL`), since it can have no grid and a fast field
+  meeting a paddle was thrown over walls of 1.2.
+- **What a real ball asks of a shape:** every crest launches a ball at
+  speed: a ball stays on a crest of radius `r` only below `sqrt(GRAVITY r)`,
+  5 for the drop, 7 for the ramp and 10 for a shallow, and a drop alone
+  hands a field on at 13, two drops at 22. So the drop, the ramp and the
+  first half of a jump's run-up are under a **grid** (`Part.lid`,
+  `Segment.lid`): a ceiling from wall top to wall top in the mesh, a rule in
+  `check` that no ball is through it, and bars along and rungs across in
+  `scene.ts`. So is every board with something on it — pegs, bumps, the
+  sweeper and the gate — at the walls' own height: what stands on a board
+  throws a fast ball up as well as aside, as much as 2.6 over the floor, and
+  walled higher it arrived at the next piece above that piece's walls; under
+  a grid, nothing leaves higher than a chute's walls, and bouncing between
+  board and grid shuffles a field. The **spirals** are walled 1.8
+  (`SPIRAL_WALL`): off a drop a ball rides the outer wall 1.3 high; banking
+  the floor made it worse, since a wall square to a banked floor leans
+  outward. The **narrow** is a groove, a V a chute wide (`trough`), closing
+  in over its first stretch and flat again over its last: a neck barely a
+  ball wide arches as a hopper does, and a groove that met the next piece as
+  a V handed a ball on 0.8 up its side. The **brake** is a board's fall with
+  the channel snaking from wall to wall (`brakeCurve`, `BRAKE_SWING` 0.6
+  every `BRAKE_WAVE` 8), the honest way to take speed off, since a ball has
+  no rolling resistance: a field at 18.5 leaves it at 11.9. A **peg** is a
+  cone, `PEG_CONE` wide at its foot, `PEG_SPACING` (2.4) apart in four
+  staggered rows: a ball came to rest against a post, and a gap narrower
+  than two balls wedged two abreast. The **jump** is a run-up, a lip and a
+  landing, with no felt: a ball reaches the lip at 13 to 19 whatever it came
+  in at and clears the cell of air every time. The pictures are
+  `physics-ramp.png`, `physics-drop-brake.png`, `physics-pegs-bumps.png`,
+  `physics-grid.png` and `physics-fork.png`.
+- **A grid a run asks for:** `Placed.lid`, a piece placed with a grid over
+  it from end to end (`compile`'s `covered`, a bowl excepted), met as a
+  ceiling at the walls' height. Any piece but a jump, a funnel or a wheel
+  (`LIDLESS`, `lidRefused`, said by `check` in the player's terms): a jump's
+  field flies over its walls, a funnel's drops into its bowl from over them,
+  and a wheel's paddles turn up through where a grid would be. The
+  designer's Grid button, beside Undo, puts one over the last piece laid or
+  takes it off (`Designer.lid`, `refusesLid`, `Game.lid`, `lid()` in the
+  test API, which reads them back as `designer().lids`). Written only where
+  it is asked for, so every older save loads as it was; `readDesigns` takes
+  `true` and nothing else, and `test/saves/05-lids.json` is the shape. On
+  the catalog's shelf after the kinds (`piece-grid`, not a kind). Held by
+  `test/lid.test.ts`, the fuzzer's `lid`, a stage in `smoke/progress.spec.ts`,
+  and `physics-grid.png`.
+- **The end of the run:** `finish` is the line and a cup behind it, a V a
+  chute wide under a grid, eased down a level and up half of one again to
+  level at its end (`cup`, its bottom where both halves curve alike), with a
+  solid block at its end (`LANE_STOP`). A marble is placed as it crosses, by
+  which crossed first in the step, and comes to rest in the cup, not always
+  in the order it finished, since two may sit abreast in a V. Under a grid
+  because balls that barely grip each other pass a knock down a queue at
+  rest as a Newton's cradle does, and fed off three drops 23 in 192 at the
+  front were sent up the rise and out.
 - **A shelf of runs:** `Game.shelf` and `browse`. The runs are raced,
   counted and kept; the pieces from the catalog are put on the same way
   but nothing raced on them is counted or saved.
@@ -457,198 +410,82 @@ What to copy the shape of, when building something new:
   and `state()` in `debug.ts`, done by the fuzzer's `claim`, shown on the
   board by `main.ts`, and pictured in `board.png` and `won.png`.
 - **A run:** a list of placements with an id, in `src/runs.ts`. Every run is
-  held by `test/runs.test.ts` — sound; raced on 24 seeds with every marble
-  home, none lost, none stopped, and none fast enough to step through another
-  in a frame; and a race, not a procession, over 60 races: the grid tells
-  little of who wins (Kendall's tau of grid against finish within ±0.4), and
-  the back half of the grid wins between a fifth and four fifths of them —
-  and paced on its own by `pace:check`. A new run is a new entry and nothing
-  else, and then the gates hold it. Lay one out with `exitOf` and race it
-  before shipping it: The Leap lost three marbles in five hundred races off a
-  jump on to a chute, and none once it landed on a peg board. A run rebuilt
-  enough to change its races gets a new id, so a best set on the old one is
-  not held against the new; the game drops bests for ids it no longer has.
-  Stitching whole existing runs together for the Stress Test's hundred
-  pieces (every kind, `MAX_PIECES`'s own ceiling) found what a run ten
-  times the usual length runs into. Laid out piece after piece the way a
-  short run is, it needed a camera three hundred units further back than
-  any other run and stood a sliver in the corner of the screen for it;
-  folded into a box with turns instead — a lawnmower's own rows, stepping
-  one level further down each turn rather than drifting across the world —
-  what carries the length is depth, and it frames like any other run. A
-  turn costs a field more time than a straight the same length, so the
-  fold that fixed the screen also made the run slower, which moved
-  `pace.ts`'s own `capMinutes` (`test/pace.test.ts`'s smaller one, and
-  `smoke/progress.spec.ts`'s `settle` and `test/runs.test.ts`'s own race
-  cap, too) a second time over — each sized to the runs that existed, not
-  to whatever a future one might be, and a run long enough moves all of
-  them. And a piece with something in the way keeps the field's order
-  about as well as the field it meets is already spread out: a splitter
-  and a joiner hand two equal lanes back on in lock step, exactly as
-  evenly spaced as they went in, and the first piece with something in the
-  way to meet that field afterward reads as though it did nothing,
-  whatever it is and however far downstream it sits — moved to stand
-  before the fork instead of tuned in place, which is where the run's
-  pegboards live now, and nothing with something in the way stands between
-  the joiner and the cup.
+  held by `test/runs.test.ts` — sound, and worked out the same way twice —
+  and judged in the full check over 60 races (`test/physics-judged.ts`, a
+  file a run): every marble home in every one, none lost, none stopped, no
+  rule broken; a race, not a procession, the grid telling little of who
+  wins (Kendall's tau of grid against finish within ±0.4) and the back half
+  of the grid winning between a fifth and four fifths; and nothing in its
+  way that the field goes by unchanged (kept at most 0.85). Paced on its own
+  by `pace:check`. A new run is a new entry and a judged file, and then the
+  gates hold it. A run rebuilt enough to change its races gets a new id, so
+  a best set on the old one is not held against the new; the game drops
+  bests for ids it no longer has, which is why every run took a new id when
+  the race became physics. The Stress Test's hundred pieces (every kind,
+  `MAX_PIECES`'s own ceiling) are folded into a box with turns — a
+  lawnmower's own rows, stepping a level further down each turn — so that
+  it frames like any other run. And a piece with something in the way keeps
+  the field's order about as well as the field it meets is already spread
+  out: a field strung out over seconds passes a peg board one ball at a
+  time, and no board reorders balls that never meet each other on it.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`), the pace gate
-  (`scripts/pace.ts`) and the race bench (`scripts/bench.ts`, its
-  arithmetic in `scripts/benching.ts`). Each has unit tests of its own
-  working parts, and the fuzzer's reload is tried against a save that
-  forgets, in `test/fuzz-reload.test.ts`, since a correct save never makes
-  it fire. The bench was blind to a race five times slower until it was
-  made to fail one on purpose; a gate is trusted once it has been seen to
-  fail what it is for.
+  (`scripts/pace.ts`, its games played on worker threads by
+  `pace-check.ts`) and the race bench (`scripts/bench.ts`, its arithmetic in
+  `scripts/benching.ts`). Each has unit tests of its own working parts, and
+  the fuzzer's reload is tried against a save that forgets, in
+  `test/fuzz-reload.test.ts`, since a correct save never makes it fire. The
+  bench was blind to a race five times slower until it was made to fail one
+  on purpose, and on physics it was made to fail twice the substeps; a gate
+  is trusted once it has been seen to fail what it is for.
 - **Test helpers:** `newGame(seed)` and `race(game)` in `test/helpers.ts`,
-  and `memoryStore` in `src/progress.ts` for a save that is not the player's.
-  `Marbles.friction` is the solver's lever for a test that wants a marble
-  that never slows (0) or cannot move (a thousand); it is 1 in every race.
+  which load Rapier once and hand it in; `memoryStore` in `src/progress.ts`
+  for a save that is not the player's; `fieldOn`, `chain`, `branched` and
+  `mixed` in `test/physics-helpers.ts`; and `Physics.meddle`, the one lever
+  a test has on a ball once it is away: lift it, set its speed, or put it
+  where another is.
 
 ## What comes next
 
 Eight runs race, up to eight players pick a marble each, and a player can
-build and keep runs of their own. The race is crossing over to physics in
-six parts (`~/.claude/plans/rapier-in-six.md`): the engine behind the
-interface has landed, every kind that is no more than a channel with it,
-the drop under a lid and the brake new, then pegs, mounds and the funnel,
-and now the moving parts as motored bodies; still to come are the jump
-reshaped and the lid on any piece with The Leap, and the branches, the
-Stress Test and the solver retired. Each piece
-is redesigned for physics rather than helped by a rule: when a piece fails
-under physics, the piece changes.
+build and keep runs of their own, and the race is physics. Open:
 
-**Four runs race under physics behind the flag, and none has crossed for a
-player yet.** With the moving parts as bodies, First Drop, The Chute, The
-Tower and Switchback bring every marble home on 24 seeds under
-`?physics=1`, gates and all, so part 3's rebuilding them without their
-gates was not needed. Crossing for a player — the flag gone, new ids, pace
-baselines written for physics — waits on the one thing still open: whether
-each is a race and not a procession. Over 24 races the back half of the grid
-won First Drop none, The Chute four, The Tower none and Switchback one, where
-the solver's runs are held to between a fifth and four fifths. The solver
-scatters every strike on a peg or a paddle by `RATTLE`, uncorrelated with
-the grid; physics has only real contact, which reorders the middle of a
-field well enough but rarely puts a marble from the back in front at the
-line. The user has put that tuning to one side for now.
+- **Two peg boards the field goes by unchanged.** Every run is a race and
+  not a procession under physics, but on Switchback (piece 15) and the
+  Stress Test (piece 3) a peg board keeps the order it is handed at 0.93 and
+  0.86, over the judged runs' 0.85: the field reaches each strung out over
+  seconds, and passes it one ball at a time. The judged runs are red until
+  either the runs are laid out so that those boards meet a bunched field, or
+  the rule is changed to measure only what a piece could have reordered;
+  under physics a plain fall reorders a bunched field to about 0.78 on its
+  own, so the rule as it stands no longer tells a piece that does something
+  from one that does not. The user's to decide.
+- **The hook is slow:** about 95 s, most of it physics racing each kind
+  over 24 seeds. The judged runs and the pairs are in the full check only;
+  the per-kind tests could follow them there.
+- **Determinism across machines** is not verified: Rapier is the same to
+  the bit on this machine, and has not been run on a second.
 
-After the six parts, each through `/feature`: patterns on the marbles,
-which want a change to artshape-render since it has no textures; and a
-designer that places a piece anywhere on the lattice, turned any way,
-splitters and joiners with it, where this one only ever builds on the end.
-Open, and belonging with those:
+After that, each through `/feature`: patterns on the marbles, which want a
+change to artshape-render since it has no textures; and a designer that
+places a piece anywhere on the lattice, turned any way, splitters and
+joiners with it, where this one only ever builds on the end. And what holds
+of the race as it stands:
 
 - **The marbles are all the same, and are treated so.** No marble has form
-  or any other property of its own. The field is stepped and parted in the
-  order of the grid (`bySlot`), and a peg's tie is broken by slot: taken by
-  marble number, the float arithmetic alone gave a marble an edge. A test
-  swaps two marbles on the gate and holds them to swapping places at the
-  finish, bit for bit.
-- **The chance is in the things in the way.** A strike on a peg, paddle,
-  gate or wheel comes off up to `RATTLE` (0.3 rad) off true, by the race's
-  own seeded draw, taken in slot order. Without it, identical marbles
-  finished in whatever order the grid and the moving parts' starts put
-  them: on First Drop only four slots ever won.
-- **Where on the grid still counts for something**, though a pick cannot
-  use it, being made before the draw. Over 400 races, slots win 4% to 25%:
-  the front of the grid more often on The Chute and The Leap, whose sweeper
-  is straight off the start; the back more often on The Tower. The Chute's
-  back half wins 12 of its 60 judged races, exactly the fifth the runs test
-  allows, where over 400 it is 29%.
-- **Marbles stay on the track over a crest.** Only a jump's lip lets one
-  leave it; a fast marble over the top of a drop would, in life, fly.
-- **Overlap is a solver's business.** Two marbles are parted across the
-  channel and then along it for whatever a wall refuses, over as many as
-  48 passes (`SETTLE`), which stop as soon as nothing moves by more than
-  `MOVED`: a marble merely touching a peg once counted as moved, and a
-  settled field ran every pass. A marble a moving part would crush against
-  a wall is let out along the piece instead, and one pushed over the line
-  has crossed it. A marble cannot drop out of a funnel on to one sat under
-  the hole, nor on to one still falling; it waits in the hole. A new piece that pinches the channel
-  meets all of this first, and racing every pair is what found each of
-  these. Parting a pair shares the correction across the channel by the room
-  each has toward its own wall, so that what the walls refuse is not left for
-  the run's length to make up.
-- **Nothing jumps, but a push still can.** A marble may move no further in
-  a step than its own speed and what pushed it explain, give or take a
-  quarter of a marble (`JUMP`): the solver reckons it every step, keeps the
-  worst since the gate in `Marbles.jumped`, and `checkMarbles` rules on it.
-  The funnel's two jumps, into its bowl and out of its hole, were this. A
-  push is counted as explained, so a second rule holds what a thing in the
-  way may do in one go: half a marble (`SHOVE`), kept per marble in
-  `Marbles.shoved` with the piece that did it in `shovedOn`, and ruled on by
-  `checkMarbles`. Setting a marble out of something all at once was what
-  broke it: a gate's bar slides across its pen at 18 a second, a third of a
-  marble in a step, and one caught between the end of it and the wall cannot
-  go further across, so it went along — four hops of 0.12 in the one step,
-  0.61 back up the run, further than it had come down. A shove is now taken
-  as far as it goes and no further, and what is left over is seen to over
-  the steps after, by which time the thing has usually gone by of its own
-  accord; over every run and catalog piece on 24 seeds no marble is ever
-  left sitting inside anything. Measured the same way, the worst single
-  shove is now a gate's 0.45, a sweeper's 0.36, a peg's 0.34 and a wheel's
-  0.29. What a whole step comes to, a shove and then the settling parting the
-  crowd it pressed together, is held by a second ceiling: `HEAVE`, a marble's
-  own width, kept per marble in `Marbles.pushed` and ruled on by
-  `checkMarbles`. It was the parting that carried one furthest: split evenly
-  and clamped to the walls, a marble already on its wall took none of the
-  correction across the channel and the run made up for it along its length
-  instead, which is the furthest travelling part of settling a crowd. Each of
-  a pair now takes what room it has toward its own wall and whatever the
-  other cannot, which halves it: the worst step was 1.12 and is 0.80, no
-  marble is moved its own width any more (11 marble-steps in 3.3 million
-  were), and 35 of those 3.3 million still go past half a marble, all of them
-  a field squeezed in a pen or on a board. Holding every push to half a
-  marble a step would mean letting marbles sit inside each other by up to
-  0.14 where the rule allows 0.05, so it is not done.
-  A crowd squeezing into the neck of a gate's pen was the other: held there
-  by a shut gate, the whole field spread out across the pen's full width,
-  and closing that down to the chute's over the last fifth of the piece
-  asked one step to undo all of it at once — seed 19 once shoved a marble
-  1.8, twice its own width. The gate's own shape now closes from where the
-  gate itself stands (`u`) rather than later, over four times the distance,
-  which cuts the worst of it by four in ten without asking less of the pen:
-  nothing narrows before the gate, so the field waiting on it is exactly as
-  wide as it ever was. It falls short of half a marble because that width
-  is what gives some runs their mixing: narrow the pen further and The
-  Chute's back half stops winning its one race in five, since the shuffle
-  a `/feature` might one day give a narrower pen would need to come from
-  somewhere else.
-- **Nothing is quite level.** A straight or a curve leans down by a
-  twentieth (`LEAN`), as a real run is set up to, so a queue behind a pen
-  always drains; a truly level piece let a crowd come to rest on it.
-- **A wheel is a gate that turns.** A marble that catches a paddle up is
-  held until the paddle lifts out, and those that come close together are
-  gathered abreast behind it and let go at once. It stands right across its
-  pen, and holds every marble from about half a second to a second and a
-  half; over one half of its pen, the field came down the other half after a
-  bend and went by untouched. What a marble meets is the arm the scene
-  draws: `pose` takes the radius of the ball put to it (`RADIUS`, from the
-  solver) and works out where the arm — a rod swung from its axle, rounded
-  at the tip — is solid at the height of the marbles' middles, into
-  `Pose.radius`. Taken instead as that slice alone, as it was, a paddle was
-  not there at all until its tip reached a marble's middle and then was
-  there whole, and one coming down where a marble sat shoved it its own
-  reach, 0.63, in a single step. The arm takes up more of the pen than the
-  slice did, so the axle stands at 1.35 and the arm is 1.81, just long
-  enough for the tip to dip to the floor: at 1.1 the true arm pressed a
-  crowd into itself over 3,798 frames of 24 seeds out of a gate and into a
-  funnel, and at 1.35 none. `test/track.test.ts` holds the arm to the same
-  geometry worked out the long way round, a marble's middle against the rod,
-  at sixty moments of the turn and eighty places along the chute.
-- **The lane at the end is felt and a tilt.** Whatever a marble crosses the
-  line at, it is slowed to a crawl (`LANE_PULL / LANE_BRAKE`) and creeps on
-  to its place; without the tilt it stopped short of the queue, and
-  without the felt it hit the stop at the speed it finished at.
-- **Mounds are soft pegs.** A marble on one is pushed down its slope, which
-  turns it away from the mound's middle, and is drawn riding over it. Like
-  a peg they give each marble the same push from the same place; unlike a
-  peg's strike, it is not scattered.
-- **Nothing in the way may be missed.** A marble keeps its line through a
-  pen, within a chute's width of the middle, and a bend puts a whole field
-  on its outside; a thing in the way that does not reach across that
-  stream, both sides, is one a layout can make the field miss.
-  `test/runs.test.ts` holds every piece with something in the way to
-  changing the order it hands the field on in.
+  or any other property of its own: every ball is the same size, the same
+  weight and the same grip. Where each starts is drawn at the off, after the
+  picks, so a pick is one in eight whatever the run favours.
+- **The chance is in the draw and the contact.** The grid is drawn from the
+  race's seed, and so is where each moving part is in its turn; after that,
+  it is balls meeting cones, mounds, paddles, bars, grids and each other.
+  There is no rule scattering a strike; a board under a grid shuffles a
+  field by bouncing it between the two.
+- **Nothing is quite level.** Every piece leans down by a twentieth
+  (`LEAN`), taken into the geometry, so a queue on a level piece drains.
+- **Nothing in the way may be missed.** A ball keeps its line through a pen,
+  within a chute's width of the middle, and a bend puts a whole field on its
+  outside; a thing in the way that does not reach across that stream, both
+  sides, is one a layout can make the field miss.
 
 ## Rules for the code
 
@@ -688,10 +525,13 @@ a picture in `smoke/look.spec.ts`. `npm run check` green, and
 For anything new in the run, check what it does:
 
 - **a marble on it:** rolled onto gently, at rest on it, and hit at the
-  fastest a marble gets anywhere on the run; never passed through, however
-  fast it arrives
+  fastest a marble gets anywhere on the run, which is two drops in front of
+  it; never passed through, however fast it arrives; every triangle facing
+  the side a ball meets it from, and every block turned by a rotation
 - **a join:** where it meets the piece above and the piece below, both ways
-  round; a seam a marble catches on, and a gap it drops through
+  round, fed from the gate and off two drops; a seam a marble catches on, a
+  gap it drops through, a crest it leaves the floor at, and a ball arriving
+  above the next piece's grid or walls
 - **many marbles:** a train of them nose to tail, a clump of three pressed
   together, and one pinned on a wall by another; a pile held at a gate; all
   eight at once (`MARBLES`), and what it costs a frame at that many
@@ -700,15 +540,16 @@ For anything new in the run, check what it does:
   the seed's), and one that would crush a marble against a wall; a marble
   dropping out of a funnel on to one below it, and one dropping into a bowl
   on to one going round under the lip
-- **stuck:** a marble that settles on it, wedges against it, or circles it
-  for ever — a bowl's patience is `BOWL_PATIENCE`, a channel's `PATIENCE`. A
-  run that cannot finish has to be noticed and said, not waited on
+- **stuck:** a marble that settles on it, wedges against it, arches with
+  others across a neck, or circles it for ever — a ball crawling for
+  `PATIENCE` is called stopped. A run that cannot finish has to be noticed
+  and said, not waited on
 - **off the run:** off a jump's lip, a marble that comes down wide of the
   channel, short of the landing or beyond everything the lip can reach; it is
   lost, told of, given no place, and the race still ends
 - **building:** placed, moved, turned and taken away; placed overlapping
   what is already there, and placed with nothing underneath it; any piece
-  after any other, which `test/joins.test.ts` races for every pair, and two
+  after any other, which `test/physics-pairs.ts` races for every pair, and two
   parts that pass through each other, which `check` refuses. In the
   designer: laid on the end and taken off again, laid after the end, laid
   past a ceiling, a run kept, refused, left unkept, thrown away once kept,
@@ -720,9 +561,10 @@ For anything new in the run, check what it does:
 - **another run:** put on part way through a race, and the one before it
   thrown away cleanly; framed to fit the screen, whatever its shape; and put
   back on after a reload
-- **the end:** a field lined up in the lane in the order it finished,
-  none inside another and none pushed back over the line or a racer pushed
-  over it; two crossing the line in one step placed by which crossed first
+- **the end:** a field come to rest in the cup, none inside another, none
+  sent out of it by a knock down the queue, and none pushed back over the
+  line or a racer pushed over it; two crossing the line in one step placed
+  by which crossed first
 - **the catalog:** the piece on its own between a start and the end, sound,
   raced home on every seed its test tries, and drawn within budget
 - **the players:** a pick before the off, one tried once they are away and

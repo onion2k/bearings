@@ -3,23 +3,22 @@
  * on: the channel, swept along the very samples the track worked out and as
  * wide as the track says at each; the pegs; and each funnel's bowl, turned
  * from the same height the marbles roll on. What moves is written every
- * frame: the marbles, and the sweepers, gates and wheels, each placed from
- * the same pose the solver meets it in, so what is seen is exactly what a
- * marble hits. It is handed what it draws from, and never the renderer.
+ * frame: the marbles, and the sweepers, gates and wheels, each placed where
+ * the race says it is, so what is seen is exactly what a marble hits. It is
+ * handed what it draws from, and never the renderer.
  */
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { MeshBuilder } from 'artshape-render/mesh/types';
 import { FIELD } from './field';
-import { MARBLES, RADIUS } from './marbles';
+import { MARBLES, RADIUS } from './race';
 import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
-import { bar, bowl as bowlMesh, cone, mound, post, sphere, sweep, wheel } from './meshes';
+import { bar, bowl as bowlMesh, cone, mound, sphere, sweep, wheel } from './meshes';
 import {
   HALF_WIDTH,
-  LANE,
+  LANE_STOP,
   MOUND,
   MOVING_MOST,
-  PEG,
   GATE_HEIGHT,
   PADDLE_HEIGHT,
   PEG_CONE,
@@ -36,6 +35,7 @@ import {
   pose0,
   spot,
   widthAt,
+  OUTLET_BACK,
 } from './track';
 
 /**
@@ -48,15 +48,6 @@ import {
 const SKIN = 0.18;
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
-/**
- * How long the wedge a splitter or a joiner is drawn with stands, and how
- * thick: centred on the point the two lanes share, since the two are barely
- * a lattice cell apart there and the channel itself cannot yet be a chute
- * wide each without one lane's wall standing in the other's.
- */
-const DIVIDER = 2.2,
-  DIVIDER_THICK = 0.2;
-
 /**
  * The channel in section, in its own terms: how far across, and how far up.
  * Down one wall, across the floor, up the other, then back along the
@@ -74,7 +65,15 @@ const profile = (wall: number): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH, wall],
 ];
 
-/** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end under physics. */
+/**
+ * Which edges of `profile` are a wall, its inside face, its top and its
+ * outside, on the left and on the right: what is left out where physics has
+ * that wall open.
+ */
+const LEFT_WALL = [0, 6, 7],
+  RIGHT_WALL = [2, 3, 4];
+
+/** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end and the narrow. */
 const trough = (wall: number): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH, wall],
   [-HALF_WIDTH, TROUGH_DEPTH],
@@ -106,12 +105,6 @@ const barOf = (across: number, wall: number): readonly (readonly [number, number
   [across + BAR / 2, wall + BAR],
   [across - BAR / 2, wall + BAR],
   [across - BAR / 2, wall],
-];
-
-/** A jump's felt in section: a strip over the floor, wall to wall, a hair above it so it is not lost in it. */
-const FELT: readonly (readonly [number, number])[] = [
-  [HALF_WIDTH, 0.015],
-  [-HALF_WIDTH, 0.015],
 ];
 
 /** A moving part, and the piece it is on. */
@@ -154,7 +147,6 @@ export class Scene {
   static(track: Track): GameGroup[] {
     const channel = new MeshBuilder();
     const bowls = new MeshBuilder();
-    const felt = new MeshBuilder();
     const grid = new MeshBuilder();
     const rungs: number[] = [];
     const pegs: number[] = [];
@@ -169,29 +161,14 @@ export class Scene {
     this.onTrack(track, lineAt, 0, end, 0.06, 0, 0, Math.PI / 2);
     this.onTrack(track, stopAt, 0, end, track.segments[end].length, 0, 0, Math.PI / 2);
     // a spot is read no further than the end of its piece, so the stop is moved on by half its own thickness from
-    // there, to stand just beyond the lane and not half in it where the winner waits
+    // there, to stand just beyond the lane and not half in it where the winner waits, as the block met does
     const last = at(track, end, track.segments[end].length, this.here);
-    stopAt[12] += last.tx * 0.12;
-    stopAt[13] += last.ty * 0.12;
-    stopAt[14] += last.tz * 0.12;
+    stopAt[12] += last.tx * LANE_STOP;
+    stopAt[13] += last.ty * LANE_STOP;
+    stopAt[14] += last.tz * LANE_STOP;
     this.sweeping = [];
     this.gating = [];
     this.turning = [];
-    // a splitter's two lanes, and a joiner's two entries, share one point apiece: right there the channel
-    // cannot yet be a chute wide each without one lane's wall standing in the other's, so a divider is stood
-    // over the point itself rather than the channel pinched down to fit — the pinch tried first left a
-    // marble looking to squeeze through a gap barely its own width
-    const dividers: number[] = [];
-    const byNext = new Map<number, number[]>();
-    track.segments.forEach((seg, s) => {
-      if (seg.fork) dividers.push(s, seg.length);
-      if (seg.branch !== 0 && seg.next >= 0) {
-        const onto = byNext.get(seg.next) ?? [];
-        onto.push(s);
-        byNext.set(seg.next, onto);
-      }
-    });
-    for (const onto of byNext.values()) if (onto.length === 2) dividers.push(onto[0], track.segments[onto[0]].length);
     track.segments.forEach((seg, s) => {
       const bowl = seg.funnel;
       // the chute feeding a bowl comes in over its rim, so the rim's wall goes all the way round
@@ -212,6 +189,8 @@ export class Scene {
           seg.width,
           HALF_WIDTH,
           seg.trough ? seg.floor : undefined,
+          // a lane's wall left out wherever physics leaves it open, at both ends of the stretch, as it is met
+          seg.open && !seg.trough ? openWall(seg.open) : undefined,
         );
       // a lid's grid over whatever stretch is covered: bars swept along the samples under it, and rungs across
       if (seg.lid) {
@@ -233,12 +212,6 @@ export class Scene {
         for (let along = seg.lid.from + RUNG_EVERY / 2; along <= seg.lid.upto; along += RUNG_EVERY)
           rungs.push(s, along);
       }
-      // a jump's felt, laid over the floor of its run-up as far as it goes
-      if (seg.felt) {
-        let to = 1;
-        while (to < seg.arc.length - 1 && seg.arc[to] < seg.felt.upto) to++;
-        sweep(seg.points, seg.tangents, seg.ups, to + 1, FELT, felt, seg.width, HALF_WIDTH);
-      }
       for (const m of seg.mounds) mounds.push(s, m.along, m.across);
       if (s > 0 && track.segments[s - 1].funnel) backs.push(s);
       for (const ob of seg.obstacles) {
@@ -259,11 +232,6 @@ export class Scene {
     const postAt = new Float32Array(Math.max(1, posts.length / 3) * 16);
     for (let k = 0; k < posts.length; k += 3)
       this.onTrack(track, postAt, k / 3, posts[k], posts[k + 1], posts[k + 2], 0, Math.PI / 2);
-    // stood on the point itself, facing the way the track goes there, so it reads as a wedge set into the
-    // channel rather than a bar laid across it
-    const dividerAt = new Float32Array(Math.max(1, dividers.length / 2) * 16);
-    for (let k = 0; k < dividers.length; k += 2)
-      this.onTrack(track, dividerAt, k / 2, dividers[k], dividers[k + 1], 0, 0, 0);
     const rungAt = new Float32Array(Math.max(1, rungs.length / 2) * 16);
     for (let k = 0; k < rungs.length; k += 2)
       this.onTrack(track, rungAt, k / 2, rungs[k], rungs[k + 1], 0, track.segments[rungs[k]].wall, Math.PI / 2);
@@ -275,17 +243,17 @@ export class Scene {
     backs.forEach((s, k) => {
       this.onTrack(track, backAt, k, s, 0, 0, 0, Math.PI / 2);
       const h = at(track, s, 0, this.here);
-      backAt[k * 16 + 12] -= h.tx * 0.12;
-      backAt[k * 16 + 13] -= h.ty * 0.12;
-      backAt[k * 16 + 14] -= h.tz * 0.12;
+      backAt[k * 16 + 12] -= h.tx * OUTLET_BACK;
+      backAt[k * 16 + 13] -= h.ty * OUTLET_BACK;
+      backAt[k * 16 + 14] -= h.tz * OUTLET_BACK;
     });
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
       { mesh: channel.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.65 },
-      // a peg is a post for the solver and a cone under physics, which is what a ball there meets
+      // a peg is a cone, which is what a ball there meets
       {
-        mesh: track.physics ? cone(PEG_CONE, PEG_HEIGHT) : post(PEG, PEG_HEIGHT),
+        mesh: cone(PEG_CONE, PEG_HEIGHT),
         matrices: pegAt,
         count: pegs.length / 3,
         albedo: [0.2, 0.2, 0.23],
@@ -298,15 +266,6 @@ export class Scene {
         albedo: [0.25, 0.25, 0.28],
         roughness: 0.5,
       },
-      // the same grey as the walls either side of it, so it reads as one of them rather than something laid
-      // over the channel
-      {
-        mesh: bar(DIVIDER, DIVIDER_THICK, track.wall),
-        matrices: dividerAt,
-        count: dividers.length / 2,
-        albedo: [0.42, 0.44, 0.5],
-        roughness: 0.65,
-      },
       // the mounds the same grey as the floor they rise out of, so they read as the floor's own shape
       {
         mesh: mound(MOUND.radius, MOUND.height),
@@ -317,21 +276,19 @@ export class Scene {
       },
       { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
       {
-        mesh: bar((LANE + SKIN) * 2, 0.24, track.wall + 0.08),
+        mesh: bar((HALF_WIDTH + SKIN) * 2, LANE_STOP * 2, track.segments[end].wall),
         matrices: stopAt,
         albedo: [0.25, 0.25, 0.28],
         roughness: 0.5,
       },
       {
-        mesh: bar((HALF_WIDTH + SKIN) * 2, 0.24, track.wall),
+        mesh: bar((HALF_WIDTH + SKIN) * 2, OUTLET_BACK * 2, track.wall),
         matrices: backAt,
         count: backs.length,
         albedo: [0.42, 0.44, 0.5],
         roughness: 0.65,
       },
     ];
-    if (felt.vertexCount > 0)
-      groups.push({ mesh: felt.build(), matrices: one, albedo: [0.12, 0.3, 0.16], roughness: 0.95 });
     // the grid the same dark as the pegs, so it reads as ironwork over the channel and not part of it
     if (grid.vertexCount > 0) {
       groups.push({ mesh: grid.build(), matrices: one, albedo: [0.2, 0.2, 0.23], roughness: 0.5 });
@@ -461,7 +418,7 @@ export class Scene {
   moving(marbles: Race): [number, number, number] {
     const { track } = marbles;
     const phase = (ob: Obstacle) => (ob.slot >= 0 ? marbles.phase[ob.slot] : 0);
-    // where the race says a part is, when it can: under physics a part is a body a jammed ball can hold back, and
+    // where the race says a part is: a part is a body a jammed ball can hold back, and
     // is drawn where it is, not where its clockwork would have it
     const now = (part: Part): Pose => {
       const p = pose(part.ob, marbles.t, phase(part.ob), this.at);
@@ -485,7 +442,7 @@ export class Scene {
     }
     this.turning.slice(0, MOVING_MOST).forEach((part, k) => {
       const m = part.ob.motion as { period: number; axle: number };
-      // the first paddle's own angle from straight down, as the solver has it, turns the whole wheel
+      // the first paddle's own angle from straight down turns the whole wheel
       const f = (((marbles.t / m.period + phase(part.ob)) % 1) + 1) % 1;
       const theta = marbles.where?.(part.ob) ?? Math.PI * 2 * f - Math.PI;
       this.onTrack(track, this.wheels, k, part.segment, part.ob.along, part.ob.across, RADIUS + m.axle, 0, theta);
@@ -520,5 +477,13 @@ export function boxOf(track: Track): { min: [number, number, number]; max: [numb
   return {
     min: [minX - pad, minY - pad, minZ - pad],
     max: [maxX + pad, maxY + pad, maxZ + pad],
+  };
+}
+
+/** What `sweep` leaves out of a lane whose walls are open along `open`: the side's wall, where open at both ends. */
+function openWall(open: Uint8Array): (i: number, k: number) => boolean {
+  return (i, k) => {
+    const both = open[i] & open[i + 1];
+    return (both & 1 ? LEFT_WALL.includes(k) : false) || (both & 2 ? RIGHT_WALL.includes(k) : false);
   };
 }

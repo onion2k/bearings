@@ -1,18 +1,18 @@
 /**
- * The pieces that fall and turn, alone under physics. A kind crosses over once it races alone under physics as well as it does
+ * The pieces that fall, turn and fly, alone under physics. A kind crosses over once it races alone under physics as well as it does
  * under the solver, on the runs test's own measures: every marble home on 24
  * seeds, none lost, none stopped, no rule broken. What each does fed by two
  * drops, and what it is for, is `physics-pieces.test.ts`.
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { MARBLES } from '../src/marbles';
+import { MARBLES } from '../src/race';
 import { type Kind } from '../src/track';
 import { chain, fieldOn, raced } from './physics-helpers';
 
 await RAPIER.init();
 
-const KINDS: Kind[] = ['straight', 'curveLeft', 'curveRight', 'ramp', 'drop', 'spiralLeft', 'spiralRight'];
+const KINDS: Kind[] = ['straight', 'curveLeft', 'curveRight', 'ramp', 'drop', 'spiralLeft', 'spiralRight', 'jump'];
 
 describe('the pieces that fall and turn, under physics', () => {
   for (const kind of KINDS)

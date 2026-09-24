@@ -22,9 +22,8 @@
  */
 import { Cameras, MAX_SLOTS } from './cameras';
 import { Designer, MAX_DESIGNS, kept } from './designer';
-import { LOST, MARBLES, Marbles, STALLED, WAITING } from './marbles';
-import { PHYSICAL, Physics, type Rapier } from './physics';
-import type { Race } from './race';
+import { Physics, type Rapier } from './physics';
+import { LOST, MARBLES, type Race, STALLED, WAITING } from './race';
 import { Progress } from './progress';
 import type { Random } from './random';
 import { PIECES } from './catalog';
@@ -59,17 +58,7 @@ export type Shelf = 'runs' | 'pieces' | 'designs';
 export interface GameOptions {
   /** Chance; Math.random unless told otherwise, and the tests always tell. */
   random?: Random;
-  /**
-   * Rapier, loaded and ready, for the race to be physics wherever physics can
-   * race the run yet; the solver races it otherwise. Handed in rather than
-   * imported, since it is three quarters of a megabyte the page fetches only
-   * when it is wanted, and the game in Node has no page.
-   */
-  physics?: Rapier;
 }
-
-/** Which engine races the run that is on. */
-export type Engine = 'solver' | 'physics';
 
 export class Game {
   /** Game time, in seconds. */
@@ -86,9 +75,6 @@ export class Game {
   private cameFrom: { shelf: Shelf; run: number } = { shelf: 'runs', run: 0 };
   track!: Track;
   marbles!: Race;
-  /** Which engine is racing the run that is on: physics wherever it can, if the game was given it. */
-  engine: Engine = 'solver';
-  private readonly physics: Rapier | null;
   /** Whether the race that is on has been counted into the save yet. */
   private counted = true;
   /**
@@ -115,13 +101,18 @@ export class Game {
     return picked >= 2 ? Math.min(picked, MAX_SLOTS) : 0;
   }
 
+  /**
+   * `rapier` is Rapier, loaded and ready, which races every run: handed in
+   * rather than imported, since it is loaded by whoever wires the game up,
+   * the page at its boot and Node in a test or a script.
+   */
   constructor(
+    private readonly rapier: Rapier,
     readonly progress: Progress,
     private readonly events: GameEvents = {},
     options: GameOptions = {},
   ) {
     this.random = options.random ?? Math.random;
-    this.physics = options.physics ?? null;
     // the run last put on, if the save names one there is, among the runs that ship or the player's own; loading
     // alone writes nothing, so a name the game cannot put on is only forgotten in memory until the next write
     const { save } = progress;
@@ -198,6 +189,13 @@ export class Game {
     return true;
   }
 
+  /** A grid over the last piece of the run being built, or taken off it; whether either happened. */
+  lid(): boolean {
+    if (!this.designer?.lid()) return false;
+    this.mount(this.designer.run);
+    return true;
+  }
+
   /** The last piece of the run being built taken off again; whether there was one. */
   undo(): boolean {
     if (!this.designer?.undo()) return false;
@@ -260,10 +258,9 @@ export class Game {
   }
 
   /**
-   * `run` worked out, and a field drawn for its start gate. Physics races it
-   * if the game has physics and physics can race every piece of it yet; the
-   * track is then compiled the way physics wants it, leaning and walled, and
-   * drawn that way too, so what is seen is what is raced.
+   * `run` worked out, and a field drawn for its start gate: compiled the way
+   * physics wants it, leaning and walled, and drawn that way too, so what is
+   * seen is what is raced.
    */
   private mount(run: Run) {
     const events = {
@@ -275,12 +272,8 @@ export class Game {
     const random = () => this.random();
     // the race before this one let go of: a physics world is memory of Rapier's own
     (this.marbles as Race | undefined)?.dispose?.();
-    const physical = this.physics && Physics.supports(compile(run)) ? this.physics : null;
-    this.engine = physical ? 'physics' : 'solver';
-    this.track = physical ? compile(run, PHYSICAL) : compile(run);
-    this.marbles = physical
-      ? new Physics(physical, this.track, events, { random })
-      : new Marbles(this.track, events, { random });
+    this.track = compile(run);
+    this.marbles = new Physics(this.rapier, this.track, events, { random });
     this.counted = false;
     this.follow();
     this.events.picked?.(this.run, this.track.name);

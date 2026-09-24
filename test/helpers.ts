@@ -1,7 +1,13 @@
 /** What the tests share: a new game in memory, from a seed, with a note of every event it tells. */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { Game, type GameEvents, type GameOptions } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+
+// Rapier, which every race is raced on, loaded once for every test that imports this
+await RAPIER.init();
+
+export { RAPIER };
 
 export const DT = 1 / 60;
 
@@ -17,7 +23,7 @@ export function newGame(seed = 1, json: string | null = null, options: Omit<Game
           told.push(`${name} ${args.filter((a) => typeof a === 'number').join(' ')}`.trim()),
     },
   );
-  const game = new Game(new Progress(store), events, { ...options, random: seeded(seed) });
+  const game = new Game(RAPIER, new Progress(store), events, { ...options, random: seeded(seed) });
   return { game, store, told };
 }
 

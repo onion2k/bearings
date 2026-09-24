@@ -11,11 +11,15 @@
  * From a seed, so a failure can be played again exactly: `npm run fuzz --
  * --seed N` does, and prints what was done before it went wrong.
  */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { PALETTE } from '../src/designer';
 import { Game, type GameEvents, type Shelf } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+
+// Rapier, which every race is raced on, loaded once before anything is played
+await RAPIER.init();
 
 const DT = 1 / 60;
 /** How many frames between checks, when nothing has just been done. */
@@ -65,7 +69,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
 
   try {
     let store = memoryStore();
-    let game = new Game(new Progress(store), events, { random: seeded(seed) });
+    let game = new Game(RAPIER, new Progress(store), events, { random: seeded(seed) });
     let busy = 0;
     const between = (a: number, b: number) => a + random() * (b - a);
     const did = (what: string) => {
@@ -88,10 +92,14 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         }
       } else {
         const r = random();
-        if (r < 0.65) {
+        if (r < 0.6) {
           for (let n = Math.floor(between(1, 7)); n > 0; n--)
             game.lay(random() < 0.12 ? 'finish' : PALETTE[Math.floor(random() * PALETTE.length)]);
           did('lay');
+        } else if (r < 0.65) {
+          // a grid over the last piece, or taken off it, as the builder's own button does
+          game.lid();
+          did('lid');
         } else if (r < 0.8) {
           game.undo();
           did('undo');
@@ -189,7 +197,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const designs = JSON.stringify(game.progress.save.designs);
           game.persist();
           store = memoryStore(store.json);
-          game = new Game(new Progress(store), events, { random: seeded(seed + frame) });
+          game = new Game(RAPIER, new Progress(store), events, { random: seeded(seed + frame) });
           if (game.progress.races !== races)
             throw new Error(`${races} races had been run, and loaded as ${game.progress.races}`);
           if (JSON.stringify(game.progress.save.designs) !== designs)

@@ -79,6 +79,30 @@ export interface Placed {
   y: number;
   z: number;
   facing: Facing;
+  /**
+   * A grid over the whole piece, where the run asks for one: a ceiling at
+   * the walls' height that a ball leaving the floor meets. Written only
+   * where it is asked for, so a piece without one is the shape it always was.
+   */
+  lid?: true;
+}
+
+/**
+ * The kinds that cannot have a grid over them, and why, in the player's
+ * terms: a jump's field flies over its walls, a funnel's drops into its
+ * bowl from above them, and a wheel's paddles turn up through where a grid
+ * would be.
+ */
+export const LIDLESS: readonly Kind[] = ['jump', 'funnel', 'wheel'];
+const NO_LID: Partial<Record<Kind, string>> = {
+  jump: 'its field flies over its walls',
+  funnel: 'its field drops into its bowl from over its walls',
+  wheel: 'its paddles turn up through where a grid would be',
+};
+
+/** Why a piece of `kind` cannot have a grid over it, or nothing where it can. */
+export function lidRefused(kind: Kind): string {
+  return LIDLESS.includes(kind) ? `a ${kind} cannot have a grid over it: ${NO_LID[kind]}` : '';
 }
 
 /** A run: a name and the pieces it is made of. Predefined runs and the player's own are the same shape. */
@@ -118,18 +142,24 @@ export interface Segment {
   funnel: Bowl | null;
   /** Low rounded lumps in its floor, which a marble rolls up over and is turned aside by. */
   mounds: Mound[];
-  /** Felt from its start to `upto` along it, bringing any marble on it to `speed`; null where there is none. */
-  felt: { upto: number; speed: number } | null;
-  /** A V for a floor rather than a flat one between walls: the lane at the end, under physics. */
+  /** A V for a floor rather than a flat one between walls: the lane at the end, and the narrow's groove. */
   trough: boolean;
   /**
    * Covered from `from` to `upto` along it by a lid at the walls' height,
    * which a ball that leaves the floor meets as a ceiling; null where it is
-   * open. The solver's marbles never leave the floor and take no notice.
+   * open.
    */
   lid: { from: number; upto: number } | null;
   /** How high its walls stand: the track's own, unless the piece's shape asks for more. */
   wall: number;
+  /**
+   * Where a wall is left open, at each sample: the left wall (1) or the right
+   * (2) where it would stand inside the channel of another lane of the same
+   * splitter or joiner, since two lanes that begin or end at one point share
+   * a floor there, and a wall down the middle of it would be a wall a ball
+   * met in the middle of the channel. Null where no wall is open.
+   */
+  open: Uint8Array | null;
   /** How far the flat of the floor reaches from the middle at each sample: the channel's width, or a trough's bottom. */
   floor: Float32Array;
   /** How far along the whole run the segment begins: what orders one marble against another. */
@@ -165,48 +195,37 @@ export interface Track {
   samples: number;
   /** How many moving pieces keep time of their own: a race starts each somewhere in its turn. */
   slots: number;
-  /** How high its walls stand over the floor, drawn and, under physics, met. */
+  /** How high its walls stand over the floor, drawn and, met. */
   wall: number;
   /** How much every piece leans down along the run, taken into the geometry itself; 0 where it is not. */
   lean: number;
-  /** Whether it was worked out for physics: its pegs are cones, and drawn so. */
-  physics: boolean;
 }
 
 /**
- * How a run is worked out for the engine that will race it. The solver leans
- * every piece by a twentieth as an acceleration of its own and needs no lean
- * in the geometry; physics has no such thing, so for it the lean goes into
- * the points themselves, and the walls stand higher, since a real marble
- * banking through a bend at speed climbs one the solver's marbles never
- * could. What is drawn is whatever was compiled, so the two engines are
- * drawn as they are raced.
+ * How a run is worked out, beyond what `SHAPES` says: a kind of piece shaped
+ * otherwise, for this compile alone, which is what a test or an experiment
+ * tries a shape with before it is made the kind's own.
  */
 export interface Compiled {
-  lean?: number;
-  wall?: number;
-  /**
-   * For physics, whose marbles are real balls and not a solver's rule. The
-   * lane at the end is a trough — a V for a floor, a chute wide, sloping a
-   * level down over its length — rather than a neck closing to single file:
-   * a neck barely a marble wide, fed by a crowd of eight, arches as a hopper
-   * does, polished or not, sloped or not, closing from both sides or from
-   * one. A ball arriving alone settles into the V's bottom; two arriving
-   * abreast can sit on its sides together, so the field is not always in
-   * single file at the end, and a sorter that puts it there without a
-   * hopper is still to be designed.
-   */
-  physics?: boolean;
-  /**
-   * A kind of piece shaped otherwise than `SHAPES` has it, for this compile
-   * alone: what a physics variant of a kind is made of, and what a test or
-   * an experiment tries a shape with before it is made the kind's own.
-   */
   shapes?: Partial<Record<Kind, Partial<Shape>>>;
 }
 
-/** How high the walls stand for the solver: past a marble's middle to hold it in, and not much further. */
-export const WALL = 0.57;
+/**
+ * How high the walls stand over the floor, and where a grid lies over them:
+ * a real marble banking through a bend at speed climbs a wall, and the
+ * spike's balls hopped one of 0.57 and stayed in one of 1.2.
+ */
+export const WALL = 1.2;
+/**
+ * How much every piece leans the way the run goes, as a grade. A real marble
+ * run is set with a little fall even on its level pieces, because a marble
+ * brought to rest on the true level stays there, and it is taken into the
+ * geometry itself; here, once boards and gates
+ * and wheels began holding the front of a field up, the queue behind backed
+ * on to level bends and marbles were stranded on them. At this lean even the
+ * least free-rolling marble is pulled harder than it is held back.
+ */
+export const LEAN = 0.05;
 
 /**
  * How a thing in the way moves. A peg does not. A sweeper swings across the
@@ -247,32 +266,6 @@ export function moundHeight(seg: Segment, along: number, across: number): number
 }
 
 /**
- * Which way the floor slopes over the mounds at a point, along and across,
- * as how far it rises for a step each way: the steepest of the mounds there,
- * where two overlap, as the floor itself is the higher of them.
- */
-export function moundSlope(seg: Segment, along: number, across: number, out: [number, number]): [number, number] {
-  out[0] = 0;
-  out[1] = 0;
-  let top = 0;
-  for (const m of seg.mounds) {
-    const da = along - m.along,
-      dc = across - m.across;
-    const d = Math.hypot(da, dc);
-    if (d >= m.radius || d < 1e-9) continue;
-    const k = Math.PI / (2 * m.radius);
-    const h = m.height * Math.cos(k * d) ** 2;
-    if (h <= top) continue;
-    top = h;
-    // the height is height * cos^2(k d), which falls away at -height * k * sin(2 k d) for every step out from the middle
-    const fall = -m.height * k * Math.sin(2 * k * d);
-    out[0] = (fall * da) / d;
-    out[1] = (fall * dc) / d;
-  }
-  return out;
-}
-
-/**
  * Something in a marble's way, in its segment's own terms: a rod with rounded
  * ends, lying along the piece or across it, `half` its length either side of
  * its middle — a peg is a rod of no length. Where it is at rest is `along`
@@ -289,101 +282,38 @@ export interface Obstacle {
   slot: number;
 }
 
-/** Where a thing in the way is at a moment, which way it lies, how fast it is going, and whether it is there at all. */
+/**
+ * Where a thing in the way is at a moment by its clockwork: how far along its
+ * piece and across it, how long it is, and how fast it is going across. A
+ * sweeper's paddle and a gate's bar are driven toward this; a wheel turns at
+ * its pace, and is read from its body.
+ */
 export interface Pose {
   along: number;
   across: number;
-  /** Which way it lies, along and across, of unit length. */
-  da: number;
-  dc: number;
   half: number;
-  va: number;
   vc: number;
-  /**
-   * How thick it is where the marbles' middles are, from its middle to its
-   * face: its own thickness for everything but a wheel's paddle, whose slice
-   * at that height grows as it comes down.
-   */
-  radius: number;
-  present: boolean;
 }
 
 /** A pose to read into, so reading one makes nothing. */
 export function pose0(): Pose {
-  return { along: 0, across: 0, da: 1, dc: 0, half: 0, va: 0, vc: 0, radius: 0, present: true };
+  return { along: 0, across: 0, half: 0, vc: 0 };
 }
-
-/**
- * Where along the chute a wheel's paddle is solid, at the height of a
- * marble's middle, for a ball of `ball` against it: the arm as a rod swung
- * `theta` from straight down about an axle `axle` above that height, `arm`
- * long and `thick` from its middle to its face. Its ends are rounded, so as
- * the tip comes down on a marble the part of it the marble meets grows from
- * nothing, as the paddle travels, rather than being there all at once.
- * Into `span`, from the axle's own place along the chute; whether any of it
- * is down there at all.
- */
-function paddleSpan(axle: number, arm: number, thick: number, theta: number, span: number[]): boolean {
-  const s = Math.sin(theta),
-    c = Math.cos(theta);
-  let lo = Infinity,
-    hi = -Infinity;
-  const take = (a: number, b: number) => {
-    if (b <= a) return;
-    lo = Math.min(lo, a);
-    hi = Math.max(hi, b);
-  };
-  // the rounded end at the tip, and the one at the axle, wherever either comes down to a marble's middle
-  const tip = axle - arm * c;
-  if (Math.abs(tip) < thick) {
-    const w = Math.sqrt(thick * thick - tip * tip);
-    take(arm * s - w, arm * s + w);
-  }
-  if (Math.abs(axle) < thick) {
-    const w = Math.sqrt(thick * thick - axle * axle);
-    take(-w, w);
-  }
-  // the arm between them: within `thick` of the line it lies along, and between its two ends
-  if (Math.abs(c) > 1e-9) {
-    let from = (axle * s - thick) / c,
-      to = (axle * s + thick) / c;
-    if (from > to) [from, to] = [to, from];
-    if (Math.abs(s) > 1e-9) {
-      let end = -(axle * c) / s,
-        other = (arm - axle * c) / s;
-      if (end > other) [end, other] = [other, end];
-      take(Math.max(from, end), Math.min(to, other));
-    } else if (axle * c >= 0 && axle * c <= arm) take(from, to);
-  }
-  span[0] = lo;
-  span[1] = hi;
-  return hi > lo;
-}
-
-/** A span to read into, and the same a moment on, so reading a paddle makes nothing. */
-const span = [0, 0],
-  later = [0, 0];
-/** How long after a moment a paddle is read again, to tell how fast it goes on. */
-const SOON = 1e-4;
 
 /**
  * Where an obstacle is at race time `t`, its turn begun at `phase` of the way
  * round. Pure: the same moment and phase give the same pose, which is what
  * keeps a race that meets a moving piece the same from the same seed.
  */
-export function pose(ob: Obstacle, t: number, phase: number, out: Pose, ball = 0): Pose {
+export function pose(ob: Obstacle, t: number, phase: number, out: Pose): Pose {
   out.along = ob.along;
   out.across = ob.across;
-  out.da = Math.cos(ob.angle);
-  out.dc = Math.sin(ob.angle);
   out.half = ob.half;
-  out.va = 0;
   out.vc = 0;
-  out.radius = ob.radius;
-  out.present = true;
   const m = ob.motion;
   switch (m.kind) {
     case 'fixed':
+    case 'paddle':
       return out;
     case 'sweep': {
       const w = (Math.PI * 2) / m.period;
@@ -405,27 +335,6 @@ export function pose(ob: Obstacle, t: number, phase: number, out: Pose, ball = 0
       out.across = ob.across + toward * aside * ob.half * 2;
       const moving = open > 0 && (open < m.slide || until - open < m.slide);
       out.vc = moving ? (toward * ob.half * 2 * (open < m.slide ? 1 : -1)) / m.slide : 0;
-      // in the way while any of it is still across the pen
-      out.present = aside < 0.999;
-      return out;
-    }
-    case 'paddle': {
-      // from straight down, round the way that carries a paddle on along the chute at the bottom of its turn
-      const f = (((t / m.period + phase + m.turn) % 1) + 1) % 1;
-      const theta = Math.PI * 2 * f - Math.PI;
-      // in the way wherever the arm, as a rod swung from its axle, reaches a ball whose middle is at a marble's
-      // height: the wheel that is drawn. Taken as the arm's slice through that height alone, a paddle was not
-      // there at all until its tip got down to a marble's middle and then was there whole, so one that came down
-      // where a marble sat shoved it its own whole reach, 0.63, in a single step
-      out.present = paddleSpan(m.axle, m.arm, ob.radius + ball, theta, span);
-      if (!out.present) return out;
-      out.along = ob.along + (span[0] + span[1]) / 2;
-      out.radius = (span[1] - span[0]) / 2 - ball;
-      // how fast it goes on, read a moment on: its middle's own pace, and not how fast its faces part as it comes
-      // down, which at the first touch of its tip is without limit and would throw whatever it touched
-      const soon = theta + ((Math.PI * 2) / m.period) * SOON;
-      if (paddleSpan(m.axle, m.arm, ob.radius + ball, soon, later))
-        out.va = ((later[0] + later[1]) / 2 - (span[0] + span[1]) / 2) / SOON;
       return out;
     }
   }
@@ -509,13 +418,11 @@ export interface Part {
   bowl?: { rim: number; hole: number; depth: number; wall: number; throat: number };
   /** Lumps in its floor, in its own terms: `u` is how far along it, as a share of its length. */
   mounds?: (Omit<Mound, 'along'> & { u: number })[];
-  /** Felt over its first `upto` share, which brings whatever marble crosses it to `speed`, whatever it came in at. */
-  felt?: { upto: number; speed: number };
   /** A V for a floor rather than a flat one between walls, closing to it from a chute's over `TROUGH_IN`. */
   trough?: boolean;
   /**
    * How high its walls stand, where higher than the track's own: a spiral's,
-   * under physics, since a ball at a drop's speed rides its outer wall
+   * since a ball at a drop's speed rides its outer wall
    * higher than a chute's would hold. Banking the floor was tried for that
    * first and made it worse: a wall square to a banked floor leans outward,
    * and a ball pressed into it at speed is shoved up and over it.
@@ -616,19 +523,21 @@ function dropCurve(t: number, out: number[]): void {
 /** How far across a spiral's circle is from its middle: half a cell, so the whole tower stands in one. */
 const SPIRAL_RADIUS = CELL / 2;
 /**
- * How high a spiral's walls stand under physics: half as high again as the
+ * How high a spiral's walls stand: half as high again as the
  * rest of the run's. Off a drop into a spiral, a ball rides the outer wall
  * 1.3 high at a wall of 1.2 and eight in 192 went over; at 1.8, none.
  */
 export const SPIRAL_WALL = 1.8;
 /**
- * How high a sweeper's walls stand under physics: its paddle throws a ball
- * across the board at whatever it was going, and one off two drops went over
- * a wall of 1.2 where the board narrows, seven in 192; at 1.8, none in 384.
+ * How high a wheel's pen walls stand. It can have no grid over
+ * it, since its paddles turn up through where one would be, and a field fed
+ * off two drops that met a paddle coming round was thrown up and over walls
+ * of 1.2, 13 of 192 off a broad shallow; at 1.8 one; at 2.4 none, fed off a
+ * jump, a groove or a broad shallow.
  */
-export const SWEEPER_WALL = 1.8;
+export const WHEEL_WALL = 2.4;
 /**
- * Where a wheel's pen begins to close under physics, as a share of the
+ * Where a wheel's pen begins to close as a share of the
  * piece: a field the wheel lets go abreast came to rest in a neck that closed
  * over the ramp's flat end and arched there, three abreast, as a hopper
  * does; closing from 0.7, where the ramp is still steep enough to keep it
@@ -669,14 +578,6 @@ function runUpCurve(t: number, out: number[]): void {
   out[4] *= 2;
   out[5] *= 2;
 }
-
-/**
- * The pace a jump's felt brings a marble to, and how hard it grips: whatever
- * came before the jump, a marble leaves the felt at this, reaches the lip at
- * a pace of its own, and comes down on the landing beyond it.
- */
-export const FELT_SPEED = 15;
-export const FELT_GRIP = 6;
 
 /** How steeply a jump's lip throws a marble up, in radians: enough to clear the gap, not to go over the moon. */
 const LIP = 0.35;
@@ -784,12 +685,18 @@ export const TROUGH_IN = 0.3;
 export const TROUGH_DEPTH = 0.8;
 
 /**
- * How narrow a squeeze is, from its middle to its wall: a marble and a
- * tenth, so a marble fits and two cannot pass. And the end of the run's lane,
- * the same, so the field waits in it in single file.
+ * How far the lane's cup falls below level at `t` of the way along it, and
+ * how fast, its bottom at `dip`: eased from level to a level down, and eased
+ * up again half of it to level at its end, level at every turn.
  */
-export const NARROW = 0.55;
-export const LANE = 0.55;
+function cup(t: number, dip: number): [number, number] {
+  if (t < dip) {
+    const a = (Math.PI * t) / dip;
+    return [(-LEVEL * (1 - Math.cos(a))) / 2, (-LEVEL * Math.PI * Math.sin(a)) / (2 * dip)];
+  }
+  const a = (Math.PI * (t - dip)) / (1 - dip);
+  return [-LEVEL + (LEVEL * (1 - Math.cos(a))) / 4, (LEVEL * Math.PI * Math.sin(a)) / (4 * (1 - dip))];
+}
 
 /** The end of the run: two cells of level lane, for eight marbles to wait in nose to tail. */
 function laneCurve(t: number, out: number[]): void {
@@ -806,38 +713,26 @@ function laneCurve(t: number, out: number[]): void {
  * marble rolling straight down it meets one row after another off the middle
  * of a mound, and is turned one way and then the other.
  */
-function moundRows(shape = MOUND): (Omit<Mound, 'along'> & { u: number })[] {
+function moundRows(): (Omit<Mound, 'along'> & { u: number })[] {
   const out: (Omit<Mound, 'along'> & { u: number })[] = [];
   [0.25, 0.4, 0.55, 0.7].forEach((u, r) => {
-    for (const across of r % 2 === 0 ? [-1.8, 0, 1.8] : [-0.9, 0.9]) out.push({ u, across, ...shape });
+    for (const across of r % 2 === 0 ? [-1.8, 0, 1.8] : [-0.9, 0.9]) out.push({ u, across, ...MOUND });
   });
   return out;
 }
 
 /** How far a mound spreads from its middle, and how high it stands there: every mound is this one, so one mesh draws them all. */
 export const MOUND = { radius: 0.75, height: 0.3 };
-/**
- * A mound under physics, taller and narrower: the solver turns a marble
- * aside by rule as it crosses one, but a real ball rolling over a low, wide
- * rise at speed is barely deflected at all, the way a car over a shallow
- * speed bump is not — every mound this shallow left a fast field's order
- * on 24 seeds at 0.96, next to nothing changed. Steeper redirects more of
- * an off-centre hit sideways: at this radius and height a fast field's
- * order fell to 0.85 and a slow one's to 0.40, with no ball stopped or
- * lost either way over 48 seeds.
- */
-export const MOUND_PHYSICS = { radius: 0.5, height: 0.6 };
 
-/** How wide a peg board is, and its pegs: how thick, how far apart across and along, and in how many rows. */
+/** How wide a peg board is. */
 const BOARD = 3.6;
-export const PEG = 0.22;
-/** How tall a peg stands, drawn and, under physics, met. */
+/** How tall a peg stands, drawn and, met. */
 export const PEG_HEIGHT = 0.8;
-/** How tall a sweeper's paddle and a gate's bar stand, drawn and, under physics, met. */
+/** How tall a sweeper's paddle and a gate's bar stand, drawn and, met. */
 export const PADDLE_HEIGHT = 0.7;
 export const GATE_HEIGHT = 0.8;
 /**
- * A peg under physics is a cone, this wide at its foot, and not a post: a
+ * A peg is a cone, this wide at its foot, and not a post: a
  * ball on a gentle board came to rest against a post as often as not, held
  * there by the floor's own friction from as much as forty degrees off dead
  * astern, and a steeper board or a polished post held more, not fewer. A
@@ -847,29 +742,18 @@ export const GATE_HEIGHT = 0.8;
  */
 export const PEG_CONE = 0.28;
 /**
- * How far apart a physics board's pegs stand across it, and how high its
- * walls. The solver's pegs stand 1.6 apart, which leaves a gap wider than a
- * ball and narrower than two: two balls coming down abreast wedged in it
+ * How far apart a board's pegs stand across it. At 1.6 apart, a gap is wider
+ * than a ball and narrower than two: two balls coming down abreast wedged in it
  * together, an arch of two between two cones, in 28 of 192 races fed off a
  * straight. At 2.4 apart, a gap is wide enough for two, rows staggered by
  * half of it so nothing goes straight down, the first row with a peg on the
  * middle so the stream from the chute is split rather than aimed at a gap.
- * A cone's side leans in, so it throws a fast ball up as well as aside, and
- * off two drops twelve went over a wall of 1.8; at 2.2, one in 384. Four
- * rows of them stop nothing over 48 seeds fed off the gate, a straight, a
- * ramp or two drops.
+ * Four rows of them stop nothing over 48 seeds fed off the gate, a straight,
+ * a ramp or two drops.
  */
 export const PEG_SPACING = 2.4;
-export const PEG_WALL = 2.2;
 /**
- * How high a gate's pen walls stand under physics. The pen closes from a
- * board's width to a chute's after the gate, steeply, and a field let go
- * at once runs at that closing wall and up it: at a wall of 1.2 four balls
- * in 384 went over it on First Drop and two on The Chute, and at 1.8 none.
- */
-export const GATE_WALL = 1.8;
-/**
- * Where a gate's bar stands under physics, as a share of the piece, and so
+ * Where a gate's bar stands as a share of the piece, and so
  * where its pen begins to close. A crowd let go from a standstill at 0.6,
  * into a neck closing over the ramp's flattening end, came to rest there
  * arched, all eight, on one seed in 48; let go halfway down, it has picked
@@ -880,23 +764,13 @@ export const GATE_WALL = 1.8;
 export const GATE_AT = 0.5;
 
 /**
- * A paddle wheel, which the scene draws as the solver has it: how wide its
- * pen is either side of the middle; how far its paddles reach across, which
- * is the pen less a paddle's own thickness, so no marble gets round an end;
- * how thick a paddle is, how high the axle stands above a marble's middle,
- * how long a paddle is — just far enough to dip to the floor — and how long
- * the wheel takes to go round.
- *
- * The axle's height sets how far apart two paddles are along the pen while
- * both are down, and so whether a whole field fits between them: at 1 they
- * were 2.0 apart and the one coming down pressed marbles into each other,
- * and at 1.1 they were 2.2 apart, which was room enough while a paddle was
- * only its slice at the height of the marbles' middles. Met as the arm it is
- * drawn as, which is what `pose` now hands the solver, a paddle takes up more
- * of the pen than that slice did, and at 1.1 a crowd was pressed together
- * again — 3,798 frames of it over 24 seeds out of a gate and into a funnel.
- * At 1.35, with the arm grown to match, none is, and the wheel still holds
- * every marble from about half a second to a second and a half.
+ * A paddle wheel: how wide its pen is either side of the middle; how far its
+ * paddles reach across, which is the pen less a paddle's own thickness, so
+ * no marble gets round an end; how thick a paddle is, how high the axle
+ * stands above a marble's middle, how long a paddle is — just far enough to
+ * dip to the floor — and how long the wheel takes to go round. The axle's
+ * height sets how far apart two paddles are along the pen while both are
+ * down, and so whether a whole field fits between them.
  */
 export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.35, arm: 1.81, period: 4.8 };
 
@@ -920,24 +794,14 @@ function gateBar(u: number): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[
   ];
 }
 
-/** A physics board's pegs, `PEG_SPACING` apart, a row with one on the middle first and a row without next. */
-function physicsPegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
+/** A board's pegs, `PEG_SPACING` apart, a row with one on the middle first and a row without next. */
+function pegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
   const out: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] = [];
   // four rows, the last well short of where the board closes: with a fifth nearer the neck, a ball came to rest dead
   // astern of its middle peg, held there by another against the peg beside it, in 6 of 384 races off the gate
   [0.22, 0.36, 0.5, 0.64].forEach((u, r) => {
     const across = r % 2 === 0 ? [-PEG_SPACING, 0, PEG_SPACING] : [-PEG_SPACING / 2, PEG_SPACING / 2];
     for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius: PEG_CONE, motion: { kind: 'fixed' } });
-  });
-  return out;
-}
-
-function pegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
-  const out: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] = [];
-  const rows = [0.22, 0.34, 0.46, 0.58, 0.7];
-  rows.forEach((u, r) => {
-    const across = r % 2 === 0 ? [-2.4, -0.8, 0.8, 2.4] : [-1.6, 0, 1.6];
-    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius: PEG, motion: { kind: 'fixed' } });
   });
   return out;
 }
@@ -998,6 +862,17 @@ function outletFloor(t: number): number {
   return (-LEVEL * (1 - Math.cos(Math.PI * t))) / 2;
 }
 
+/**
+ * Half the thickness of the block that closes the lane at the end: a solid
+ * block, since a sheet there was got through by a queue pressing on it.
+ */
+export const LANE_STOP = 0.5;
+/**
+ * Half the thickness of the wall at the head of a funnel's way out, behind
+ * where a ball falls out of the throat, met and drawn alike.
+ */
+export const OUTLET_BACK = 0.12;
+
 /** A funnel's way out: from behind its hole, under it and on down a level, to hand a marble on level a cell beyond. */
 function outletCurve(t: number, out: number[]): void {
   out[0] = FUNNEL_OUT * t;
@@ -1033,10 +908,13 @@ const SHAPES: Record<Kind, Shape> = {
     curve: launchCurve,
   },
   straight: { exit: { x: 1, y: 0, z: 0, turn: 0 }, rough: CELL, curve: straightCurve },
+  // under a grid: its crest holds a ball only below 7, and fed off two drops one left it and came down on the
+  // grid over whatever was next, or over a spiral's or a jump's wall
   ramp: {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
     rough: Math.hypot(CELL, LEVEL) * 1.1,
     curve: rampCurve,
+    lid: { from: 0, upto: 1 },
   },
   curveLeft: {
     exit: { x: 1, y: 1, z: 0, turn: 1 },
@@ -1048,31 +926,39 @@ const SHAPES: Record<Kind, Shape> = {
     rough: (Math.PI / 2) * CELL,
     curve: (t, out) => turnCurve(-1, t, out),
   },
+  // under a grid the whole way: a ball at any speed leaves the crest of a fall this steep, and at two drops'
+  // speed clears the cell and comes down a level above whatever is next; no crest within a cell holds it
   drop: {
     exit: { x: 1, y: 0, z: -2, turn: 0 },
     rough: Math.hypot(CELL, LEVEL * 2) * 1.1,
     curve: dropCurve,
+    lid: { from: 0, upto: 1 },
   },
+  // walled higher, since a ball at a drop's speed rides a spiral's outer wall higher than a chute's holds
   spiralLeft: {
     exit: { x: 0, y: 0, z: -2, turn: 0 },
     rough: Math.hypot(Math.PI * 2 * SPIRAL_RADIUS, LEVEL * 2) * 1.1,
     curve: (t, out) => spiralCurve(1, t, out),
+    wall: SPIRAL_WALL,
   },
   spiralRight: {
     exit: { x: 0, y: 0, z: -2, turn: 0 },
     rough: Math.hypot(Math.PI * 2 * SPIRAL_RADIUS, LEVEL * 2) * 1.1,
     curve: (t, out) => spiralCurve(-1, t, out),
+    wall: SPIRAL_WALL,
   },
-  // a jump that carries its own landing, so it joins whatever is before and after it: felt down a level that
-  // brings any marble to the same pace whatever it came in at, the lip, a cell of air, and a board beyond to come
-  // down on. Off a lip left to the piece before it, the field fell short off a slow one and flew over one that
-  // was fed fast, and came down only on a level piece: off a drop, a spiral or the narrow, every marble was lost
+  // a jump that carries its own landing, so it joins whatever is before and after it: a run-up down a level, the
+  // lip, a cell of air, and a board beyond to come down on. A ball reaches the lip at 13 to 19 whatever it came
+  // in at, from a standstill on the gate to two drops' speed, off the run-up's own fall less what its ease at the
+  // top, its dip and the air take, and clears the cell of air to the landing every time, 24 seeds at each. The
+  // run-up's first half, the ramp's own crest, is under a grid: fed straight off another jump's landing at 17 a
+  // ball left that crest and went over the wall, 9 of 192, as off a drop's; the lip, at the far end, is open
   jump: {
     exit: { x: 5, y: 0, z: -3, turn: 0 },
     rough: CELL * 2.3,
     curve: runUpCurve,
     flies: true,
-    felt: { upto: 0.5, speed: FELT_SPEED },
+    lid: { from: 0, upto: 0.5 },
     then: [
       {
         at: { x: 3, y: 0, z: -2 },
@@ -1082,12 +968,22 @@ const SHAPES: Record<Kind, Shape> = {
       },
     ],
   },
+  // A board with something on it is under a grid at the walls' own height, the whole way. What stands on it
+  // throws a fast ball up as well as aside, a cone's leaning side, a mound's rise, a paddle or a bar: off two
+  // drops a ball rode as much as 2.6 over the floor from halfway down any of the four, over walls of 1.2, and
+  // walled higher it arrived at whatever came next above that piece's walls, landing on a drop's grid or going
+  // over a turn's wall. Under a grid a ball is thrown back down, nothing leaves higher than a chute's walls, and
+  // bouncing between the board and its grid shuffles a field: over 48 seeds of each of nine ways in and out, off
+  // the gate, a straight or two drops, into a drop, a turn or a straight, none was lost, stopped or through
+  // anything, where uncovered bumps into a drop lost 10 in 192. The pegs are cones, `PEG_CONE` wide at the foot,
+  // since a ball comes to rest against a post and is pushed off a cone
   pegs: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
     rough: CELL * 2.1,
     curve: boardCurve,
     width: opening(BOARD, 0.15, 0.8),
     obstacles: pegRows(),
+    lid: { from: 0, upto: 1 },
   },
   sweeper: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
@@ -1100,6 +996,7 @@ const SHAPES: Record<Kind, Shape> = {
       // slant it holds some back and flicks others on, and that is what changes the order
       { u: 0.52, across: 0, half: 1.3, angle: 0.9, radius: 0.28, motion: { kind: 'sweep', reach: 1.9, period: 1.6 } },
     ],
+    lid: { from: 0, upto: 1 },
   },
   gate: {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
@@ -1107,14 +1004,13 @@ const SHAPES: Record<Kind, Shape> = {
     curve: rampCurve,
     // a pen a board wide ahead of the gate, closing to the chute after it: a gate across a chute lets a field
     // go only in the order it came, first held first out; a pen lets the held pile spread out abreast, and it
-    // comes out of the neck in whatever order the jostle gives it. It closed from the pen's own width to the
-    // chute's over the last fifth of the piece: a field spread out abreast the whole pen, held there while the
-    // gate was shut, had to be undone in that short a stretch the moment it opened, and seed 19 once shoved a
-    // marble 1.8, twice its own width, in a single step. Closing from the gate itself (`u` below) on, over the
-    // rest of the piece, asks far less of any one step without asking less of the pen: nothing narrows before
-    // the gate, so the field waiting on it is exactly as wide as it ever was
-    width: opening(3.2, 0.2, 0.6),
-    obstacles: gateBar(0.6),
+    // comes out of the neck in whatever order the jostle gives it. The bar stands halfway down the piece
+    // (`GATE_AT`) and the pen closes from the bar on, over the rest of it: a crowd let go from a standstill into
+    // a neck closing over the ramp's flattening end arched in it as a hopper does, all eight, where let go
+    // halfway down it has speed first and the neck closes over twice the distance
+    width: opening(3.2, 0.2, GATE_AT),
+    obstacles: gateBar(GATE_AT),
+    lid: { from: 0, upto: 1 },
   },
   wheel: {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
@@ -1123,7 +1019,8 @@ const SHAPES: Record<Kind, Shape> = {
     // a pen, and a wheel right across it. A wheel over one half of its pen was a wheel the field could miss: a
     // marble comes into a pen within a chute's width of its middle and keeps its line, and after a bend the whole
     // field comes down the outside, so on Switchback it passed the wheel by in every race of sixty
-    width: opening(WHEEL.pen, 0.25, 0.8),
+    width: opening(WHEEL.pen, 0.25, WHEEL_CLOSE),
+    wall: WHEEL_WALL,
     // four paddles, one down in the chute at a time for 1.2 s: a marble that catches one up is held behind it
     // until it lifts out, and one that arrives as a paddle lifts runs on under the wheel. A wheel turning twice as
     // fast held only one marble at a time, and handed a field on in the order it came; this one gathers those
@@ -1203,12 +1100,14 @@ const SHAPES: Record<Kind, Shape> = {
     curve: boardCurve,
     width: opening(HALF_WIDTH * 3, 0.2, 0.8),
   },
-  // squeezed down to single file in its middle and let out again: two abreast coming in leave one behind the other
+  // a groove in its middle that sorts a field toward single file, a V a chute wide: a neck barely a ball wide,
+  // fed by a crowd, arches as a hopper does, and not one ball in 192 came through it; in a V a ball alone
+  // settles into its bottom and only two arriving abreast can sit on its sides together
   narrow: {
     exit: { x: 2, y: 0, z: -1, turn: 0 },
     rough: CELL * 2.1,
     curve: boardCurve,
-    width: opening(NARROW, 0.3, 0.7),
+    trough: true,
   },
   // the channel snaking from wall to wall down a board's fall: what a fast field is slowed by
   brake: { exit: { x: 2, y: 0, z: -1, turn: 0 }, rough: CELL * 2.3, curve: brakeCurve },
@@ -1219,56 +1118,30 @@ const SHAPES: Record<Kind, Shape> = {
     curve: boardCurve,
     width: opening(3.2, 0.15, 0.85),
     mounds: moundRows(),
+    lid: { from: 0, upto: 1 },
   },
-  // the end: past the line at its start, a lane one marble wide, where the field rolls up and waits in the order
-  // it finished
-  finish: { exit: null, rough: CELL * 2.1, curve: laneCurve, width: opening(LANE, 0.25, 1) },
-};
-
-/**
- * How kinds are shaped for physics, where a real ball wants something the
- * solver's marble did not: the lane at the end a trough, sloping a level
- * down over its length, in place of a neck closing to single file, which a
- * crowd of balls arches in as a hopper does. Merged over `SHAPES` when a
- * run is compiled for physics.
- */
-export const PHYSICS_SHAPES: Partial<Record<Kind, Partial<Shape>>> = {
-  // under a lid, the whole way: a ball at any speed leaves the crest of a fall this steep, and at two drops'
-  // speed clears the cell and comes down a level above whatever is next; no crest within a cell holds it
-  drop: { lid: { from: 0, upto: 1 } },
-  // the pegs cones, `PEG_CONE` wide at the foot: a ball comes to rest against a post and is pushed off a cone
-  pegs: { obstacles: physicsPegRows(), wall: PEG_WALL },
-  // the mounds steeper, `MOUND_PHYSICS`, since a shallow one barely turns a fast ball aside at all
-  bumps: { mounds: moundRows(MOUND_PHYSICS) },
-  // walled higher, since the paddle throws a ball across the board at whatever it was going
-  sweeper: { wall: SWEEPER_WALL },
-  // walled higher, since a field let go at once runs up the pen's closing wall
-  gate: { wall: GATE_WALL, width: opening(3.2, 0.2, GATE_AT), obstacles: gateBar(GATE_AT) },
-  // the pen closing from further up, where the ramp still keeps a field let go abreast rolling into the neck
-  wheel: { width: opening(WHEEL.pen, 0.25, WHEEL_CLOSE) },
-  // walled higher, since a ball at a drop's speed rides a spiral's outer wall higher than a chute's holds
-  spiralLeft: { wall: SPIRAL_WALL },
-  spiralRight: { wall: SPIRAL_WALL },
-  // a groove rather than a squeeze: a neck barely a ball wide, fed by a crowd, arches as a hopper does, and
-  // not one ball in 192 came through it; a V a chute wide sorts most of the field into single file, since a
-  // ball alone settles into its bottom and only two arriving abreast can sit on its sides together
-  narrow: { trough: true },
-  // the lane is a cup: down a level over most of it and up again at the end, so that the field comes to rest in a
-  // dip and against each other, with no stop to be pressed into. A face at the end pressed the first ball into the
-  // corner where it met the trough's side and the wall, and out over the top
+  // the end: past the line at its start, a lane that is a cup, down a level over most of it and up again to its
+  // end, where the field comes to rest in a dip and against each other with no stop to be pressed into, in a V
+  // a chute wide: a neck closing to single file, fed a crowd of eight, arched as a hopper does however it was
+  // shaped, and a face at the end pressed the first ball into the corner and out over the top. Under a grid:
+  // balls that barely grip each other pass a knock down a queue at rest as a Newton's cradle does, and fed off
+  // three drops 23 in 192 at the front were sent up the rise and out over the stop
   finish: {
+    exit: null,
+    rough: CELL * 2.1,
     trough: true,
+    lid: { from: 0, upto: 1 },
     curve: (t, out) => {
       laneCurve(t, out);
-      const dip = 0.7;
-      if (t < dip) {
-        out[2] -= (LEVEL * t) / dip;
-        out[5] -= LEVEL / dip;
-      } else {
-        const back = (t - dip) / (1 - dip);
-        out[2] -= LEVEL * (1 - 0.5 * back * back);
-        out[5] -= LEVEL * (-back / (1 - dip));
-      }
+      // where its bottom is: the fall, a level, and the rise, half of one, curve alike there with the bottom here
+      const dip = Math.SQRT2 / (1 + Math.SQRT2);
+      // eased from level at every turn, where it begins, at its bottom and at its end: a kink where it began left the
+      // queue's last ball, pressed into a sharp crest there by the rest, read as sunk 0.2 into the floor; one at its
+      // bottom was a V each ball slammed into; and rising to its end, the stop leaned back with it, and a ball run
+      // fast up the rise went over its top
+      const [z, dz] = cup(t, dip);
+      out[2] += z;
+      out[5] += dz;
     },
   },
 };
@@ -1319,14 +1192,13 @@ function portalKey(x: number, y: number, z: number, facing: Facing): string {
 
 /** One piece sampled into a segment, in the world's own units. */
 /** A piece's parts, each worked out into a segment of its own, in the order a marble meets them. */
-function sample(piece: Placed, index: number, wall: number, physics: boolean, shapes: Compiled['shapes']): Segment[] {
-  const shape: Shape = {
-    ...SHAPES[piece.kind],
-    ...(physics ? PHYSICS_SHAPES[piece.kind] : {}),
-    ...shapes?.[piece.kind],
-  };
-  const out = [samplePart(piece, index, shape, { x: 0, y: 0, z: 0 }, wall)];
-  for (const part of shape.then ?? []) out.push(samplePart(piece, index, part, part.at, wall));
+function sample(piece: Placed, index: number, wall: number, shapes: Compiled['shapes']): Segment[] {
+  const shape: Shape = { ...SHAPES[piece.kind], ...shapes?.[piece.kind] };
+  // a grid the run asks for goes over every part of the piece from end to end, a bowl excepted, which has none
+  const covered = <P extends Part>(part: P): P =>
+    piece.lid && !part.bowl ? { ...part, lid: { from: 0, upto: 1 } } : part;
+  const out = [samplePart(piece, index, covered(shape), { x: 0, y: 0, z: 0 }, wall)];
+  for (const part of shape.then ?? []) out.push(samplePart(piece, index, covered(part), part.at, wall));
   // a splitter's second branch begins at the same entry as the first, not further along it
   if (shape.fork) out.push(samplePart(piece, index, shape.fork.part, { x: 0, y: 0, z: 0 }, wall));
   // a joiner's second entry, off to one side of the one every other piece has, reaching the same exit as it
@@ -1361,10 +1233,17 @@ function samplePart(
     shape.curve(i / (n - 1), local);
     width[i] = shape.width ? shape.width(i / (n - 1)) : HALF_WIDTH;
     floor[i] = width[i];
-    // a trough is a chute wide, its floor closing from flat to the bottom of a V over its first stretch
+    // a trough is a chute wide, its floor closing from flat to the bottom of a V over its first stretch, and,
+    // unless it is the lane at the end, opening out flat again over its last: a groove that met the next piece
+    // as a V handed a ball riding high on its side on to it 0.8 up, above the grid over whatever came next
     if (trough) {
+      const x = i / (n - 1);
       width[i] = HALF_WIDTH;
-      floor[i] = Math.max(TROUGH_FLAT, HALF_WIDTH * (1 - i / (n - 1) / TROUGH_IN));
+      floor[i] = Math.max(
+        TROUGH_FLAT,
+        HALF_WIDTH * (1 - x / TROUGH_IN),
+        piece.kind === 'finish' ? 0 : HALF_WIDTH * (1 - (1 - x) / TROUGH_IN),
+      );
     }
     turnBy(piece.facing, local[0], local[1], turned);
     const o = i * 3;
@@ -1435,9 +1314,9 @@ function samplePart(
     obstacles,
     funnel,
     mounds,
-    felt: shape.felt ? { upto: shape.felt.upto * length, speed: shape.felt.speed } : null,
     trough,
     lid: shape.lid ? { from: shape.lid.from * length, upto: shape.lid.upto * length } : null,
+    open: null,
     wall: Math.max(wall, shape.wall ?? 0),
   };
 }
@@ -1467,16 +1346,15 @@ function sideOf(
  */
 export function compile(run: Run, options: Compiled & { problems?: string[] } = {}): Track {
   const { problems } = options;
-  const lean = options.lean ?? 0;
+  const lean = LEAN;
   const track: Track = {
     name: run.name,
     segments: [],
     length: 0,
     samples: 0,
     slots: 0,
-    wall: options.wall ?? WALL,
+    wall: WALL,
     lean,
-    physics: options.physics ?? false,
   };
   // every piece's own entry, and a joiner's second one besides, each to which piece and which of its segments
   const entries = new Map<string, { piece: number; part: number }>();
@@ -1516,7 +1394,7 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
   function geometryOf(pieceIndex: number): Segment[] {
     let segs = segmentsByPiece.get(pieceIndex);
     if (!segs) {
-      segs = sample(run.pieces[pieceIndex], pieceIndex, track.wall, options.physics ?? false, options.shapes);
+      segs = sample(run.pieces[pieceIndex], pieceIndex, track.wall, options.shapes);
       segmentsByPiece.set(pieceIndex, segs);
     }
     return segs;
@@ -1643,26 +1521,32 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
   commit(start, segs, 0, 0);
   onwardDone.add(start);
   continueFrom(start, segs, 0, 0);
-  if (lean > 0) leanTrack(track, lean);
+  leanTrack(track, lean);
+  openWalls(run, track);
   return track;
 }
 
 /**
  * The lean taken into the geometry: every sample lowered by `lean` times how
  * far along the run it is, so that a level piece slopes and a queue on it
- * drains, as the solver's own lean sees to. A shear, so joins stay joined:
+ * drains. A shear, so joins stay joined:
  * where one segment ends and the next begins is the same distance along the
  * run, and lowered by the same amount. The tangents lean with the points,
  * and up is squared to the leaned way again.
  */
 function leanTrack(track: Track, lean: number): void {
-  for (const seg of track.segments) {
+  const { from, rate } = branchLean(track);
+  track.segments.forEach((seg, s) => {
+    const r = lean * rate[s];
     for (let i = 0; i < seg.arc.length; i++) {
       const o = i * 3;
-      seg.points[o + 2] -= lean * (seg.start + seg.arc[i]);
+      seg.points[o + 2] -= lean * from[s] + r * seg.arc[i];
+      // the way a point lowered by `r` for every step along the curve goes: the curve's own way, and `r` down for
+      // every step of it. Taken as `r` for every step of its level part alone, a steep piece's tangents parted from
+      // its points by a hundredth of a radian
       const tx = seg.tangents[o],
         ty = seg.tangents[o + 1],
-        tz = seg.tangents[o + 2] - lean * Math.hypot(seg.tangents[o], seg.tangents[o + 1]);
+        tz = seg.tangents[o + 2] - r;
       const tl = Math.hypot(tx, ty, tz) || 1;
       seg.tangents[o] = tx / tl;
       seg.tangents[o + 1] = ty / tl;
@@ -1681,8 +1565,125 @@ function leanTrack(track: Track, lean: number): void {
       seg.ups[o + 1] = uy;
       seg.ups[o + 2] = uz;
     }
-    if (seg.funnel) seg.funnel.z -= lean * seg.start;
+    if (seg.funnel) seg.funnel.z -= lean * from[s];
+  });
+}
+
+/**
+ * How far along the run each segment's lean begins, and at what rate it
+ * leans for its own length. A segment on no branch leans from its own start
+ * at the lean's own rate. A branch's lanes are not the same length — a lane
+ * moved a cell across is about half again longer than one gone straight —
+ * so leaned by their own lengths the longer came back to the joiner lower,
+ * and met the piece after it as a step up: 0.28 on The Fork, which stopped
+ * a slow field against it. Each lane leans instead at whatever rate brings it
+ * from where the fork leaves the run to where the join takes it up again.
+ */
+function branchLean(track: Track): { from: Float64Array; rate: Float64Array } {
+  const { segments } = track;
+  const from = new Float64Array(segments.length),
+    rate = new Float64Array(segments.length).fill(1);
+  segments.forEach((seg, s) => (from[s] = seg.start));
+  for (const fork of segments) {
+    if (!fork.fork) continue;
+    const begin = fork.start + fork.length;
+    for (const head of [fork.fork.a, fork.fork.b]) {
+      // the lane from the fork until it hands on to a segment on no branch, where the run is one again
+      const lane: number[] = [];
+      let length = 0,
+        s = head;
+      for (let guard = 0; s >= 0 && segments[s].branch !== 0 && guard < segments.length; guard++) {
+        lane.push(s);
+        length += segments[s].length;
+        s = segments[s].next;
+      }
+      if (s < 0 || length <= 0) continue;
+      const scale = (segments[s].start - begin) / length;
+      let so = 0;
+      for (const k of lane) {
+        from[k] = begin + so * scale;
+        rate[k] = scale;
+        so += segments[k].length;
+      }
+    }
   }
+  return { from, rate };
+}
+
+/**
+ * The walls a splitter's two lanes, or a joiner's two entries, leave open
+ * where they share a floor: a wall of one lane whose foot stands inside the
+ * other lane's channel is not there, so where the two begin or end at one
+ * point there is one channel, and they part at the crotch where the two
+ * inner walls meet, as a real Y does.
+ */
+function openWalls(run: Run, track: Track): void {
+  const byPiece = new Map<number, Segment[]>();
+  for (const seg of track.segments) {
+    const kind = run.pieces[seg.piece]?.kind;
+    if (kind !== 'splitter' && kind !== 'joiner') continue;
+    byPiece.set(seg.piece, [...(byPiece.get(seg.piece) ?? []), seg]);
+  }
+  for (const lanes of byPiece.values())
+    for (const lane of lanes) {
+      const n = lane.arc.length;
+      let any = false;
+      const open = new Uint8Array(n);
+      for (let i = 0; i < n; i++) {
+        const o = i * 3;
+        const tx = lane.tangents[o],
+          ty = lane.tangents[o + 1],
+          tz = lane.tangents[o + 2];
+        const ux = lane.ups[o],
+          uy = lane.ups[o + 1],
+          uz = lane.ups[o + 2];
+        const bx = ty * uz - tz * uy,
+          by = tz * ux - tx * uz,
+          bz = tx * uy - ty * ux;
+        for (const [side, bit] of [
+          [-1, 1],
+          [1, 2],
+        ] as const) {
+          const w = lane.width[i] * side;
+          const fx = lane.points[o] + bx * w,
+            fy = lane.points[o + 1] + by * w,
+            fz = lane.points[o + 2] + bz * w;
+          for (const other of lanes) {
+            if (other === lane || !inside(other, fx, fy, fz)) continue;
+            open[i] |= bit;
+            any = true;
+          }
+        }
+      }
+      lane.open = any ? open : null;
+    }
+}
+
+/** Whether a point stands inside a segment's channel: between its walls, near its floor, and within its length. */
+function inside(seg: Segment, x: number, y: number, z: number): boolean {
+  let best = Infinity,
+    k = 0;
+  for (let j = 0; j < seg.arc.length; j++) {
+    const d = Math.hypot(seg.points[j * 3] - x, seg.points[j * 3 + 1] - y, seg.points[j * 3 + 2] - z);
+    if (d < best) {
+      best = d;
+      k = j;
+    }
+  }
+  const o = k * 3;
+  const dx = x - seg.points[o],
+    dy = y - seg.points[o + 1],
+    dz = z - seg.points[o + 2];
+  const tx = seg.tangents[o],
+    ty = seg.tangents[o + 1],
+    tz = seg.tangents[o + 2];
+  const ux = seg.ups[o],
+    uy = seg.ups[o + 1],
+    uz = seg.ups[o + 2];
+  const along = seg.arc[k] + dx * tx + dy * ty + dz * tz;
+  const across = dx * (ty * uz - tz * uy) + dy * (tz * ux - tx * uz) + dz * (tx * uy - ty * ux);
+  const up = dx * ux + dy * uy + dz * uz;
+  return along >= 0 && along <= seg.length && Math.abs(across) < seg.width[k] - 1e-3 && Math.abs(up) < seg.wall;
 }
 
 /** Where along the track a distance falls: the sample at or before it. */
@@ -1752,6 +1753,9 @@ export function check(run: Run): string[] {
   const problems: string[] = [];
   if (run.pieces.length > MAX_PIECES)
     problems.push(`a run may have ${MAX_PIECES} pieces, and this one has ${run.pieces.length}`);
+  run.pieces.forEach((p, i) => {
+    if (p.lid && lidRefused(p.kind)) problems.push(`piece ${i}: ${lidRefused(p.kind)}`);
+  });
 
   const starts = run.pieces.filter((p) => p.kind === 'start').length;
   if (starts === 0) problems.push('there is no start for a marble to leave from');
@@ -1910,8 +1914,8 @@ export function checkTrack(track: Track): string[] {
     if (!seg.funnel && seg.next !== -1 && Math.abs(seg.width[seg.width.length - 1] - HALF_WIDTH) > 1e-4)
       problems.push(`segment ${i} is ${seg.width[seg.width.length - 1]} wide where it ends`);
     for (const w of seg.width)
-      if (!(w >= NARROW - 1e-4)) {
-        problems.push(`segment ${i} is narrower than single file somewhere, at ${w}`);
+      if (!(w >= HALF_WIDTH - 1e-4)) {
+        problems.push(`segment ${i} is narrower than a chute somewhere, at ${w}`);
         break;
       }
     if (Math.abs(seg.start - before) > 1e-4)

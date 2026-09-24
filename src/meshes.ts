@@ -42,7 +42,9 @@ function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
  * The profile is the section in the channel's own terms — how far across and
  * how far up — read in order, and joined into a strip between each pair of
  * samples. The renderer draws both sides of a triangle, so a chute seen from
- * inside needs nothing special done to it.
+ * inside needs nothing special done to it. `skip`, where given, leaves out
+ * the edge of the section from point `k` to the next between sample `i` and
+ * the one after: a wall left open where it would stand in another lane.
  */
 export function sweep(
   points: Float32Array,
@@ -54,6 +56,7 @@ export function sweep(
   widths?: Float32Array,
   base = 0,
   floors?: Float32Array,
+  skip?: (i: number, k: number) => boolean,
 ): MeshBuilder {
   const b = into;
   const at = (i: number, k: number): V3 => {
@@ -85,7 +88,8 @@ export function sweep(
     ];
   };
   for (let i = 0; i + 1 < count; i++)
-    for (let k = 0; k + 1 < profile.length; k++) face(b, at(i, k), at(i, k + 1), at(i + 1, k + 1), at(i + 1, k));
+    for (let k = 0; k + 1 < profile.length; k++)
+      if (!skip?.(i, k)) face(b, at(i, k), at(i, k + 1), at(i + 1, k + 1), at(i + 1, k));
   return b;
 }
 
@@ -125,7 +129,7 @@ export function post(radius: number, height: number, sides = 10): Mesh {
   return b.build();
 }
 
-/** A cone standing on z = 0, `radius` wide at its foot and `height` to its point: a peg under physics. */
+/** A cone standing on z = 0, `radius` wide at its foot and `height` to its point: a peg. */
 export function cone(radius: number, height: number, sides = 12): Mesh {
   const b = new MeshBuilder();
   const tip: V3 = [0, 0, height];
@@ -234,8 +238,10 @@ export function bowl(
   const row = sides + 1;
   for (let k = 0; k < rings; k++)
     for (let j = 0; j < sides; j++) {
+      // wound counter-clockwise seen from above, facing up: physics meets a triangle's front and lets a ball
+      // through its back, and a bowl wound facing down let one that struck it hard fall straight through
       const a = base + k * row + j;
-      b.quad(a, a + 1, a + row + 1, a + row);
+      b.quad(a, a + row, a + row + 1, a + 1);
     }
   // the rim wall, round the top edge: its inside, its top and its outside
   const z = cz + height(rim),
@@ -266,7 +272,7 @@ export function bowl(
 
 /**
  * A mound in a floor, standing on z = 0: `height` at its middle, falling
- * away as the square of a cosine to nothing at `radius`, as the solver has
+ * away as the square of a cosine to nothing at `radius`, as the track has
  * it, with its normals leaning the way its sides do.
  */
 export function mound(radius: number, height: number, rings = 8, sides = 20): Mesh {

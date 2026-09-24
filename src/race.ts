@@ -1,14 +1,40 @@
 /**
  * What a race is to everything that is not the engine racing it: the game
  * that steps it, the scene that draws it, the cameras that follow it, the
- * test API that reads it and the rules that hold it. Two engines stand
- * behind this — the game's own track solver in `marbles.ts`, and physics in
- * `physics.ts` — and nothing outside them may tell which, so that a run can
- * cross from one to the other a piece at a time with the rest of the game
- * none the wiser.
+ * test API that reads it and the rules that hold it. Physics, in
+ * `physics.ts`, stands behind it; nothing else needs to know that, so the
+ * engine can change without the rest of the game changing with it. And the
+ * facts every part of the game shares about a race: how many marbles, how
+ * big one is, how hard the world pulls, and what a marble can be doing.
  */
 import type { Random } from './random';
 import type { Obstacle, Track } from './track';
+
+/** How many marbles race. */
+export const MARBLES = 8;
+/** How big a marble is. */
+export const RADIUS = 0.45;
+/** How hard the world pulls down. */
+export const GRAVITY = 30;
+/** How much speed the air costs, a share of the speed squared: what gives a falling ball its top speed. */
+export const DRAG = 0.02;
+/** How far apart they sit on the start, waiting. */
+export const SPACING = 1.1;
+/** What a marble is doing. */
+export const WAITING = 0,
+  RACING = 1,
+  FINISHED = 2,
+  STALLED = 3,
+  LOST = 4;
+/**
+ * How slowly a marble may be going, and for how long, before the run is
+ * called on it. A run that cannot be finished has to be noticed and said,
+ * because the alternative is a race nobody is ever told is over. It is
+ * longer than any gate holds a marble or a pile takes to drain through a
+ * neck, so a marble waiting its turn is not taken for one stuck.
+ */
+export const CRAWL = 0.05;
+export const PATIENCE = 6;
 
 /** What happens in a race, for whoever shows it. Every one may be left out. */
 export interface RaceEvents {

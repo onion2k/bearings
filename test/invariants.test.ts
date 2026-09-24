@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_DESIGNS } from '../src/designer';
 import { checkInvariants } from '../src/invariants';
-import { FINISHED, RACING } from '../src/marbles';
+import { FINISHED, RACING } from '../src/race';
 import { newGame, race, settle } from './helpers';
 
 describe('what must always hold', () => {
@@ -32,7 +32,7 @@ describe('what must always hold', () => {
     const { game } = newGame();
     race(game);
     game.marbles.finishers -= 1;
-    expect(checkInvariants(game).join('\n')).toMatch(/in the cup, and/);
+    expect(checkInvariants(game).join('\n')).toMatch(/balls home, and/);
   });
 
   it('reports a place given twice, and one given to a marble still going', () => {

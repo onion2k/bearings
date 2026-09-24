@@ -13,10 +13,14 @@
  * which was measured before it was chosen, and tight enough to catch a run
  * made twice as fast.
  */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+
+// Rapier, which every race is raced on, loaded once before anything is played
+await RAPIER.init();
 
 const DT = 1 / 60;
 /**
@@ -25,9 +29,10 @@ const DT = 1 / 60;
  * its pegs, wheel and pens were in, and a cap under that calls a slow seed stuck when it is not. The Stress
  * Test's hundred pieces moved the slowest seen to its own ten races taking up to 20.79 minutes, folded into
  * a box of turns rather than run straight out — a turn costs a field more time than a straight the same
- * length, so the fold that let it fit on a screen also made it slower.
+ * length, so the fold that let it fit on a screen also made it slower. Raced as physics, it takes up to
+ * 24.47 minutes for its ten.
  */
-export const CHECK = { seeds: [1, 2, 3, 4], races: 10, capMinutes: 42 };
+export const CHECK = { seeds: [1, 2, 3, 4], races: 10, capMinutes: 50 };
 /** How far the figure may move from the baseline, as a share of it, before the check fails. */
 export const TOLERANCE = 0.2;
 
@@ -40,7 +45,7 @@ export interface PaceRun {
 
 /** One game from a seed, on the run given, played until the races are run or the time is up. */
 export function paceRun(seed: number, races = CHECK.races, capMinutes = CHECK.capMinutes, run = 0): PaceRun {
-  const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
+  const game = new Game(RAPIER, new Progress(memoryStore()), {}, { random: seeded(seed) });
   // the first run is on already; putting it on again would draw its field twice, and change every seed's race
   if (run !== game.run) game.pick(run);
   const pilot = new Autopilot(game);

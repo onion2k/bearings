@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkInvariants } from '../src/invariants';
-import { FINISHED, WAITING } from '../src/marbles';
+import { FINISHED, WAITING } from '../src/race';
 import { PIECES } from '../src/catalog';
 import { RUNS } from '../src/runs';
 import { DT, newGame, race, settle } from './helpers';

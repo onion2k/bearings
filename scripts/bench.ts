@@ -1,12 +1,12 @@
 /**
- * How long a frame of the game takes, held to what it took before.
+ * How long a frame of the race takes, held to what it took before.
  *
  *   npm run bench              measure, and fail if any scenario has moved by more than the tolerance, either way
  *   npm run bench -- --update  write what it takes now as the new baseline
  *
- * Two scenarios: the field waiting on the gate, which is what a quiet frame
- * is; and eight marbles racing, which is what a busy one is. A game adds a
- * scenario for each way its frames get costly.
+ * Two scenarios: eight marbles racing the first run, which is what an
+ * ordinary busy frame is; and eight racing the Stress Test, which is the
+ * dearest. A game adds a scenario for each way its frames get costly.
  *
  * A time on one machine is not a time on another, or on the same one with
  * something else running. So each scenario is held to the baseline as a
@@ -17,19 +17,24 @@
  * worker of its own, and the run that counts is the one that took least
  * against its reference, since noise only ever makes a run slower. Each is
  * run for long enough that its time is well clear of the timer's grain: a
- * frame of the race costs a hundredth of a millisecond, and a waiting one a
- * twentieth of that. The milliseconds are reported too.
+ * frame of the race costs about a third of a millisecond. The milliseconds
+ * are reported too.
  *
  * It holds both ways, as every baseline here does: a race gone faster is
  * written into the baseline, so that giving the speed back later is seen.
  */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+import { STRESS } from '../src/runs';
 import { TOLERANCE, bestRatio, judge } from './benching';
+
+// Rapier, which every race is raced on, loaded once before anything is played
+await RAPIER.init();
 
 const BASELINE = 'scripts/bench-baseline.json';
 /** How many times each scenario is run: four let a slow moment through often enough to wobble the figure by a tenth. */
@@ -57,22 +62,12 @@ interface Scenario {
 
 /** A game from a seed, with its field on the gate. */
 function settled(seed: number): Game {
-  const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
+  const game = new Game(RAPIER, new Progress(memoryStore()), {}, { random: seeded(seed) });
   for (let f = 0; f < 180; f++) game.step(DT);
   return game;
 }
 
 const SCENARIOS: Scenario[] = [
-  {
-    name: 'the field on the gate',
-    // a waiting frame costs so little that six hundred of them were timed in under half a millisecond, and the
-    // figure wobbled by four tenths from one run of the bench to the next
-    frames: 20000,
-    setup: () => {
-      const game = settled(1);
-      return { game, frame: () => game.step(DT) };
-    },
-  },
   {
     name: 'eight marbles racing',
     // about three races back to back, set up again between them as a player would: one race was too short a time
@@ -82,6 +77,21 @@ const SCENARIOS: Scenario[] = [
       const game = settled(1);
       game.release();
       // a little way in, so the first race is timed with the field spread out on it and not queued on the gate
+      for (let f = 0; f < 60; f++) game.step(DT);
+      const pilot = new Autopilot(game);
+      return { game, frame: () => pilot.step(DT) };
+    },
+  },
+  {
+    name: 'eight marbles racing the Stress Test',
+    // the dearest frame there is: the longest run, its hundred pieces the most for a ball to be near, and every
+    // kind of moving part at once. A field waiting on the gate was the other scenario, until physics held a waiting
+    // field as bodies fixed in place, which cost too little for any timer to see
+    frames: 1500,
+    setup: () => {
+      const game = settled(1);
+      game.pick(game.list.findIndex((r) => r.id === STRESS.id));
+      game.release();
       for (let f = 0; f < 60; f++) game.step(DT);
       const pilot = new Autopilot(game);
       return { game, frame: () => pilot.step(DT) };

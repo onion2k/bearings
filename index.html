@@ -261,6 +261,11 @@
     background: var(--gold);
     color: #19150a;
   }
+  /* pressed while the last piece has a grid over it, so a player can see it is on */
+  #grid[aria-pressed='true'] {
+    outline: 1px solid var(--gold);
+    color: var(--gold);
+  }
   #problems {
     margin: 4px 0 0;
     padding: 0;
@@ -407,6 +412,7 @@
     <div id="palette"></div>
     <div class="tools">
       <button id="undo" type="button">Undo</button>
+      <button id="grid" type="button" aria-pressed="false">Grid</button>
       <button id="keep" type="button">Keep</button>
       <button id="leave" type="button">Leave</button>
     </div>

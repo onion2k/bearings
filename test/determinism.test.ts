@@ -3,6 +3,7 @@
  * game to a figure rests on that; where it fails, those figures wander for
  * reasons nobody can see.
  */
+import type { Physics } from '../src/physics';
 import { describe, expect, it } from 'vitest';
 import { hashGame, playTwice } from '../scripts/determinism';
 import { DT, newGame } from './helpers';
@@ -45,7 +46,7 @@ describe('the same seed gives the same game', () => {
       every: 100,
       // a second run that nudges a ball part way through: the check must catch it, and say when
       meddle: (game, pass) => {
-        if (pass === 1 && ++frame === 250) game.marbles.along[0] += 0.01;
+        if (pass === 1 && ++frame === 250) (game.marbles as Physics).meddle(0, { lift: 0.01 });
       },
     });
     expect(run.diverged).toBe(300);

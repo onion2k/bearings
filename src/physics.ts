@@ -1,11 +1,8 @@
 /**
- * The race as physics: the marbles as balls in Rapier, behind the same
- * `Race` the solver stands behind. Nothing acts on a ball after the gate
- * opens but gravity, the air and what it touches: no felt, no nudge, no
- * clamp, and nothing is ever put anywhere. What the solver does by rule the
- * pieces have to do by shape, so a kind of piece crosses over to physics
- * only once it races alone under physics as well as it does under the
- * solver, and `supports` says which have.
+ * The race: the marbles as balls in Rapier, behind `Race`. Nothing acts on a
+ * ball after the gate opens but gravity, the air and what it touches: no
+ * felt, no nudge, no clamp, and nothing is ever put anywhere. What a rule
+ * might have done, the pieces do by their shape.
  *
  * The track is met as a mesh built from the very samples the scene draws,
  * so what is seen is what is raced. Rapier is handed in, loaded and ready,
@@ -18,7 +15,6 @@ import {
   DRAG,
   FINISHED,
   GRAVITY,
-  LEAN,
   LOST,
   MARBLES,
   PATIENCE,
@@ -27,19 +23,19 @@ import {
   SPACING,
   STALLED,
   WAITING,
-} from './marbles';
+} from './race';
 import { MeshBuilder } from 'artshape-render/mesh/types';
 import { bowl as bowlMesh } from './meshes';
 import type { Random } from './random';
 import type { Race, RaceEvents, RaceOptions, Roll } from './race';
 import {
-  type Compiled,
   GATE_HEIGHT,
   HALF_WIDTH,
   type Obstacle,
   PADDLE_HEIGHT,
   PEG_HEIGHT,
   SAMPLE_EVERY,
+  type Segment,
   TROUGH_DEPTH,
   type Track,
   at,
@@ -47,19 +43,13 @@ import {
   moundHeight,
   pose,
   pose0,
+  LANE_STOP,
+  OUTLET_BACK,
 } from './track';
 
 /** Rapier, the module, once `init` has been awaited. */
 export type Rapier = typeof RAPIER_;
 
-/**
- * How high the walls stand under physics: a real marble banking through a
- * bend at speed climbs a wall the solver's marbles never could, and the
- * spike's balls hopped one of 0.57 and stayed in one of 1.2.
- */
-export const PHYSICS_WALL = 1.2;
-/** How a run is compiled for physics: leaning as the solver leans, walled for a real marble, and pinched against one wall. */
-export const PHYSICAL: Compiled = { lean: LEAN, wall: PHYSICS_WALL, physics: true };
 /** How thick the channel's lips are, so a ball on the wall's top meets an edge and not a line. */
 const SKIN = 0.08;
 /**
@@ -77,6 +67,20 @@ export interface PhysicsOptions extends RaceOptions {
 /** What a ball and the track grip each other with, and how much of a knock comes back. */
 const GRIP = 0.3;
 const GIVE = 0.05;
+/**
+ * What two balls grip each other with: next to nothing. A crowd pressed into
+ * a neck, a pen closing to a chute or a paddle coming down, stands as an arch
+ * on the friction between its balls, the way a hopper jams: at the track's
+ * own 0.3 a gate fed off a wide shallow stopped 8 of 192 and a wheel fed off
+ * bumps 5 of 96, and at 0.08 a wheel fed off two drops still stopped 9. A
+ * ball's grip is combined by the larger of the two (`Max`), so against the
+ * track it is the track's 0.3 and still rolls, against another ball this,
+ * and against a polished paddle this too. Not quite nothing: with none, no
+ * queue in the lane ever came to rest, every ball of it still going at a
+ * ball and a half's width a second twelve seconds after the race, and this
+ * little is enough to still it.
+ */
+const SLIP = 0.02;
 /**
  * How far into its floor a ball may read as sitting before `check` calls it
  * through it: a flat chute's own contact settles well inside a hundredth,
@@ -106,7 +110,7 @@ const THROAT_GRACE = 1;
 const POLISHED = 0;
 /**
  * The fastest the air lets anything go: falling straight down, where the
- * drag of the air (`DRAG`, the solver's own, a share of the speed squared)
+ * drag of the air (`DRAG`, a share of the speed squared)
  * balances gravity. Nothing on a run can go faster than this, and a ball
  * that does was thrown by something, which `check` rules on.
  */
@@ -265,7 +269,12 @@ function channelMesh(track: Track, which: (s: number) => boolean): { verts: Floa
       push(p, b, u, w + SKIN, wall);
     }
     for (let i = 0; i + 1 < n; i++) {
+      // a wall left open where it would stand inside the other lane of a splitter or a joiner: its lip, its face
+      // and its foot, on whichever side it is open at both ends of the stretch
+      const open = seg.open ? seg.open[i] & seg.open[i + 1] : 0;
       for (let k = 0; k + 1 < P; k++) {
+        if (open & 1 && k <= 2) continue;
+        if (open & 2 && k >= P - 4) continue;
         const a = base + i * P + k,
           c = base + (i + 1) * P + k;
         idx.push(a, a + 1, c, a + 1, c + 1, c);
@@ -421,15 +430,15 @@ export class Physics implements Race {
         const t: V3 = [seg.tangents[0], seg.tangents[1], seg.tangents[2]];
         const u: V3 = [seg.ups[0], seg.ups[1], seg.ups[2]];
         const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
-        const BACK = 0.12;
         this.world.createCollider(
-          rapier.ColliderDesc.cuboid(BACK, HALF_WIDTH + SKIN, seg.wall / 2)
+          rapier.ColliderDesc.cuboid(OUTLET_BACK, HALF_WIDTH + SKIN, seg.wall / 2)
             .setTranslation(
-              seg.points[0] - t[0] * BACK + u[0] * (seg.wall / 2),
-              seg.points[1] - t[1] * BACK + u[1] * (seg.wall / 2),
-              seg.points[2] - t[2] * BACK + u[2] * (seg.wall / 2),
+              seg.points[0] - t[0] * OUTLET_BACK + u[0] * (seg.wall / 2),
+              seg.points[1] - t[1] * OUTLET_BACK + u[1] * (seg.wall / 2),
+              seg.points[2] - t[2] * OUTLET_BACK + u[2] * (seg.wall / 2),
             )
-            .setRotation(frameQuat(t, b, u))
+            // across as up by along, so that along, across and up are a turn and not a mirror
+            .setRotation(frameQuat(t, [-b[0], -b[1], -b[2]], u))
             .setFriction(GRIP)
             .setRestitution(GIVE)
             .setCollisionGroups(TRACK),
@@ -445,16 +454,18 @@ export class Physics implements Race {
     const t: V3 = [end.tangents[o], end.tangents[o + 1], end.tangents[o + 2]];
     const u: V3 = [end.ups[o], end.ups[o + 1], end.ups[o + 2]];
     const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
-    const STOP = 0.5;
     const c: V3 = [
-      end.points[o] + t[0] * STOP + u[0] * end.wall,
-      end.points[o + 1] + t[1] * STOP + u[1] * end.wall,
-      end.points[o + 2] + t[2] * STOP + u[2] * end.wall,
+      end.points[o] + t[0] * LANE_STOP + u[0] * end.wall,
+      end.points[o + 1] + t[1] * LANE_STOP + u[1] * end.wall,
+      end.points[o + 2] + t[2] * LANE_STOP + u[2] * end.wall,
     ];
     this.world.createCollider(
-      rapier.ColliderDesc.cuboid(STOP, end.width[end.width.length - 1] + SKIN, end.wall * 2)
+      rapier.ColliderDesc.cuboid(LANE_STOP, end.width[end.width.length - 1] + SKIN, end.wall * 2)
         .setTranslation(c[0], c[1], c[2])
-        .setRotation(frameQuat(t, b, u))
+        // across as up by along, so that along, across and up are a turn and not a mirror: taken the other way, as
+        // along by up, the block's quaternion came out 0.71 long, Rapier met a block that was not the one placed, and
+        // a queue pressing on it went through it
+        .setRotation(frameQuat(t, [-b[0], -b[1], -b[2]], u))
         .setFriction(POLISHED)
         .setRestitution(GIVE)
         .setCollisionGroups(TRACK),
@@ -463,7 +474,12 @@ export class Physics implements Race {
       // held still until the off: a ball let go on the gate's own slope would set off on its own
       const body = this.world.createRigidBody(rapier.RigidBodyDesc.fixed().setCcdEnabled(true).setCanSleep(false));
       this.world.createCollider(
-        rapier.ColliderDesc.ball(RADIUS).setFriction(GRIP).setRestitution(GIVE).setCollisionGroups(BALL).setDensity(1),
+        rapier.ColliderDesc.ball(RADIUS)
+          .setFriction(SLIP)
+          .setFrictionCombineRule(rapier.CoefficientCombineRule.Max)
+          .setRestitution(GIVE)
+          .setCollisionGroups(BALL)
+          .setDensity(1),
         body,
       );
       this.balls.push(body);
@@ -623,18 +639,6 @@ export class Physics implements Race {
     return Math.atan2(x[0] * u[0] + x[1] * u[1] + x[2] * u[2], x[0] * t[0] + x[1] * t[1] + x[2] * t[2]);
   }
 
-  /**
-   * Whether every piece of `track` is one physics races yet: a channel, with
-   * pegs, mounds or parts that move in it or not, and a funnel, whose run in
-   * is the one lip a ball may fly off. Not yet a jump, or a branch.
-   */
-  static supports(track: Track): boolean {
-    return track.segments.every(
-      (s) =>
-        (!s.flies || (s.next >= 0 && track.segments[s.next].funnel !== null)) && !s.fork && s.branch === 0 && !s.felt,
-    );
-  }
-
   /** The world let go of: Rapier's memory is its own, and a run put on after this one wants a world of its own. */
   dispose(): void {
     this.world.free();
@@ -661,7 +665,7 @@ export class Physics implements Race {
     this.lost = 0;
     this.crossed.length = 0;
     this.released = false;
-    // two abreast on the gate as the solver sets them, but in a zigzag, each row's second a half space behind
+    // two abreast on the gate, in a zigzag, each row's second a half space behind
     // its first: a field held in level rows is mirror-symmetric, and down a mirror-symmetric run it stays so,
     // arriving at the end in pairs that sit abreast in the trough with nothing to say which goes first
     const wall = HALF_WIDTH - RADIUS;
@@ -747,7 +751,7 @@ export class Physics implements Race {
     this.reckon(dt);
   }
 
-  /** The air's drag on every ball alike, a share of the speed squared, as the solver has it: what gives a run a top speed. */
+  /** The air's drag on every ball alike, a share of the speed squared: what gives a run a top speed. */
   private breathe(dt: number): void {
     for (let i = 0; i < this.count; i++) {
       if (this.state[i] !== RACING && this.state[i] !== FINISHED) continue;
@@ -808,6 +812,8 @@ export class Physics implements Race {
       // ball over a join is on the piece it is going on to, and read against this one's last sample it read as
       // sunk into the floor wherever the next begins with a turn downward, as the lane at the end does
       let along = seg.arc[onSample] + dx * tx + dy * ty + dz * tz;
+      // on past the end on to the next
+      const across = dx * (ty * uz - tz * uy) + dy * (tz * ux - tx * uz) + dz * (tx * uy - ty * ux);
       if (along > seg.length && seg.next >= 0) {
         along = Math.min(along - seg.length, segments[seg.next].length);
         onSeg = seg.next;
@@ -828,7 +834,7 @@ export class Physics implements Race {
       }
       this.segment[i] = onSeg;
       this.along[i] = Math.min(Math.max(along, 0), segments[onSeg].length);
-      this.across[i] = dx * (ty * uz - tz * uy) + dy * (tz * ux - tx * uz) + dz * (tx * uy - ty * ux);
+      this.across[i] = across;
     }
   }
 
@@ -850,8 +856,13 @@ export class Physics implements Race {
       // funnel's throat, on to whichever segment happens to have the nearest sample to it before it has truly
       // arrived anywhere, reads as far off that line as the throat is wide, which is no line it follows at all
       const lenient = seg.flies || this.inThroat(i, this.segment[i]);
+      // how far above its floor, along the floor's own up as `check` measures it: taken as a height, a ball resting on
+      // a drop's steep floor ahead of the sample nearest it read nearly a ball's width under it, and was called lost
       const o = this.nearest(i) * 3;
-      const under = this.z[i] - seg.points[o + 2];
+      const under =
+        seg.ups[o] * (this.x[i] - seg.points[o]) +
+        seg.ups[o + 1] * (this.y[i] - seg.points[o + 1]) +
+        seg.ups[o + 2] * (this.z[i] - seg.points[o + 2]);
       if (
         this.z[i] < this.bottom - OFF ||
         (!lenient && (Math.abs(this.across[i]) > seg.width[this.nearest(i)] + OFF || under < -THROUGH))
@@ -991,10 +1002,10 @@ export class Physics implements Race {
   /** What must always hold of the field as it stands, a line each. */
   check(): string[] {
     const problems: string[] = [];
-    const doing = [0, 0, 0, 0, 0, 0, 0];
+    const doing = [0, 0, 0, 0, 0];
     for (let i = 0; i < this.count; i++) {
       const state = this.state[i];
-      if (state > STALLED + 2) problems.push(`ball ${i} is doing ${state}, which is nothing a ball does`);
+      if (state > LOST) problems.push(`ball ${i} is doing ${state}, which is nothing a ball does`);
       else doing[state]++;
       if (![this.x[i], this.y[i], this.z[i], this.speed[i]].every(Number.isFinite))
         problems.push(`ball ${i} is not a number`);
@@ -1004,11 +1015,26 @@ export class Physics implements Race {
           `ball ${i} is going ${this.speed[i].toFixed(1)}, faster than the air allows (${TERMINAL.toFixed(1)})`,
         );
       if (state !== RACING && state !== FINISHED) continue;
-      // on the track and not through its floor, beyond the give a contact leaves: a trough's floor is the V's
-      // sides, which its walls stand for, a segment that flies has no floor for a ball past its lip to be
-      // measured against, and a ball still falling through a funnel's throat, on to whichever segment happens
-      // to be nearest, has no floor there yet either
-      const seg = this.track.segments[this.segment[i]];
+      // read on a piece of the run, somewhere along it
+      const seg = this.track.segments[this.segment[i]] as Segment | undefined;
+      if (!seg) {
+        problems.push(`ball ${i} is on segment ${this.segment[i]}, of ${this.track.segments.length}`);
+        continue;
+      }
+      if (!(this.along[i] >= 0 && this.along[i] <= seg.length + 1e-3))
+        problems.push(`ball ${i} is ${this.along[i].toFixed(2)} along a segment ${seg.length.toFixed(2)} long`);
+      // and inside its channel, where it is racing on one: past its walls by as much as a ball is off the run, and
+      // `reckon` has said so. A ball in the air off a lip, or falling through a funnel's throat, is near no line
+      const lenient = seg.flies || this.inThroat(i, this.segment[i]) || seg.funnel !== null;
+      const width = seg.width[this.nearest(i)];
+      if (state === RACING && !lenient && !(Math.abs(this.across[i]) <= width + OFF))
+        problems.push(
+          `ball ${i} is ${this.across[i].toFixed(2)} across a channel ${(width * 2).toFixed(2)} wide, and still racing`,
+        );
+      // not through its floor, beyond the give a contact leaves: a trough's floor is the V's sides, which its walls
+      // stand for, a segment that flies has no floor for a ball past its lip to be measured against, and a ball
+      // still falling through a funnel's throat, on to whichever segment happens to be nearest, has no floor
+      // there yet either
       if (seg.trough || seg.flies || this.inThroat(i, this.segment[i])) continue;
       const o = this.nearest(i) * 3;
       const up =

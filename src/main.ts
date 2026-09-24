@@ -14,10 +14,9 @@ import { MAX_SLOTS } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
 import { frameCost } from './frame-cost';
 import { ABOUT, CATALOG } from './catalog';
-import type { Rapier } from './physics';
 import { MAX_DESIGNS, PALETTE } from './designer';
 import { Game, type GameEvents, type Shelf } from './game';
-import { LOST, STALLED } from './marbles';
+import { LOST, STALLED } from './race';
 import { Input } from './input';
 import { Progress } from './progress';
 import { seeded } from './random';
@@ -60,6 +59,7 @@ const builder = document.getElementById('build')!;
 const designName = document.getElementById('designName') as HTMLInputElement;
 const palette = document.getElementById('palette')!;
 const undoPiece = document.getElementById('undo') as HTMLButtonElement;
+const gridPiece = document.getElementById('grid') as HTMLButtonElement;
 const keepDesign = document.getElementById('keep') as HTMLButtonElement;
 const leaveDesign = document.getElementById('leave')!;
 const problemList = document.getElementById('problems')!;
@@ -75,6 +75,13 @@ main().catch((err: unknown) => {
 });
 
 async function main() {
+  // Rapier, which races every run: a megabyte of WASM in a chunk of its own, asked for first so that it comes down
+  // while the GPU starts and the shaders compile, and waited on only where the game is made
+  const physics = import('@dimforge/rapier3d-compat').then(async ({ default: rapier }) => {
+    await rapier.init();
+    return rapier;
+  });
+
   // ---- the renderer ----
 
   const ctx = await createContext(canvas);
@@ -152,16 +159,8 @@ async function main() {
   };
   // ?seed=N makes chance the same from before the field is drawn, for a test that wants the same race every run
   const seed = query.get('seed');
-  // ?physics=1 races on Rapier wherever it can: three quarters of a megabyte, fetched only when asked for, and
-  // only until every run races on it, when it will be part of the boot
-  let physics: Rapier | undefined;
-  if (query.has('physics')) {
-    bootMsg.textContent = 'loading physics…';
-    const rapier = (await import('@dimforge/rapier3d-compat')).default;
-    await rapier.init();
-    physics = rapier;
-  }
-  const game = new Game(progress, events, { ...(seed !== null ? { random: seeded(+seed) } : {}), physics });
+  bootMsg.textContent = 'loading physics…';
+  const game = new Game(await physics, progress, events, seed !== null ? { random: seeded(+seed) } : {});
   refresh = () => showBoard();
 
   // ---- the scene ----
@@ -529,6 +528,12 @@ async function main() {
       b.title = refused || CATALOG[kind].about;
     }
     undoPiece.disabled = designer.run.pieces.length <= 1;
+    // a grid over the last piece laid, pressed while it has one; said why not, where it cannot have one
+    const refusedLid = designer.refusesLid();
+    const last = designer.run.pieces[designer.run.pieces.length - 1];
+    gridPiece.disabled = refusedLid !== '';
+    gridPiece.setAttribute('aria-pressed', String(!!last.lid));
+    gridPiece.title = refusedLid || (last.lid ? 'Take the grid off the last piece' : 'Put a grid over the last piece');
     const full = game.progress.save.designs.length >= MAX_DESIGNS;
     const problems = full
       ? [`${MAX_DESIGNS} designs are kept already: throw one away to keep another`]
@@ -638,6 +643,9 @@ async function main() {
   });
   undoPiece.addEventListener('click', () => {
     if (game.undo()) again();
+  });
+  gridPiece.addEventListener('click', () => {
+    if (game.lid()) again();
   });
   // a run that cannot be kept is not: the board already says why, and keeps saying it
   keepDesign.addEventListener('click', () => {

@@ -79,18 +79,19 @@ test.describe('what it looks like', () => {
   test('the field going round the funnel at the foot of the tower', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
-    const swirling = await page.evaluate(() => {
+    const inBowl = await page.evaluate(() => {
       const g = window.game!;
       g.pick(2);
       g.release();
       g.follow(false);
-      g.step(689);
-      // the bowl, a level below the run in to it at the foot of the tower
-      g.look(24, 6, -41, { azimuth: 0.9, polar: 0.7, radius: 24 });
+      // played on until most of the field is going round the bowl, however long that takes
+      for (let f = 0; f < 60 * 60 && g.state().inBowl < 6; f += 5) g.step(5);
+      const [bowl] = g.content().bowls;
+      g.look(bowl.x, bowl.y, bowl.z - 2, { azimuth: 0.9, polar: 0.7, radius: 24 });
       g.step(1);
-      return g.state().swirling;
+      return g.state().inBowl;
     });
-    expect(swirling, 'the picture is of marbles in the bowl, or it is not this picture').toBe(8);
+    expect(inBowl, 'the picture is of marbles in the bowl, or it is not this picture').toBeGreaterThanOrEqual(6);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('funnel.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -104,15 +105,17 @@ test.describe('what it looks like', () => {
       g.pick(2);
       g.release();
       g.follow(false);
-      g.step(524);
+      // played on until one is in the air off the lip and another already going round
+      for (let f = 0; f < 60 * 60 && !(g.state().aloft > 0 && g.state().inBowl > 0); f++) g.step(1);
       // from beside the run in, where it comes over the rim to its lip: when it ended on the rim, a marble left it
       // off the side and was next seen inside the rim
-      g.look(24, 4.5, -39.5, { azimuth: -0.4, polar: 1.05, radius: 20 });
+      const [bowl] = g.content().bowls;
+      g.look(bowl.x, bowl.y - 1.5, bowl.z - 0.5, { azimuth: -0.4, polar: 1.05, radius: 20 });
       g.step(1);
       return g.state();
     });
-    expect(state.flying, 'a marble in the air off the lip, or it is not this picture').toBeGreaterThan(0);
-    expect(state.swirling, 'and some already going round').toBeGreaterThan(0);
+    expect(state.aloft, 'a marble in the air off the lip, or it is not this picture').toBeGreaterThan(0);
+    expect(state.inBowl, 'and some already going round').toBeGreaterThan(0);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('drop.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -126,15 +129,18 @@ test.describe('what it looks like', () => {
       g.pick(2);
       g.release();
       g.follow(false);
-      g.step(1077);
-      // from beside the throat under the bowl, over the ramp that carries each marble off: a marble was once taken
-      // from the hole and set down on the piece below, and never seen between
-      g.look(25, 6, -44, { azimuth: -1.2, polar: 1.2, radius: 12 });
+      const [bowl] = g.content().bowls;
+      // a marble on the way out from under the bowl and well clear of its floor: falling through the throat
+      const inThroat = () =>
+        g.marbles().filter((m) => m.state === 'racing' && m.segment === bowl.segment + 1 && m.up > 1.5).length;
+      for (let f = 0; f < 60 * 60 && inThroat() === 0; f++) g.step(1);
+      // from beside the throat under the bowl, over the way out that carries each marble off: a marble was once
+      // taken from the hole and set down on the piece below, and never seen between
+      g.look(bowl.x + 1, bowl.y, bowl.z - 4, { azimuth: -1.2, polar: 1.2, radius: 12 });
       g.step(1);
-      // the hole's edge is 2.2 below the rim, a level under the tower's last spiral
-      return g.marbles().filter((m) => m.state === 'flying' && m.z < -42.2).length;
+      return inThroat();
     });
-    expect(falling, 'a marble in the throat, or it is not this picture').toBe(1);
+    expect(falling, 'a marble in the throat, or it is not this picture').toBeGreaterThan(0);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('hole.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -166,34 +172,41 @@ test.describe('what it looks like', () => {
       g.pick(4);
       g.release();
       g.follow(false);
-      g.step(640);
+      // played on until most of the field is gathered at the wheel, however long physics takes to bring it
+      const at = () => g.marbles().filter((m) => m.segment === 8).length;
+      for (let f = 0; f < 60 * 30 && at() < 5; f++) g.step(1);
       // from the side, where the paddles are edge on: down the pen they stand right across it from wall to wall,
       // and a field gathered behind one is under the one before it and hidden
-      g.look(13.25, -28.05, -25.5, { azimuth: 0, polar: 0.9, radius: 16 });
+      g.look(13.25, -28.05, -26.5, { azimuth: 0, polar: 0.9, radius: 16 });
       g.step(1);
-      return g.marbles().filter((m) => m.segment === 8).length;
+      return at();
     });
-    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBe(6);
+    expect(atWheel, 'the picture is of marbles at the wheel, or it is not this picture').toBeGreaterThanOrEqual(5);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('wheel.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('the leap, with five marbles in the air off its first jump', async ({ page }) => {
+  test('the leap, with marbles in the air off its first jump', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
-    const flying = await page.evaluate(() => {
+    const aloft = await page.evaluate(() => {
       const g = window.game!;
       g.pick(3);
       g.release();
       g.follow(false);
-      g.step(278);
+      // played on until most of the field is in the air off the first lip
+      let most = 0;
+      for (let f = 0; f < 60 * 30 && most < 3; f++) {
+        g.step(1);
+        most = g.state().aloft;
+      }
       // side on to the first jump, from its lip to its own landing
-      g.look(33, 0, -14.5, { azimuth: -1.2, polar: 1.1, radius: 22 });
+      g.look(33, 0, -16, { azimuth: -1.2, polar: 1.1, radius: 22 });
       g.step(1);
-      return g.state().flying;
+      return g.state().aloft;
     });
-    expect(flying, 'the picture is of marbles in the air, or it is not this picture').toBe(5);
+    expect(aloft, 'the picture is of marbles in the air, or it is not this picture').toBeGreaterThanOrEqual(3);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('leap.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -204,8 +217,8 @@ test.describe('what it looks like', () => {
     await start(page, { seed: 11, paused: true });
     await page.evaluate(() => {
       const g = window.game!;
-      // on this seed Cobalt, marble 4, wins, and the first player has it
-      g.claim(4);
+      // on this seed marble 2 wins, and the first player has it
+      g.claim(2);
       g.claim(5);
       g.claim(1);
       g.step(1);
@@ -222,7 +235,7 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  test('the field lined up in the lane at the end of first drop, in the order it finished', async ({ page }) => {
+  test('the field come to rest in the cup at the end of first drop, under its grid', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
     const home = await page.evaluate(() => {
@@ -230,9 +243,12 @@ test.describe('what it looks like', () => {
       g.release();
       g.follow(false);
       g.settle(60);
-      // and long enough after for the last home to roll up to the back of the queue
+      // and long enough after for the last home to come to rest with the rest
       g.step(600);
-      g.look(12, 36, -24, { azimuth: 0.4, polar: 0.9, radius: 14 });
+      // looking at the field where it came to rest
+      const ms = g.marbles();
+      const mid = (k: 'x' | 'y' | 'z') => ms.reduce((sum, m) => sum + m[k], 0) / ms.length;
+      g.look(mid('x'), mid('y'), mid('z'), { azimuth: 0.4, polar: 0.9, radius: 12 });
       g.step(1);
       return g.state().finished;
     });
@@ -351,7 +367,7 @@ test.describe('what it looks like', () => {
 
   test('the ramp raced under physics: the field in a lane that is a trough, sloping to its stop', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, physics: true });
+    await start(page, { seed: 11, paused: true });
     const home = await page.evaluate(() => {
       const g = window.game!;
       g.browse('pieces');
@@ -362,10 +378,9 @@ test.describe('what it looks like', () => {
       // the lane at the end from the side, where the trough's V and its slope show, with the field lined up in it
       g.look(15, 0, -7, { azimuth: 0.4, polar: 1.0, radius: 16 });
       g.step(1);
-      return [g.engine(), g.state().finished] as const;
+      return [g.state().finished] as const;
     });
-    expect(home[0], 'the picture is of physics, or it is not this picture').toBe('physics');
-    expect(home[1], 'and of the field home').toBe(8);
+    expect(home[0], 'the picture is of the field home').toBe(8);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('physics-ramp.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -375,7 +390,7 @@ test.describe('what it looks like', () => {
     page,
   }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, physics: true });
+    await start(page, { seed: 11, paused: true });
     const on = await page.evaluate(() => {
       const g = window.game!;
       // built rather than picked, since no shelf has a drop feeding a brake: the run being built is the run on
@@ -389,21 +404,20 @@ test.describe('what it looks like', () => {
       // the drop and the brake from the side, the grid over the one and the field in the other
       g.look(14, 0, -12, { azimuth: -1.2, polar: 0.75, radius: 26 });
       g.step(1);
-      return [g.engine(), g.state().runName, g.state().racing + g.state().finished] as const;
+      return [g.state().runName, g.state().racing + g.state().finished] as const;
     });
-    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
-    expect(on[1]).toBe('Drop and brake');
-    expect(on[2], 'and of the field away').toBe(8);
+    expect(on[0]).toBe('Drop and brake');
+    expect(on[1], 'and of the field away').toBe(8);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('physics-drop-brake.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('pegs and bumps raced under physics: the pegs cones, the mounds steeper, so a fast field is thrown wide', async ({
+  test('pegs and bumps raced under physics: the pegs cones, and both boards under a grid that throws a fast field back down', async ({
     page,
   }) => {
     const problems = watch(page);
-    await start(page, { seed: 5, paused: true, physics: true });
+    await start(page, { seed: 5, paused: true });
     const on = await page.evaluate(() => {
       const g = window.game!;
       g.browse('designs');
@@ -412,63 +426,61 @@ test.describe('what it looks like', () => {
       g.release();
       g.follow(false);
       g.step(140);
-      // the pegs and the bumps from above, where a cone's point and a mound's steeper rise both show
+      // the pegs and the bumps from above, where a cone's point, a mound's rise and the grids over both show
       g.look(24, 0, -8, { azimuth: -1.5, polar: 0.55, radius: 22 });
       g.step(1);
-      return [g.engine(), g.state().runName, g.state().racing + g.state().finished] as const;
+      return [g.state().runName, g.state().racing + g.state().finished] as const;
     });
-    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
-    expect(on[1]).toBe('Pegs and bumps');
-    expect(on[2], 'and of the field away').toBe(8);
+    expect(on[0]).toBe('Pegs and bumps');
+    expect(on[1], 'and of the field away').toBe(8);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('physics-pegs-bumps.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test('the chute raced under physics: the sweeper and the gate as bodies, drawn where they really are', async ({
-    page,
-  }) => {
+  test("the catalog's grid over a board, raced under physics: the field kept in under it", async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, physics: true });
+    await start(page, { seed: 11, paused: true });
     const on = await page.evaluate(() => {
       const g = window.game!;
-      g.pick(1);
+      g.browse('pieces');
+      g.pick(g.content().catalog.indexOf('A grid over it'));
       g.release();
       g.follow(false);
-      g.step(160);
-      // the sweeper's board and the gate's pen below it, from where the solver's own picture of them is taken
-      g.look(17, 0, -8.5, { azimuth: 0.9, polar: 0.8, radius: 22 });
+      g.step(90);
+      // the board from above and to one side, where the grid's bars and rungs stand over the field
+      g.look(12, 0, -6, { azimuth: -1.2, polar: 0.7, radius: 18 });
       g.step(1);
-      return [g.engine(), g.state().runName] as const;
+      return [g.state().runName] as const;
     });
-    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
-    expect(on[1]).toBe('The Chute');
+    expect(on[0]).toBe('A grid over it');
     await hideStats(page);
-    await expect(page.locator('#view')).toHaveScreenshot('physics-pen.png', TOLERANCE);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-grid.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  test("switchback's wheel raced under physics: its paddles polished, turning over a field it holds", async ({
+  test("the fork raced under physics: its lanes' walls open where they part, and no divider standing there", async ({
     page,
   }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, physics: true });
+    await start(page, { seed: 11, paused: true });
     const on = await page.evaluate(() => {
       const g = window.game!;
-      g.pick(4);
+      g.pick(5);
       g.release();
       g.follow(false);
-      // played on until a few of the field are in the wheel's pen, however long physics takes to bring them
-      for (let f = 0; f < 60 * 20 && g.marbles().filter((m) => m.segment === 8).length < 3; f += 5) g.step(5);
-      // from the side, where the paddles are edge on, as the solver's own picture of the wheel is taken
-      g.look(13.25, -28.05, -25.5, { azimuth: 0, polar: 0.9, radius: 16 });
+      // played on until most of the field has parted into the two lanes, however long physics takes
+      const parted = () => g.marbles().filter((m) => m.segment === 2 || m.segment === 3).length;
+      for (let f = 0; f < 60 * 20 && parted() < 4; f += 5) g.step(5);
+      // from above the point where the lanes part, looking down them
+      g.look(21, 3, -9.2, { azimuth: -2.4, polar: 0.75, radius: 15 });
       g.step(1);
-      return [g.engine(), g.marbles().filter((m) => m.segment === 8).length] as const;
+      return [g.state().runName, parted()] as const;
     });
-    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
-    expect(on[1], 'and of marbles at the wheel').toBeGreaterThanOrEqual(3);
+    expect(on[0]).toBe('The Fork');
+    expect(on[1], 'and of marbles in the lanes').toBeGreaterThanOrEqual(4);
     await hideStats(page);
-    await expect(page.locator('#view')).toHaveScreenshot('physics-wheel.png', TOLERANCE);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-fork.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

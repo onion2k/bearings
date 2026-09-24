@@ -62,7 +62,7 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   ramp: {
     name: 'Ramp',
-    about: 'Down a level in a cell, eased in and out: the steady slope most runs are made of.',
+    about: 'Down a level in a cell under a grid, eased in and out: the steady slope most runs are made of.',
     among: alone('ramp'),
   },
   curveLeft: {
@@ -92,12 +92,12 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   jump: {
     name: 'Jump',
-    about: 'Felt that brings any marble to the same pace, a lip over a cell of air, and a board to land on.',
+    about: 'A run-up under a grid, a lip over a cell of air, and a board beyond it to land on.',
     among: alone('jump'),
   },
   pegs: {
     name: 'Peg board',
-    about: 'A wide board with staggered rows of pegs, which knock a marble off its line.',
+    about: 'A wide board under a grid, with staggered rows of pegs that knock a marble off its line.',
     among: alone('pegs'),
   },
   sweeper: {
@@ -147,7 +147,7 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   narrow: {
     name: 'Narrow',
-    about: 'Squeezed to single file in its middle: two abreast going in come out one behind the other.',
+    about: 'A groove in its middle that sorts the field toward single file, flat again where it ends.',
     among: alone('narrow'),
   },
   brake: {
@@ -158,12 +158,12 @@ export const CATALOG: Record<Kind, Entry> = {
   },
   bumps: {
     name: 'Bumps',
-    about: 'A board with mounds in its floor, which a marble rolls up over and is turned aside by.',
+    about: 'A board under a grid with mounds in its floor, which a marble rolls up over and is turned aside by.',
     among: alone('bumps'),
   },
   finish: {
     name: 'The end',
-    about: 'Over the line and into a lane one marble wide, where the field waits in the order it finished.',
+    about: 'Over the line and into a cup under a grid, where the field comes to rest.',
     among: ['start', 'finish'],
   },
 };
@@ -180,12 +180,30 @@ function lay(kinds: readonly Kind[]): Placed[] {
   return pieces;
 }
 
-/** Every piece as a run of its own, in the order the kinds are listed: what the catalog's shelf puts on. */
-export const PIECES: readonly Run[] = KINDS.map((kind) => ({
-  id: `piece-${kind.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
-  name: CATALOG[kind].name,
-  pieces: CATALOG[kind].laid ?? lay(CATALOG[kind].among!),
-}));
+/**
+ * A grid over a piece, shown on the shelf after the kinds: not a kind of its
+ * own but something a run can ask for over any piece but a jump, a funnel or
+ * a wheel, here over the broadest of the boards.
+ */
+const GRID: { run: Run; about: string } = {
+  run: {
+    id: 'piece-grid',
+    name: 'A grid over it',
+    pieces: lay(['start', 'shallowBroad', 'finish']).map((p) => (p.kind === 'shallowBroad' ? { ...p, lid: true } : p)),
+  },
+  about:
+    'Any piece but a jump, a funnel or a wheel can have a grid over it, which keeps in a marble it would throw out.',
+};
+
+/** Every piece as a run of its own, in the order the kinds are listed, and the grid: what the catalog's shelf puts on. */
+export const PIECES: readonly Run[] = [
+  ...KINDS.map((kind) => ({
+    id: `piece-${kind.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
+    name: CATALOG[kind].name,
+    pieces: CATALOG[kind].laid ?? lay(CATALOG[kind].among!),
+  })),
+  GRID.run,
+];
 
 /** What each piece on the shelf does, in the same order: for the board, in place of a run's best time. */
-export const ABOUT: readonly string[] = KINDS.map((kind) => CATALOG[kind].about);
+export const ABOUT: readonly string[] = [...KINDS.map((kind) => CATALOG[kind].about), GRID.about];

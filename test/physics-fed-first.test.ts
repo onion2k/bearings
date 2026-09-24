@@ -6,7 +6,7 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { MARBLES } from '../src/marbles';
+import { MARBLES } from '../src/race';
 import { CROSSED, chain, fieldOn, raced } from './physics-helpers';
 
 await RAPIER.init();

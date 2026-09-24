@@ -17,7 +17,7 @@
  */
 import type { Game } from './game';
 import { MAX_DESIGNS } from './designer';
-import { FINISHED, WAITING } from './marbles';
+import { FINISHED, WAITING } from './race';
 import { checkTrack } from './track';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */

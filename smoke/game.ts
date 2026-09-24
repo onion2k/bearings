@@ -32,11 +32,8 @@ export function watch(page: Page): string[] {
  * built, and `paused` stops it before a frame of its own has run, so
  * everything after is the test's own stepping.
  */
-export async function start(
-  page: Page,
-  options: { save?: Partial<Save>; seed?: number; paused?: boolean; physics?: boolean } = {},
-) {
-  const { save, seed, paused, physics } = options;
+export async function start(page: Page, options: { save?: Partial<Save>; seed?: number; paused?: boolean } = {}) {
+  const { save, seed, paused } = options;
   if (save)
     await page.addInitScript((s) => {
       if (sessionStorage.getItem('bearing-test-seeded')) return;
@@ -46,7 +43,6 @@ export async function start(
   const query = new URLSearchParams();
   if (seed !== undefined) query.set('seed', String(seed));
   if (paused) query.set('paused', '1');
-  if (physics) query.set('physics', '1');
   await page.goto(query.size ? `/?${query.toString()}` : '/');
   await ready(page);
 }

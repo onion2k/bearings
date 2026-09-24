@@ -15,10 +15,14 @@
  * The autopilot drives, so the two runs are played the same way without a
  * recording.
  */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+
+// Rapier, which every race is raced on, loaded once before anything is played
+await RAPIER.init();
 
 const DT = 1 / 60;
 
@@ -89,7 +93,7 @@ export function hashGame(game: Game): string {
 export function playTwice({ seed, frames, every = 300, meddle }: TwiceOptions): TwiceResult {
   const passes: string[][] = [];
   for (let pass = 0; pass < 2; pass++) {
-    const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
+    const game = new Game(RAPIER, new Progress(memoryStore()), {}, { random: seeded(seed) });
     const pilot = new Autopilot(game);
     const hashes: string[] = [];
     for (let f = 1; f <= frames; f++) {

@@ -5,10 +5,9 @@
  * which are two files so that they run on two workers.
  */
 import RAPIER from '@dimforge/rapier3d-compat';
-import { PHYSICAL, Physics } from '../src/physics';
-import { MARBLES, RACING, RADIUS } from '../src/marbles';
+import { Physics } from '../src/physics';
+import { MARBLES, RACING, RADIUS } from '../src/race';
 import { seeded } from '../src/random';
-import { RUNS } from '../src/runs';
 import { type Facing, type Kind, type Placed, type Run, compile, exitOf } from '../src/track';
 
 await RAPIER.init();
@@ -17,7 +16,7 @@ const DT = 1 / 60;
 
 /**
  * The kinds physics races: every one that is no more than a channel, has
- * pegs or mounds fixed in it, or a part that moves. The funnel is not among them: what "fed by
+ * pegs or mounds fixed in it, a part that moves, or a lip it flies off. The funnel is not among them: what "fed by
  * two drops" tests is the fastest any ONE piece hands a field on at, and a
  * ball off two drops straight into a funnel's bowl, at the extreme end of
  * its swirl, now and then misses the outlet's own catch and free-falls
@@ -43,6 +42,7 @@ export const CROSSED: Kind[] = [
   'sweeper',
   'gate',
   'wheel',
+  'jump',
 ];
 
 /** Pieces laid end to end from the lattice's origin, each where the one before hands a marble on. */
@@ -60,7 +60,7 @@ export function chain(kinds: Kind[]): Run {
 /** A field on a run of the test's own, under physics, with a note of what happens. */
 export function fieldOn(run: Run, seed = 1) {
   const told: string[] = [];
-  const track = compile(run, PHYSICAL);
+  const track = compile(run);
   const race = new Physics(
     RAPIER,
     track,
@@ -111,7 +111,7 @@ function abreast(race: Physics, i: number): boolean {
 }
 
 /** Kendall's tau between two orders of the same marbles: 1 the same order, 0 no relation, -1 the other way round. */
-function tau(a: number[], b: number[]): number {
+export function tau(a: number[], b: number[]): number {
   let same = 0,
     other = 0;
   for (let i = 0; i < a.length; i++)
@@ -195,5 +195,42 @@ export function through(kinds: Kind[], on: number, seeds: number) {
   return { in: inAt / n, out: outAt / n, pairs: pairs / n, home, of: seeds * MARBLES };
 }
 
-/** Every run that comes with the game and physics can race yet, in the order the shelf has them. */
-export const PHYSICS_RUNS: Run[] = RUNS.filter((run) => Physics.supports(compile(run)));
+/**
+ * A splitter's two lanes, each carrying `kind`, closed by a joiner right
+ * after: the fork lane begins a lattice cell across from the main one, and a
+ * kind that keeps its facing hands the same offset on from either, so the
+ * joiner lines up with both at once. The layout `joins.test.ts` races under
+ * the solver.
+ */
+export function branched(kind: Kind): Run {
+  const start: Placed = { kind: 'start', x: 0, y: 0, z: 0, facing: 0 };
+  const splitter: Placed = { kind: 'splitter', ...exitOf(start)! };
+  const main = exitOf(splitter)!;
+  const mainPiece: Placed = { kind, ...main };
+  const forkPiece: Placed = { kind, ...main, y: main.y + 1 };
+  const joiner: Placed = { kind: 'joiner', ...exitOf(mainPiece)! };
+  const after: Placed = { kind: 'straight', ...exitOf(joiner)! };
+  const finish: Placed = { kind: 'finish', ...exitOf(after)! };
+  return { id: 'split', name: kind, pieces: [start, splitter, mainPiece, forkPiece, joiner, after, finish] };
+}
+
+/** The kinds a branch can carry: a chute wide, and not turning. */
+export const ON_A_BRANCH: Kind[] = [
+  'straight',
+  'ramp',
+  'drop',
+  'jump',
+  'wheel',
+  'shallow',
+  'shallowWide',
+  'narrow',
+  'brake',
+];
+
+/**
+ * A moment for the test's worker to answer Vitest between one race and the
+ * next: a test that races for most of a minute without one kept Vitest's own
+ * calls to the worker waiting past their timeout, which it reports as an
+ * error of the run even with every test passing.
+ */
+export const breathe = (): Promise<void> => new Promise((done) => setImmediate(done));

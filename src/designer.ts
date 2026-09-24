@@ -28,6 +28,7 @@ import {
   check,
   compile,
   exitOf,
+  lidRefused,
 } from './track';
 
 /** The kinds a player can build with: every one but the start, which a design begins with, and the two that branch. */
@@ -85,6 +86,27 @@ export class Designer {
   place(kind: Kind): boolean {
     if (this.refuses(kind)) return false;
     this.run.pieces.push({ kind, ...this.open! });
+    return true;
+  }
+
+  /** Why the last piece cannot have a grid put over it, or taken off it, now; nothing where it can. */
+  refusesLid(): string {
+    const { pieces } = this.run;
+    if (pieces.length <= 1) return 'lay a piece to put a grid over it';
+    return lidRefused(pieces[pieces.length - 1].kind);
+  }
+
+  /**
+   * A grid over the last piece laid, or taken off it where it has one; whether
+   * either happened. The last piece, since that is the one the undo takes and
+   * the one the player is looking at: to cover one further back, take the
+   * pieces after it off and lay them again.
+   */
+  lid(): boolean {
+    if (this.refusesLid()) return false;
+    const last = this.run.pieces[this.run.pieces.length - 1];
+    if (last.lid) delete last.lid;
+    else last.lid = true;
     return true;
   }
 
@@ -146,10 +168,19 @@ export function readDesigns(raw: unknown): Run[] {
     const placed: Placed[] = [];
     for (const p of pieces as unknown[]) {
       if (typeof p !== 'object' || p === null) break;
-      const { kind, x, y, z, facing } = p as Record<string, unknown>;
+      const { kind, x, y, z, facing, lid } = p as Record<string, unknown>;
       if (!KINDS.includes(kind as Kind)) break;
       if (![x, y, z].every(Number.isInteger) || ![0, 1, 2, 3].includes(facing as number)) break;
-      placed.push({ kind: kind as Kind, x: x as number, y: y as number, z: z as number, facing: facing as Facing });
+      // a grid is asked for with `true` and nothing else, and is otherwise not there at all
+      if (lid !== undefined && lid !== true) break;
+      placed.push({
+        kind: kind as Kind,
+        x: x as number,
+        y: y as number,
+        z: z as number,
+        facing: facing as Facing,
+        ...(lid ? { lid: true as const } : {}),
+      });
     }
     if (placed.length !== pieces.length) continue;
     const run: Run = { id, name: tidy(name), pieces: placed };

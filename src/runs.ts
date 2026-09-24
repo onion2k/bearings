@@ -20,7 +20,7 @@ import type { Run } from './track';
  * grid order counting for little.
  */
 export const FIRST: Run = {
-  id: 'first-drop-2',
+  id: 'first-drop-3',
   name: 'First Drop',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -38,7 +38,7 @@ export const FIRST: Run = {
 
 /** The short one: a sweeper and a gate straight off the start, and down to the cup. */
 export const SHORT: Run = {
-  id: 'the-chute-2',
+  id: 'the-chute-3',
   name: 'The Chute',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -63,7 +63,7 @@ export const SHORT: Run = {
  * which hands it on a cell further and a level lower than it did.
  */
 export const TOWER: Run = {
-  id: 'the-tower-5',
+  id: 'the-tower-6',
   name: 'The Tower',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -87,7 +87,7 @@ export const TOWER: Run = {
  * this one was rebuilt when the jump was made to join anything.
  */
 export const LEAP: Run = {
-  id: 'the-leap-4',
+  id: 'the-leap-5',
   name: 'The Leap',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -107,7 +107,7 @@ export const LEAP: Run = {
  * again and again, over two peg boards, under a wheel, and round a spiral.
  */
 export const SWITCHBACK: Run = {
-  id: 'switchback-2',
+  id: 'switchback-3',
   name: 'Switchback',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -143,7 +143,7 @@ export const SWITCHBACK: Run = {
  * whole field back together.
  */
 export const FORK: Run = {
-  id: 'the-fork-1',
+  id: 'the-fork-2',
   name: 'The Fork',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -167,7 +167,7 @@ export const FORK: Run = {
  * back on the whole field.
  */
 export const CROSSING: Run = {
-  id: 'the-crossing-1',
+  id: 'the-crossing-2',
   name: 'The Crossing',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -203,7 +203,7 @@ export const CROSSING: Run = {
  * instead, and nothing stands between the joiner and the cup.
  */
 export const STRESS: Run = {
-  id: 'stress-test-1',
+  id: 'stress-test-2',
   name: 'Stress Test',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },

@@ -5,7 +5,7 @@ import { Game } from '../src/game';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
 import { type Kind, MAX_PIECES, MAX_SAMPLES, MOVING_MOST, check, compile, exitOf } from '../src/track';
-import { newGame, race } from './helpers';
+import { RAPIER, newGame, race } from './helpers';
 
 /** A run a player might build: down, across a peg board, round a corner, down again, and home. */
 const SOUND: Kind[] = ['ramp', 'pegs', 'curveLeft', 'ramp', 'finish'];
@@ -246,7 +246,7 @@ describe('the game, building a run', () => {
     game.keep('Mine');
     race(game);
     const { id } = game.current;
-    const again = new Game(new Progress(memoryStore(store.json)), {}, { random: seeded(2) });
+    const again = new Game(RAPIER, new Progress(memoryStore(store.json)), {}, { random: seeded(2) });
     expect(again.shelf).toBe('designs');
     expect(again.current.id).toBe(id);
     expect(again.progress.best(id), 'a best on a design is not dropped as a run the game has not got').toBeGreaterThan(

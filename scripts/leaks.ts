@@ -16,16 +16,20 @@
  * through is not. A new list, map or cache in the game gets a line in
  * `WATCH` and a reading in `sizes`.
  */
+import RAPIER from '@dimforge/rapier3d-compat';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MAX_SLOTS } from '../src/cameras';
 import { MAX_DESIGNS } from '../src/designer';
 import { Physics } from '../src/physics';
-import { MARBLES } from '../src/marbles';
+import { MARBLES } from '../src/race';
 import { RUNS } from '../src/runs';
 import { MAX_PIECES, MAX_SAMPLES, MAX_SEGMENTS } from '../src/track';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+
+// Rapier, which every race is raced on, loaded once before anything is played
+await RAPIER.init();
 
 const DT = 1 / 60;
 
@@ -128,7 +132,7 @@ export function leakRun({ seed, minutes }: LeakOptions): LeakRun {
   const started = performance.now();
   const samples: Record<string, number[]> = {};
   try {
-    const game = new Game(new Progress(memoryStore()), {}, { random: seeded(seed) });
+    const game = new Game(RAPIER, new Progress(memoryStore()), {}, { random: seeded(seed) });
     const pilot = new Autopilot(game);
     for (let minute = 0; minute < minutes; minute++) {
       for (let f = 0; f < 3600; f++) pilot.step(DT);

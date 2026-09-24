@@ -137,8 +137,8 @@ test('draws a run being built, and a design raced, within budget', async ({ page
 test('draws a piece raced under physics within budget, and a drop under its grid into a brake', async ({ page }) => {
   test.setTimeout(180_000);
   const problems = watch(page);
-  await start(page, { seed: 11, paused: true, physics: true });
-  const [engine, frame, braked, moving] = await page.evaluate(async () => {
+  await start(page, { seed: 11, paused: true });
+  const [frame, braked, moving] = await page.evaluate(async () => {
     const g = window.game!;
     g.browse('pieces');
     g.pick(g.content().catalog.indexOf('Ramp'));
@@ -158,9 +158,8 @@ test('draws a piece raced under physics within budget, and a drop under its grid
     g.pick(1);
     g.release();
     g.step(160);
-    return [g.engine(), frame, braked, await g.measureFrame()] as const;
+    return [frame, braked, await g.measureFrame()] as const;
   });
-  expect(engine).toBe('physics');
   const ms = (n: number) => Math.round(n * 100) / 100;
   console.log(
     `perf: physics, frame ${ms(frame)} ms on the ramp, ${ms(braked)} ms down a drop into a brake and ${ms(moving)} ms on The Chute`,

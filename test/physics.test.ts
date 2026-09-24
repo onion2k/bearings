@@ -7,30 +7,27 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { PHYSICAL, Physics, PHYSICS_WALL, TERMINAL } from '../src/physics';
-import { FINISHED, GRAVITY, LEAN, MARBLES, RADIUS, ROLLING } from '../src/marbles';
-import { compile } from '../src/track';
+import { Physics, TERMINAL } from '../src/physics';
+import { FINISHED, GRAVITY, MARBLES, RADIUS } from '../src/race';
+import { LEAN, WALL, compile } from '../src/track';
+import { RUNS } from '../src/runs';
 import { newGame } from './helpers';
-import { CROSSED, chain, fieldOn, raced } from './physics-helpers';
+import { chain, fieldOn, raced } from './physics-helpers';
 
 await RAPIER.init();
 
 const DT = 1 / 60;
 
 describe('the race as physics', () => {
-  it('has the track it races on leaning as the solver leans, and walls as high as physics needs', () => {
-    const plain = compile(chain(['start', 'straight', 'finish']));
-    const track = compile(chain(['start', 'straight', 'finish']), PHYSICAL);
-    expect(track.wall).toBe(PHYSICS_WALL);
-    expect(plain.wall).toBeLessThan(PHYSICS_WALL);
-    // every sample is lower by a twentieth of how far along the run it is, and the tangents lean with it
+  it('has the track it races on leaning down the run, and walled as high as a real ball needs', () => {
+    const track = compile(chain(['start', 'straight', 'finish']));
+    expect(track.wall).toBe(WALL);
+    expect(track.lean).toBe(LEAN);
+    // a straight falls by a twentieth of its own length from one end to the other, and its tangents lean with it
     const seg = track.segments[1];
     const last = seg.arc.length - 1;
-    expect(seg.points[last * 3 + 2] - plain.segments[1].points[last * 3 + 2]).toBeCloseTo(
-      -LEAN * (seg.start + seg.arc[last]),
-      4,
-    );
-    expect(seg.tangents[2], 'a level straight now points a little down').toBeLessThan(-0.04);
+    expect(seg.points[last * 3 + 2] - seg.points[2]).toBeCloseTo(-LEAN * seg.arc[last], 4);
+    expect(seg.tangents[2], 'a level straight points a little down').toBeLessThan(-0.04);
     expect(Math.hypot(seg.tangents[0], seg.tangents[1], seg.tangents[2])).toBeCloseTo(1, 5);
   });
 
@@ -46,7 +43,9 @@ describe('the race as physics', () => {
     expect(finished[0]).toMatch(new RegExp(`^finished ${race.place.indexOf(1)} 1 `));
     // and gathered in the lane at its stop, every one at rest, none inside another: not always in single file, since
     // a pair arriving abreast can sit on the trough's sides together, and a neck that would sort them arches
-    for (let f = 0; f < 60 * 5; f++) race.step(DT);
+    // a queue in the cup takes seven to nine seconds to come to rest, balls that do not grip each other shedding
+    // what they have left only to their knocks
+    for (let f = 0; f < 60 * 12; f++) race.step(DT);
     for (let i = 0; i < MARBLES; i++) {
       expect(race.segment[i], `ball ${i} in the lane`).toBe(race.track.segments.length - 1);
       expect(race.speed[i], `ball ${i} at rest`).toBeLessThan(0.05);
@@ -96,8 +95,9 @@ describe('the race as physics', () => {
       race.step(DT);
       for (let i = 0; i < MARBLES; i++) fastest = Math.max(fastest, race.speed[i]);
     }
-    // the gate is a level down, then two ramps: three levels; a rolling ball keeps two sevenths as spin
-    const allowed = Math.sqrt(2 * GRAVITY * 12 * ROLLING);
+    // the gate is a level down, then two ramps: three levels; a solid ball rolling keeps two sevenths of what it
+    // falls as spin, and has five sevenths to go with
+    const allowed = Math.sqrt(2 * GRAVITY * 12 * (5 / 7));
     expect(fastest).toBeLessThanOrEqual(allowed);
     // the air takes some, and the floor and walls a little: it came to four fifths, and is held to three quarters
     expect(fastest, 'the air takes a little, and the walls, but not much').toBeGreaterThan(allowed * 0.75);
@@ -122,47 +122,39 @@ describe('the race as physics', () => {
     expect(race.put(0, 1, 2, 0)).toBe(false);
   });
 
-  it('knows which kinds it can race yet, and refuses the rest', () => {
-    for (const kind of CROSSED) expect(Physics.supports(compile(chain(['start', kind, 'finish']))), kind).toBe(true);
-    // the funnel is its own case: `CROSSED` is also the list "fed by two drops" tries every kind at, which the
-    // funnel is deliberately left out of, but physics races it and `supports` says so
-    expect(Physics.supports(compile(chain(['start', 'funnel', 'finish']))), 'funnel').toBe(true);
-    for (const kind of ['jump', 'splitter'] as const)
-      expect(
-        Physics.supports(
-          compile(
-            chain(
-              kind === 'splitter'
-                ? ['start', 'splitter', 'straight', 'straight', 'joiner', 'finish']
-                : ['start', kind, 'finish'],
-            ),
-          ),
-        ),
-        kind,
-      ).toBe(false);
+  it('turns everything it stands on the track by a true rotation, and never a mirror', () => {
+    // a frame built as along, along-by-up and up is a mirror, whose quaternion is not of unit length, and Rapier met
+    // the end of the lane and the back of a funnel's way out as blocks that were not the ones placed
+    for (const run of RUNS) {
+      const { race } = fieldOn(run);
+      let colliders = 0;
+      (race as unknown as { world: RAPIER.World }).world.forEachCollider((c) => {
+        const q = c.rotation();
+        expect(Math.hypot(q.x, q.y, q.z, q.w), `${run.name}, collider ${colliders}`).toBeCloseTo(1, 5);
+        colliders++;
+      });
+      expect(colliders).toBeGreaterThan(10);
+      race.dispose();
+    }
   });
 
-  it('is what the game races on when it is given physics, and the solver where physics cannot go yet', () => {
-    const { game } = newGame(1, null, { physics: RAPIER });
-    // First Drop, a peg board and a gate, is one physics races now
-    expect(game.engine).toBe('physics');
+  it('is what the game races every run on, a branch and all, compiled the way physics wants it', () => {
+    const { game } = newGame(1);
     game.browse('pieces');
-    game.pick(game.list.findIndex((r) => r.id === 'piece-pegs'));
-    expect(game.engine).toBe('physics');
-    expect(game.track.wall).toBe(PHYSICS_WALL);
-    game.release();
-    for (let f = 0; f < 60 * 30 && !game.over; f++) game.step(DT);
-    expect(game.marbles.finishers).toBe(MARBLES);
-    // and back to the solver for a jump, which physics has not got to
-    game.pick(game.list.findIndex((r) => r.id === 'piece-jump'));
-    expect(game.engine).toBe('solver');
-    expect(game.track.wall).toBeLessThan(PHYSICS_WALL);
+    for (const id of ['piece-pegs', 'piece-splitter']) {
+      game.pick(game.list.findIndex((r) => r.id === id));
+      expect(game.marbles, id).toBeInstanceOf(Physics);
+      expect(game.track.wall, id).toBe(WALL);
+      game.release();
+      for (let f = 0; f < 60 * 30 && !game.over; f++) game.step(DT);
+      expect(game.marbles.finishers, id).toBe(MARBLES);
+    }
   });
 
   it('lets go of a world when another run is put on, and never has more than one', () => {
     // the tests above leave their own worlds behind, which is theirs to do; what counts is what the game adds
     const before = Physics.alive;
-    const { game } = newGame(1, null, { physics: RAPIER });
+    const { game } = newGame(1);
     const pieces = ['piece-ramp', 'piece-pegs', 'piece-bumps', 'piece-funnel', 'piece-curve-left'];
     let most = 0;
     for (const id of pieces) {
@@ -177,7 +169,7 @@ describe('the race as physics', () => {
     // one ball, rolled from just short of the end of a straight on to the lane: past the straight's last sample and
     // nearer to it than to the lane's second, it was read as still on the straight, at its very end, and measured
     // against the straight's floor carried on past the join, which the lane's cup falls away below
-    const track = compile(chain(['start', 'straight', 'finish']), PHYSICAL);
+    const track = compile(chain(['start', 'straight', 'finish']));
     const race = new Physics(RAPIER, track, {}, { count: 1 });
     const seg = track.segments[1];
     const k = (seg.arc.length - 1) * 3;

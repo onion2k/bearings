@@ -83,21 +83,22 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   expect(done.best).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
 
-  // and the field rolls on past the line into the lane at the end, and waits there in the order it finished
+  // and the field rolls on past the line into the lane at the end, and comes to rest there, in the cup: in a V a
+  // chute wide, where two may sit abreast, and not always in the order it finished; the rules hold that none is
+  // inside another
   await play(page, 10 * 60, 'rolling up the lane');
   const queue = await page.evaluate(() =>
     window
       .game!.marbles()
       .filter((m) => m.place > 0)
-      .sort((a, b) => a.place - b.place)
-      .map((m) => ({ segment: m.segment, along: m.along, speed: m.speed })),
+      .map((m) => ({ segment: m.segment, speed: m.speed })),
   );
   expect(queue.length).toBe(content.marbles);
-  for (let k = 1; k < queue.length; k++) {
-    expect(queue[k].segment, 'all in the lane').toBe(queue[0].segment);
-    expect(queue[k - 1].along - queue[k].along, `place ${k + 1} a marble behind place ${k}`).toBeCloseTo(0.9, 1);
-    expect(Math.abs(queue[k].speed), 'at rest').toBeLessThan(0.05);
+  for (const m of queue) {
+    expect(m.segment, 'all in the lane').toBe(queue[0].segment);
+    expect(Math.abs(m.speed), 'at rest').toBeLessThan(0.05);
   }
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
 
   // what the page was told, and what it shows
   const said = await page.evaluate(() => window.game!.events());
@@ -196,8 +197,8 @@ test('a field let go races to the cup, and the board says who won', async ({ pag
   // takes the field round its bowl and out through the hole, the leap throws it into the air, and the chute's
   // sweeper and gate stand in its way
   for (const [name, what] of [
-    ['The Tower', 'swirling'],
-    ['The Leap', 'flying'],
+    ['The Tower', 'inBowl'],
+    ['The Leap', 'aloft'],
     ['The Chute', 'racing'],
   ] as const) {
     const i = content.runs.indexOf(name);
@@ -351,13 +352,12 @@ test('the screen splits to a view for every picked marble, follows them through 
   expect(problems).toEqual([]);
 });
 
-test('a piece raced under physics through the page: every marble home, in order, and the solver where physics cannot go', async ({
+test('a piece raced under physics through the page: every marble home, in order, a splitter and all', async ({
   page,
 }) => {
   const problems = watch(page);
-  await start(page, { seed: 7, paused: true, physics: true });
+  await start(page, { seed: 7, paused: true });
   // First Drop, a peg board and a gate, is one physics races now: raced through the page, every marble home
-  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
   await page.evaluate(() => window.game!.release());
   await play(page, 120, 'the off down First Drop under physics');
   expect(await page.evaluate(() => window.game!.settle(60))).toBeGreaterThan(0);
@@ -370,7 +370,6 @@ test('a piece raced under physics through the page: every marble home, in order,
     g.browse('pieces');
     g.pick(g.content().catalog.indexOf('Left turn'));
   });
-  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
   await page.evaluate(() => window.game!.release());
   await play(page, 60, 'the off under physics');
   const away = await page.evaluate(() => window.game!.state());
@@ -391,11 +390,9 @@ test('a piece raced under physics through the page: every marble home, in order,
     g.browse('designs');
     for (const k of ['drop', 'brake', 'finish'] as const) g.lay(k);
   });
-  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
   expect(await page.evaluate(() => window.game!.designer().pieces)).toEqual(['start', 'drop', 'brake', 'finish']);
   // kept, since a run still being built is not let go; the test's own save, in a browser of its own
   expect(await page.evaluate(() => window.game!.keep('Drop and brake'))).toEqual([]);
-  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
   await page.evaluate(() => window.game!.release());
   await play(page, 60, 'the off down a drop and a brake under physics');
   expect(await page.evaluate(() => window.game!.settle(30))).toBeGreaterThan(0);
@@ -404,13 +401,18 @@ test('a piece raced under physics through the page: every marble home, in order,
   expect(braked.finished, 'every marble home off the drop and through the brake').toBe(8);
   expect(braked.lost + braked.stalled).toBe(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
-  // and back to the solver for a jump, which physics has not got to, with nothing left of the world behind
+  // and a splitter, the field parted into two lanes and brought together again, raced home under physics too
   await page.evaluate(() => {
     const g = window.game!;
     g.browse('pieces');
-    g.pick(g.content().catalog.indexOf('Jump'));
+    g.pick(g.content().catalog.indexOf('Splitter'));
   });
-  expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
+  await page.evaluate(() => window.game!.release());
+  await play(page, 60, 'the off through a splitter under physics');
+  expect(await page.evaluate(() => window.game!.settle(30))).toBeGreaterThan(0);
+  const parted = await page.evaluate(() => window.game!.state());
+  expect(parted.over).toBe(true);
+  expect(parted.finished, 'every marble home through both lanes').toBe(8);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });
@@ -450,8 +452,16 @@ test('a run built on the board a piece at a time, kept, raced, and put back on a
   await expect(page.locator('#problems')).toContainText('no finish');
 
   // built from the palette, each piece on where the last hands a marble on, the run framed as it grows
-  for (const name of ['Ramp', 'Peg board', 'Left turn', 'Ramp', 'The end']) await piece(name).click();
+  for (const name of ['Ramp', 'Peg board']) await piece(name).click();
+  // a grid over the peg board, the last piece laid: the button pressed while it has one, and put over that piece
+  const grid = page.locator('#grid');
+  await expect(grid).toHaveAttribute('aria-pressed', 'false');
+  await grid.click();
+  await expect(grid).toHaveAttribute('aria-pressed', 'true');
+  expect((await designer()).lids).toEqual([2]);
+  for (const name of ['Left turn', 'Ramp', 'The end']) await piece(name).click();
   expect((await designer()).pieces).toEqual(['start', 'ramp', 'pegs', 'curveLeft', 'ramp', 'finish']);
+  expect((await designer()).lids, 'the grid stays over the board it was put over').toEqual([2]);
   await expect(page.locator('#problems')).toHaveText('sound, and ready to keep');
   await expect(page.locator('#keep')).toBeEnabled();
   await expect(piece('Ramp'), 'nothing goes on after the end').toBeDisabled();
@@ -509,6 +519,11 @@ test('a run built on the board a piece at a time, kept, raced, and put back on a
   expect(back.runId).toBe('design-1');
   expect(back.best).toBeCloseTo(raced[0].best, 5);
   await expect(page.locator('#title')).toHaveText('Down and round 1');
+  // and its grid with it, over the board it was put over
+  const reloaded = JSON.parse(await page.evaluate(() => window.game!.save())) as {
+    designs: { pieces: { lid?: boolean }[] }[];
+  };
+  expect(reloaded.designs[0].pieces.flatMap((p, i) => (p.lid ? [i] : []))).toEqual([2]);
 
   // thrown away: nothing left on the shelf, so the builder again, and the save forgets it and its best
   await page.locator('#forget').click();

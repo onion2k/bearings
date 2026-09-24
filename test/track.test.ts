@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { MARBLES, RADIUS } from '../src/marbles';
+import { branched } from './physics-helpers';
+import { MARBLES, RADIUS } from '../src/race';
 import { FIRST } from '../src/runs';
-import { PHYSICAL } from '../src/physics';
 import {
   BRAKE_SWING,
   BRAKE_WAVE,
   CELL,
   HALF_WIDTH,
-  LANE,
+  LEAN,
+  WALL,
   LEVEL,
   MAX_SAMPLES,
   MOVING_MOST,
-  NARROW,
   SPIRAL_WALL,
   type Facing,
   type Placed,
@@ -343,7 +343,8 @@ describe('the track', () => {
     it('puts every peg on the board, clear of its walls, with room between them for a marble', () => {
       const seg = track.segments[1];
       const pegs = seg.obstacles;
-      expect(pegs.length).toBeGreaterThan(10);
+      // four rows, of three and two in turn
+      expect(pegs.length).toBe(10);
       const at = pose0();
       for (const peg of pegs) {
         expect(peg.motion.kind).toBe('fixed');
@@ -363,7 +364,7 @@ describe('the track', () => {
         }
     });
 
-    it('moves a sweeper across and back, a gate open and shut, and a wheel round, with time', () => {
+    it('moves a sweeper across and back, and a gate shut and aside, with time', () => {
       const out = pose0();
       const sweeper = track.segments[2].obstacles.find((o) => o.motion.kind === 'sweep')!;
       const across = [0, 0.25, 0.5, 0.75].map(
@@ -372,55 +373,17 @@ describe('the track', () => {
       expect(Math.max(...across) - Math.min(...across), 'it sweeps a good way across').toBeGreaterThan(3);
       const gate = track.segments[3].obstacles.find((o) => o.motion.kind === 'gate')!;
       const period = (gate.motion as { period: number }).period;
-      const there = Array.from({ length: 80 }, (_, k) => pose(gate, (k / 40) * period, 0, out).present);
-      expect(there.includes(true) && there.includes(false), 'shut some of the time and open the rest').toBe(true);
+      const aside = Array.from({ length: 80 }, (_, k) => Math.abs(pose(gate, (k / 40) * period, 0, out).across));
+      expect(
+        aside.some((a) => a < 0.01) && aside.some((a) => a > gate.half * 1.9),
+        'shut some of the time and out of the pen the rest',
+      ).toBe(true);
       // open aside toward one wall on one turn, and the other on the next
       // half way through the time it stands open, when it is right out of the pen
       const shut = (gate.motion as { shut: number }).shut;
-      const aside = (turn: number) => pose(gate, turn * period + (shut + period) / 2, 0, { ...out }).across;
-      expect(Math.sign(aside(0))).toBe(-Math.sign(aside(1)));
-      expect(Math.abs(aside(0)), 'right out of the way').toBeGreaterThan(gate.half * 1.9);
-      const paddles = track.segments[4].obstacles.filter((o) => o.motion.kind === 'paddle');
-      expect(paddles.length).toBeGreaterThanOrEqual(3);
-      // at any moment at least one paddle is down in the chute, moving on the way the marbles go
-      for (let k = 0; k < 20; k++) {
-        const t = k * 0.13;
-        const down = paddles.map((o) => pose(o, t, 0, { ...out })).filter((p) => p.present);
-        expect(down.length, `at ${t.toFixed(2)} s`).toBeGreaterThan(0);
-        for (const p of down) expect(p.va).toBeGreaterThan(0);
-      }
-    });
-
-    it('is met, as it comes down, as the arm that is drawn: the rod from its axle, tip and all', () => {
-      const paddle = track.segments[4].obstacles.find((o) => o.motion.kind === 'paddle')!;
-      const m = paddle.motion as { period: number; axle: number; arm: number; turn: number };
-      const ball = RADIUS;
-      const out = pose0();
-      // the arm worked out the long way round, from where it hangs: how far a marble's middle, sitting `a` along
-      // the chute at the height of the middles, is from the rod between the axle and the tip
-      const away = (theta: number, a: number) => {
-        const tip = [Math.sin(theta) * m.arm, m.axle - Math.cos(theta) * m.arm];
-        const along = tip[0],
-          up = tip[1] - m.axle;
-        const len = Math.hypot(along, up);
-        const s = Math.min(Math.max(((a - 0) * along + (0 - m.axle) * up) / (len * len), 0), 1);
-        return Math.hypot(a - s * along, 0 - (m.axle + s * up));
-      };
-      let seen = 0;
-      for (let k = 0; k < 60; k++) {
-        const t = (k / 60) * m.period;
-        pose(paddle, t, 0, out, ball);
-        const theta = Math.PI * 2 * ((((t / m.period + m.turn) % 1) + 1) % 1) - Math.PI;
-        // where the arm is solid at a marble's height, as the pose has it, against where a marble really touches it
-        for (let n = -40; n <= 40; n++) {
-          const a = paddle.along + n * 0.05;
-          const touches = away(theta, a - paddle.along) < paddle.radius + ball;
-          const inPose = out.present && Math.abs(a - out.along) < out.radius + ball;
-          expect(inPose, `at ${t.toFixed(2)} s, ${(a - paddle.along).toFixed(2)} from the axle`).toBe(touches);
-          if (touches) seen++;
-        }
-      }
-      expect(seen, 'and it is down some of the time, or this proves nothing').toBeGreaterThan(100);
+      const open = (turn: number) => pose(gate, turn * period + (shut + period) / 2, 0, { ...out }).across;
+      expect(Math.sign(open(0))).toBe(-Math.sign(open(1)));
+      expect(Math.abs(open(0)), 'right out of the way').toBeGreaterThan(gate.half * 1.9);
     });
 
     it('keeps time for each moving piece apart, so a race can start them anywhere in their turn', () => {
@@ -440,7 +403,11 @@ describe('the track', () => {
       const bowl = seg.funnel!;
       const runIn = track.segments[track.segments.indexOf(seg) - 1];
       expect(runIn.piece, 'the run in is the funnel too').toBe(seg.piece);
-      expect(bowl.z, 'a level below where the piece is entered').toBeCloseTo(runIn.points[2] - LEVEL, 4);
+      // and lower by the lean for however far along the run the bowl begins beyond the run in
+      expect(bowl.z, 'a level below where the piece is entered').toBeCloseTo(
+        runIn.points[2] - LEVEL - LEAN * (seg.start - runIn.start),
+        4,
+      );
       expect(bowl).toBeTruthy();
       expect(bowl.hole).toBeGreaterThan(MARBLE / 2);
       expect(bowl.rim).toBeGreaterThan(bowl.hole * 3);
@@ -464,7 +431,10 @@ describe('the track', () => {
         CELL,
         4,
       );
-      expect(out.points[end + 2], 'and a level down').toBeCloseTo(out.points[2] - LEVEL, 4);
+      expect(out.points[end + 2], 'and a level down, and the lean for its length').toBeCloseTo(
+        out.points[2] - LEVEL - LEAN * out.arc[out.arc.length - 1],
+        4,
+      );
       let under = 0;
       for (let k = 0; k < out.arc.length; k++) {
         const o = k * 3;
@@ -537,12 +507,6 @@ describe('the track', () => {
       for (const s of [1, 2, 3]) expect(narrowest(s), 'and never narrower than a chute').toBeCloseTo(HALF_WIDTH, 6);
     });
 
-    it('squeezes a narrow section down to single file, where two cannot pass', () => {
-      expect(narrowest(4)).toBeCloseTo(NARROW, 6);
-      expect((NARROW - RADIUS) * 2, 'room across for a marble to be beside another').toBeLessThan(RADIUS * 2);
-      expect(NARROW, 'and still room for one').toBeGreaterThan(RADIUS);
-    });
-
     it('scatters mounds over a bumpy section, on the floor and clear of its walls', () => {
       const seg = track.segments[5];
       expect(seg.mounds.length).toBeGreaterThan(5);
@@ -562,27 +526,30 @@ describe('the track', () => {
       expect(moundHeight(track.segments[1], 1, 0)).toBe(0);
     });
 
-    it('ends in a lane one marble wide, long enough for the whole field to wait in nose to tail', () => {
+    it('ends in a lane that is a groove a chute wide, long enough for the whole field to wait in nose to tail', () => {
       const end = track.segments[6];
       expect(end.next).toBe(-1);
-      expect(end.width[end.width.length - 1]).toBeCloseTo(LANE, 6);
-      expect((LANE - RADIUS) * 2, 'single file').toBeLessThan(RADIUS * 2);
-      const lane = end.arc.filter((_, k) => end.width[k] <= LANE + 1e-6);
-      expect(lane[lane.length - 1] - lane[0], 'room for eight').toBeGreaterThan(RADIUS * 2 * MARBLES);
+      expect(end.trough).toBe(true);
+      for (const w of end.width) expect(w).toBeCloseTo(HALF_WIDTH, 6);
+      expect(end.length, 'room for eight').toBeGreaterThan(RADIUS * 2 * MARBLES);
+      // covered, and level where the stop stands at its end
+      expect(end.wall).toBe(WALL);
+      expect(end.lid).toEqual({ from: 0, upto: end.length });
+      expect(Math.abs(end.tangents[end.tangents.length - 1])).toBeLessThan(0.1);
     });
 
     it('says two parts of a run that run through each other are wrong with it', () => {
       // a funnel after a left turn once had its bowl lying on the turn's own arc; a level down, it is clear
       expect(check(chain(['start', 'curveLeft', 'funnel', 'straight', 'finish']))).toEqual([]);
-      // three turns to the left after a peg board bring the end of the run back round across the board
-      const crossing = chain(['start', 'straight', 'pegs', 'curveLeft', 'curveLeft', 'curveLeft', 'finish']);
-      expect(check(crossing).join('\n')).toMatch(/run through each other/);
+      // a peg board on each of a splitter's two lanes, a cell apart and each wider than a cell: once three turns to
+      // the left brought a run back across a board, but the lean now carries it clear underneath
+      expect(check(branched('pegs')).join('\n')).toMatch(/pieces 2 and 3, a pegs and a pegs, run through each other/);
     });
 
-    it('says a piece narrower than single file is wrong with a run', () => {
+    it('says a piece narrower than a chute is wrong with a run', () => {
       const bad = compile(run);
-      bad.segments[4].width[10] = RADIUS * 0.9;
-      expect(checkTrack(bad).join('\n')).toMatch(/narrower than single file/);
+      bad.segments[4].width[10] = HALF_WIDTH * 0.9;
+      expect(checkTrack(bad).join('\n')).toMatch(/narrower than a chute/);
     });
   });
 
@@ -595,7 +562,7 @@ describe('the track', () => {
     expect(counted).toBe(track.samples);
   });
 
-  describe('the brake, and what physics asks of a shape', () => {
+  describe('the brake, and what a real ball asks of a shape', () => {
     it('the brake hands on two cells along and a level down, at a chute’s width the whole way, snaking between', () => {
       expect(exitOf({ kind: 'brake', x: 0, y: 0, z: 0, facing: 0 })).toEqual({ x: 2, y: 0, z: -1, facing: 0 });
       const run = chain(['start', 'brake', 'straight', 'finish']);
@@ -616,23 +583,22 @@ describe('the track', () => {
       expect(radius).toBeGreaterThan(HALF_WIDTH * 2);
     });
 
-    it('compiled for physics, the drop is under a lid the whole way, a spiral is walled higher, and the narrow is a groove', () => {
+    it('covers the drop the whole way, walls a spiral higher, and makes the narrow a groove', () => {
       const run = chain(['start', 'drop', 'spiralLeft', 'narrow', 'straight', 'finish']);
-      const physics = compile(run, PHYSICAL);
-      const plain = compile(run);
+      const physics = compile(run);
       const drop = physics.segments[1];
       expect(drop.lid).toEqual({ from: 0, upto: drop.length });
       expect(physics.segments[2].wall).toBe(SPIRAL_WALL);
       expect(physics.segments[3].trough).toBe(true);
       for (const w of physics.segments[3].width) expect(w).toBeCloseTo(HALF_WIDTH, 6);
       for (const s of [0, 1, 3, 4, 5]) expect(physics.segments[s].wall, `segment ${s}`).toBe(physics.wall);
-      // and none of it for the solver, whose marbles stay on the floor by rule and squeeze through the narrow
-      for (const seg of plain.segments) {
-        expect(seg.lid).toBeNull();
-        expect(seg.wall).toBe(plain.wall);
-      }
-      expect(plain.segments[3].trough).toBe(false);
-      expect(Math.min(...plain.segments[3].width)).toBeCloseTo(NARROW, 6);
+      // the groove opens out flat again at its end, where it hands a field on, and the lane's does not
+      const groove = physics.segments[3];
+      expect(groove.floor[0]).toBeCloseTo(HALF_WIDTH, 6);
+      expect(Math.min(...groove.floor)).toBeLessThan(0.1);
+      expect(groove.floor[groove.floor.length - 1]).toBeCloseTo(HALF_WIDTH, 6);
+      const lane = physics.segments[5];
+      expect(lane.floor[lane.floor.length - 1]).toBeLessThan(0.1);
     });
 
     it('a lid over part of a piece covers that share of its length', () => {

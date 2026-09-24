@@ -1,12 +1,12 @@
 {
-  "the field on the gate": {
-    "relative": 0.000030405348471029712,
-    "ms": 0.00046,
-    "ref": 15.21429
-  },
   "eight marbles racing": {
-    "relative": 0.0004414035309096724,
-    "ms": 0.0069,
-    "ref": 15.62783
+    "relative": 0.020478764129267215,
+    "ms": 0.35949,
+    "ref": 17.55417
+  },
+  "eight marbles racing the Stress Test": {
+    "relative": 0.025236061645294097,
+    "ms": 0.41429,
+    "ref": 16.4165
   }
 }

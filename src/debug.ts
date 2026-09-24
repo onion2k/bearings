@@ -12,13 +12,13 @@
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import type { Engine, Game, Shelf } from './game';
+import type { Game, Shelf } from './game';
 import { checkInvariants } from './invariants';
-import { FINISHED, FLYING, LOST, RACING, STALLED, SWIRLING, WAITING } from './marbles';
+import { FINISHED, LOST, RACING, RADIUS, type Race, STALLED, WAITING } from './race';
 import { seeded } from './random';
 import { PIECES } from './catalog';
 import { PALETTE } from './designer';
-import type { Kind } from './track';
+import { type Kind, at, spot } from './track';
 import { RUNS } from './runs';
 
 declare global {
@@ -46,10 +46,11 @@ export interface GameState {
   racing: number;
   finished: number;
   stalled: number;
-  flying: number;
   lost: number;
-  /** Going round a funnel's bowl. */
-  swirling: number;
+  /** Racing more than a ball's width clear of the floor under it: off a lip, or falling through a funnel's throat. */
+  aloft: number;
+  /** Racing on a funnel's bowl. */
+  inBowl: number;
   over: boolean;
   /** Who is leading, or who won; -1 with nothing to say. */
   leader: number;
@@ -71,7 +72,11 @@ export interface Marble {
   speed: number;
   /** How far along the whole run it has got. */
   far: number;
-  state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'flying' | 'lost' | 'swirling';
+  state: 'waiting' | 'racing' | 'finished' | 'stalled' | 'lost';
+  /** How high its middle is over the floor under it, along the floor's own up: a ball's radius where it rolls. */
+  up: number;
+  /** Whether it is on a funnel's bowl, where the floor is the bowl's and not the line it is ordered by. */
+  bowl: boolean;
   place: number;
   took: number;
   /** Which player has it, from 1; 0 where it is nobody's. */
@@ -87,6 +92,8 @@ export interface Content {
   length: number;
   pieces: number;
   marbles: number;
+  /** Each funnel's bowl on the run that is on: its segment, and the middle of its rim, for a picture to look at. */
+  bowls: { segment: number; x: number; y: number; z: number }[];
 }
 
 /** The builder, as a test sees it. */
@@ -94,6 +101,8 @@ export interface Designing {
   building: boolean;
   /** The run being built, by kind, the start first; empty while nothing is. */
   pieces: Kind[];
+  /** Which of those pieces have a grid over them, by their place in the run. */
+  lids: number[];
   /** What is wrong with it, in the player's terms; empty once it could be kept. */
   problems: string[];
   /** The kinds it can be built with. */
@@ -133,6 +142,8 @@ export interface GameApi {
   lay(kind: Kind): boolean;
   /** The last piece of the run being built taken off; whether there was one. */
   undo(): boolean;
+  /** A grid over the last piece of the run being built, or taken off it; whether either happened. */
+  lid(): boolean;
   /** The run being built kept and put on; what is wrong with it instead, and nothing kept, where anything is. */
   keep(name?: string): string[];
   /** The run being built thrown away, and the run it was begun from put back on. */
@@ -170,8 +181,6 @@ export interface GameApi {
   cameras(): { on: boolean; views: number; marbles: number[]; targets: number[][] };
   /** Where the ordinary, unsplit camera is looking: a test's way of telling a chase still moving from one frozen. */
   chase(): [number, number, number];
-  /** Which engine is racing the run that is on: the solver, or physics where the page was given it and it can. */
-  engine(): Engine;
 }
 
 /** What the page gives the API that is not the game's: time, the camera and the renderer. */
@@ -197,7 +206,14 @@ export interface DebugHost {
   events: string[];
 }
 
-const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'flying', 'lost', 'swirling'] as const;
+const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'lost'] as const;
+
+/** How high marble `i` is over the floor under it, along the floor's up; a spot to read into, so reading makes nothing. */
+const under = spot();
+function upOf(marbles: Race, i: number): number {
+  const s = at(marbles.track, marbles.segment[i], marbles.along[i], under);
+  return s.ux * (marbles.x[i] - s.x) + s.uy * (marbles.y[i] - s.y) + s.uz * (marbles.z[i] - s.z);
+}
 
 export function createApi(host: DebugHost): GameApi {
   const { game } = host;
@@ -223,13 +239,16 @@ export function createApi(host: DebugHost): GameApi {
       const { marbles } = game;
       let waiting = 0,
         racing = 0,
-        flying = 0,
-        swirling = 0;
+        aloft = 0,
+        inBowl = 0;
       for (let i = 0; i < marbles.count; i++) {
         if (marbles.state[i] === WAITING) waiting++;
-        else if (marbles.state[i] === RACING) racing++;
-        else if (marbles.state[i] === FLYING) flying++;
-        else if (marbles.state[i] === SWIRLING) swirling++;
+        else if (marbles.state[i] === RACING) {
+          racing++;
+          const seg = marbles.track.segments[marbles.segment[i]];
+          if (seg.funnel) inBowl++;
+          else if (upOf(marbles, i) > RADIUS * 3) aloft++;
+        }
       }
       const standing = game.standing();
       return {
@@ -246,9 +265,9 @@ export function createApi(host: DebugHost): GameApi {
         racing,
         finished: marbles.finishers,
         stalled: marbles.stalled,
-        flying,
         lost: marbles.lost,
-        swirling,
+        aloft,
+        inBowl,
         over: game.over,
         leader: standing.length > 0 ? standing[0] : -1,
         champion: game.champion(),
@@ -269,6 +288,8 @@ export function createApi(host: DebugHost): GameApi {
           speed: marbles.speed[i],
           far: marbles.far(i),
           state: NAMES[marbles.state[i]] ?? 'waiting',
+          up: upOf(marbles, i),
+          bowl: marbles.track.segments[marbles.segment[i]].funnel !== null,
           place: marbles.place[i],
           took: marbles.took[i],
           player: game.players[i] ?? 0,
@@ -281,6 +302,9 @@ export function createApi(host: DebugHost): GameApi {
       length: game.track.length,
       pieces: game.current.pieces.length,
       marbles: game.marbles.count,
+      bowls: game.track.segments.flatMap((seg, segment) =>
+        seg.funnel ? [{ segment, x: seg.funnel.x, y: seg.funnel.y, z: seg.funnel.z }] : [],
+      ),
     }),
     events() {
       return host.events.splice(0);
@@ -309,6 +333,11 @@ export function createApi(host: DebugHost): GameApi {
       host.rebuild();
       return went;
     },
+    lid() {
+      const went = game.lid();
+      host.rebuild();
+      return went;
+    },
     keep(name = '') {
       const refused = game.keep(name);
       host.rebuild();
@@ -327,6 +356,7 @@ export function createApi(host: DebugHost): GameApi {
       return {
         building: designer !== null,
         pieces: designer ? designer.run.pieces.map((p) => p.kind) : [],
+        lids: designer ? designer.run.pieces.flatMap((p, i) => (p.lid ? [i] : [])) : [],
         problems: designer ? designer.problems() : [],
         palette: [...PALETTE],
         designs: game.progress.save.designs.map((d) => ({ id: d.id, name: d.name, pieces: d.pieces.length })),
@@ -372,8 +402,7 @@ export function createApi(host: DebugHost): GameApi {
     chase() {
       return host.chase();
     },
-    engine: () => game.engine,
   };
 }
 
-export { FINISHED, FLYING, LOST, RACING, STALLED, WAITING };
+export { FINISHED, LOST, RACING, STALLED, WAITING };
