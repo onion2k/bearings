@@ -8,7 +8,7 @@
  * none the wiser.
  */
 import type { Random } from './random';
-import type { Track } from './track';
+import type { Obstacle, Track } from './track';
 
 /** What happens in a race, for whoever shows it. Every one may be left out. */
 export interface RaceEvents {
@@ -87,6 +87,13 @@ export interface Race {
   roll(i: number, out: Roll): Roll;
   /** What must always hold of the race as it stands, a line each. */
   check(): string[];
+  /**
+   * Where a moving part really is, where the engine keeps it as a body of its
+   * own rather than working it out from the clock: how far across a sweeper
+   * or a gate stands, or how far round from straight down a wheel's first
+   * paddle has turned. Nothing where the clock is all there is.
+   */
+  where?(ob: Obstacle): number | undefined;
   /** Whatever the engine holds outside the garbage collector's reach let go of, when another race takes its place. */
   dispose?(): void;
 }

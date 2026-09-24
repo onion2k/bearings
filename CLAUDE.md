@@ -14,7 +14,7 @@ nothing but slopes. The template's stub, a sled shoving balls into a hole, is
 gone; the gates it held have each been handed the race instead. The race is
 now crossing over to real physics, Rapier behind the same `Race` the solver
 stands behind, a kind of piece at a time: the plan is in six parts in
-`~/.claude/plans/rapier-in-six.md`, and the first has landed.
+`~/.claude/plans/rapier-in-six.md`, and the first four have landed.
 
 ## The factory
 
@@ -65,7 +65,7 @@ for what real physics buys, and the budget is what that leaves.
 ## Commands
 
     npm run dev            the game at http://localhost:5198; ?physics=1 races on Rapier wherever it can
-    npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~15 s)
+    npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~30 s)
     npm run check          all of it: check:quick, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~30 s)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
@@ -294,26 +294,38 @@ What to copy the shape of, when building something new:
   gate until the off, since the gate's own slope would set it going. Where
   a ball is on the track (`segment`, `along`, `across`, for the cameras, the
   board and the rules) is read back each step from the nearest sample of its
-  own segment or its neighbours. `check` rules on a ball faster than the air
+  own segment or its neighbours, and a ball whose position runs past the end
+  of that segment is on the next one: read against the last sample of the
+  piece it had left, a ball over a join into the lane's cup read as sunk into
+  the floor. It goes back a segment only if it is behind the join by that
+  segment's own measure too, since at a join that turns downward there is a
+  sliver past the end of one and short of the start of the other. `check` rules on a ball faster than the air
   allows, one into the floor, two inside each other, and the tallies; the
   world is one of Rapier's own memory, let go of by `dispose` when another
   run is put on, and `'physics worlds'` in `scripts/leaks.ts` holds it to
-  one. Every kind that is no more than a channel races under it, and now
-  every kind with pegs or mounds fixed in it, and a funnel — start,
-  straight, the turns, ramp, drop, the spirals, the shallows, narrow, the
-  brake, pegs, bumps and the funnel — each raced alone on 24 seeds
-  (`test/physics-slopes.test.ts`, `test/physics-boards.test.ts` and
-  `test/physics-obstacles.test.ts`, three files so that they run on
-  several workers, `physics-obstacles`'s own checking `check()` every five
-  frames through the race and not only at its end, since a peg's point or
-  a mound's crest is where a ball is most likely to read wrong for a
-  moment) and again fed by two drops, the fastest any one piece hands a
-  field on at (`test/physics-pieces.test.ts`, with what each kind is for;
-  `test/physics-helpers.ts` sets a field on a run of a test's own, and
-  `mixed()` there is how far a field's order after a piece follows its
-  order before it, the same measure `test/runs.test.ts` holds a shipped
-  run's own pieces to); `supports` refuses a track with a moving part, a
-  jump, or a branch, still. Rapier is deterministic on this machine, to the
+  one. Every kind races under it but a jump and a branch — start, straight,
+  the turns, ramp, drop, the spirals, the shallows, narrow, the brake, pegs,
+  bumps, the funnel, the sweeper, the gate and the wheel — each raced alone
+  on 24 seeds (`test/physics-slopes.test.ts`, `-boards`, `-obstacles` and
+  `-moving`, the last two checking `check()` every five frames through the
+  race and not only at its end, since a peg's point, a mound's crest or a
+  part that moves is where a ball is most likely to read wrong for a
+  moment), again fed by two drops, the fastest any one piece hands a field
+  on at (`test/physics-fed-first.test.ts` and `-second`), and held to what
+  each kind is for in `test/physics-pieces.test.ts`; `test/physics-helpers.ts`
+  sets a field on a run of a test's own, and `mixed()` there is how far a
+  field's order after a piece follows its order before it, the measure
+  `test/runs.test.ts` holds a shipped run's own pieces to. Every run that
+  comes with the game and physics can race — First Drop, The Chute, The
+  Tower and Switchback — is raced under physics on 24 seeds with every
+  marble home and no rule broken (`test/physics-runs-first.test.ts` and
+  `-second`); whether each is a race and not a procession under physics is
+  not asked there yet, since the grid still tells a great deal of who wins
+  and that is for tuning later. The tests are split across many files so
+  that they race on the machine's cores, and Vitest's own timeout is thirty
+  seconds (`vitest.config.ts`), since a test that races a field over 24
+  seeds took three to six on its own and failed at random at five under
+  the load of every other file racing beside it. Rapier is deterministic on this machine, to the
   bit, held by a test; across machines it is not verified. The mesh is made
   with Rapier's `FIX_INTERNAL_EDGES`, without which a ball rolling from one
   triangle of a flat floor to the next was bumped by the seam, and two
@@ -344,6 +356,40 @@ What to copy the shape of, when building something new:
   segment its hole hands on to, four times what landing ever took on any
   seed tried, at any speed a run feeds a funnel; a ball still reading wrong
   once that runs out is off the run for real, not a bookkeeping mistake.
+- **Parts that move, under physics:** each sweeper's paddle and gate's bar
+  is a body on a prismatic joint across its piece, and each wheel a body on
+  a revolute joint at its axle, its four paddles one body, each joined to a
+  fixed anchor, built in `Physics.build` and parked where its clockwork has
+  it at the off (`park`). A slide's motor is set every substep toward
+  where `pose` has it, its force capped (`SLIDE_FORCE`); a wheel's motor
+  turns at its pace, pushing in proportion to how far behind it is
+  (`WHEEL_GRIP`). So a ball caught between a part and a wall holds the part
+  back rather than being crushed, and the part catches up, or goes on at
+  its pace, once the ball is out: `test/physics-yield.test.ts` and
+  `-yield-wheel` hold each to having been held back by more than a ball's
+  width somewhere in 24 races and to being back on its clock after. A part
+  meets balls and nothing else (Rapier's collision groups, `TRACK`, `BALL`
+  and `PART`), since a gate slides aside into its wall and a sweeper's ends
+  swing through theirs. `Race.where` is where a part really is, and the
+  scene draws it there; the solver has no `where`, and the scene draws its
+  parts from the clock as it always did. A wheel's paddles are polished:
+  one coming down on a ball closes a wedge on it against the floor only a
+  quarter-turn from flat, which a ball squirts out of only if the paddle
+  grips it less than about 0.27, and at the track's own grip 48 of 192 were
+  held there and stopped the wheel. What physics asked of the pieces around
+  the parts is in `PHYSICS_SHAPES`: the sweeper's board walled at 1.8
+  (`SWEEPER_WALL`), since its paddle throws a fast ball over a wall of 1.2
+  where the board narrows; the gate's pen walled at 1.8 (`GATE_WALL`), since
+  a field let go at once runs up the pen's closing wall, and its bar halfway
+  down the piece (`GATE_AT`) rather than at 0.6, since a crowd let go from a
+  standstill into a neck closing over the ramp's flattening end arched in
+  it as a hopper does, all eight, where let go halfway down it has speed
+  first and the neck closes over twice the distance; and the wheel's pen
+  closing from 0.7 rather than 0.8 (`WHEEL_CLOSE`), for the same arch.
+  Fed straight off two drops a wheel's field still arched in its neck on
+  one seed in 48, which `test/physics-wheel.test.ts` holds to a number
+  rather than to nothing. The pictures are `physics-pen.png` and
+  `physics-wheel.png`, and the perf spec measures the frame on The Chute.
 - **What physics asks of a shape:** `PHYSICS_SHAPES` in `src/track.ts`,
   merged over `SHAPES` when a run is compiled for physics, and nothing the
   solver sees. Every crest launches a ball at speed: a ball stays on a crest
@@ -380,8 +426,16 @@ What to copy the shape of, when building something new:
   floor's own friction from as much as forty degrees off dead astern, in 98
   of 384 races over a board fed as gently as the gate ever feeds one, and a
   steeper board or a polished post held more, not fewer; a cone's side
-  leans in, so a ball pressed against it is pushed up and off, and at 0.28
-  wide none did over 48 seeds either fed or alone. A **mound** is steeper
+  leans in, so a ball pressed against it is pushed up and off. A physics
+  board stands its cones `PEG_SPACING` (2.4) apart, where the solver's are
+  1.6: a gap wider than a ball and narrower than two wedged two balls
+  coming down abreast, in 28 of 192 races fed off a straight. Four rows,
+  staggered by half, the first with a cone on the middle so the stream
+  from the chute is split rather than aimed at a gap, and the last well
+  short of where the board closes, stop nothing over 48 seeds fed off the
+  gate, a straight, a ramp or two drops. A cone throws a fast ball up as
+  well as aside, so the board is walled at 2.2 (`PEG_WALL`): at 1.8, twelve
+  in 384 went over it off two drops. A **mound** is steeper
   under physics too, `MOUND_PHYSICS`: a shallow, wide mound barely turns a
   fast ball aside at all, the way a car over a shallow speed bump is not,
   and left a fast field's order at 0.96, next to nothing changed; steeper
@@ -456,34 +510,26 @@ Eight runs race, up to eight players pick a marble each, and a player can
 build and keep runs of their own. The race is crossing over to physics in
 six parts (`~/.claude/plans/rapier-in-six.md`): the engine behind the
 interface has landed, every kind that is no more than a channel with it,
-the drop under a lid and the brake new, and now pegs, mounds and the
-funnel; still to come are the moving parts as motored bodies with The
-Chute and Switchback, the jump reshaped and the lid on any piece with The
-Leap, and the branches, the Stress Test and the solver retired. Each piece
+the drop under a lid and the brake new, then pegs, mounds and the funnel,
+and now the moving parts as motored bodies; still to come are the jump
+reshaped and the lid on any piece with The Leap, and the branches, the
+Stress Test and the solver retired. Each piece
 is redesigned for physics rather than helped by a rule: when a piece fails
 under physics, the piece changes.
 
-**No run has crossed yet, and part 3's own goal — First Drop and The
-Tower, rebuilt without their gates — is open.** Every design tried (a
-second peg board, a bumps board, a narrow squeeze, each early, late, or in
-place of the gate) raced every marble home, but the winner came from the
-back half of the grid on at most 1 of 24 races, where a run has to manage
-between 5 and 19. This held across every layout, which says it is not a
-layout to fix: under the solver, a peg or a paddle's strike comes off up
-to `RATTLE` off true by the race's own draw, uncorrelated with grid
-position, and a gate holds a crowd and releases it in whatever order the
-jostle gives it, which is what lets a race be won from anywhere. Physics
-has no `RATTLE`; what chaos it has comes only from real contact, which
-pegs and mounds now give it, enough to reorder the middle of a field
-(`follows` down to 0.3–0.5, within the bar) but not, on any layout tried,
-enough to put a back-half marble in front at the line — a moving gate is
-what did that, and physics has none yet, which is part 4's own delivery.
-Whether pegs and mounds alone can ever clear this bar, or whether First
-Drop and The Tower wait for a motored gate to cross, is a decision for the
-user; nothing is landed under either run's id until it is made. Every
-other part-3 delivery — cone pegs, steeper mounds, the funnel's bowl and
-throat, `supports` widened — is landed regardless, and racing pegs, bumps
-or a funnel to a standstill is `/bug` territory the same as any other kind.
+**Four runs race under physics behind the flag, and none has crossed for a
+player yet.** With the moving parts as bodies, First Drop, The Chute, The
+Tower and Switchback bring every marble home on 24 seeds under
+`?physics=1`, gates and all, so part 3's rebuilding them without their
+gates was not needed. Crossing for a player — the flag gone, new ids, pace
+baselines written for physics — waits on the one thing still open: whether
+each is a race and not a procession. Over 24 races the back half of the grid
+won First Drop none, The Chute four, The Tower none and Switchback one, where
+the solver's runs are held to between a fifth and four fifths. The solver
+scatters every strike on a peg or a paddle by `RATTLE`, uncorrelated with
+the grid; physics has only real contact, which reorders the middle of a
+field well enough but rarely puts a marble from the back in front at the
+line. The user has put that tuning to one side for now.
 
 After the six parts, each through `/feature`: patterns on the marbles,
 which want a change to artshape-render since it has no textures; and a

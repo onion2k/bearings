@@ -425,6 +425,53 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the chute raced under physics: the sweeper and the gate as bodies, drawn where they really are', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, physics: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(1);
+      g.release();
+      g.follow(false);
+      g.step(160);
+      // the sweeper's board and the gate's pen below it, from where the solver's own picture of them is taken
+      g.look(17, 0, -8.5, { azimuth: 0.9, polar: 0.8, radius: 22 });
+      g.step(1);
+      return [g.engine(), g.state().runName] as const;
+    });
+    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
+    expect(on[1]).toBe('The Chute');
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-pen.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test("switchback's wheel raced under physics: its paddles polished, turning over a field it holds", async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, physics: true });
+    const on = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(4);
+      g.release();
+      g.follow(false);
+      // played on until a few of the field are in the wheel's pen, however long physics takes to bring them
+      for (let f = 0; f < 60 * 20 && g.marbles().filter((m) => m.segment === 8).length < 3; f += 5) g.step(5);
+      // from the side, where the paddles are edge on, as the solver's own picture of the wheel is taken
+      g.look(13.25, -28.05, -25.5, { azimuth: 0, polar: 0.9, radius: 16 });
+      g.step(1);
+      return [g.engine(), g.marbles().filter((m) => m.segment === 8).length] as const;
+    });
+    expect(on[0], 'the picture is of physics, or it is not this picture').toBe('physics');
+    expect(on[1], 'and of marbles at the wheel').toBeGreaterThanOrEqual(3);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('physics-wheel.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the catalog on the board, a piece framed and said what it does', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

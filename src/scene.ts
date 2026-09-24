@@ -20,6 +20,8 @@ import {
   MOUND,
   MOVING_MOST,
   PEG,
+  GATE_HEIGHT,
+  PADDLE_HEIGHT,
   PEG_CONE,
   PEG_HEIGHT,
   TROUGH_DEPTH,
@@ -44,9 +46,6 @@ import {
  */
 /** How thick the chute is, so it is a trough and not a sheet of paper. */
 const SKIN = 0.18;
-/** How tall a sweeper's paddle and a gate's bar stand. */
-const PADDLE_HEIGHT = 0.7,
-  GATE_HEIGHT = 0.8;
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
 /**
@@ -462,7 +461,14 @@ export class Scene {
   moving(marbles: Race): [number, number, number] {
     const { track } = marbles;
     const phase = (ob: Obstacle) => (ob.slot >= 0 ? marbles.phase[ob.slot] : 0);
-    const now = (part: Part): Pose => pose(part.ob, marbles.t, phase(part.ob), this.at);
+    // where the race says a part is, when it can: under physics a part is a body a jammed ball can hold back, and
+    // is drawn where it is, not where its clockwork would have it
+    const now = (part: Part): Pose => {
+      const p = pose(part.ob, marbles.t, phase(part.ob), this.at);
+      const really = marbles.where?.(part.ob);
+      if (really !== undefined) p.across = really;
+      return p;
+    };
     this.sweeping.slice(0, MOVING_MOST).forEach((part, k) => {
       const p = now(part);
       this.onTrack(track, this.sweepers, k, part.segment, p.along, p.across, 0, part.ob.angle);
@@ -481,7 +487,7 @@ export class Scene {
       const m = part.ob.motion as { period: number; axle: number };
       // the first paddle's own angle from straight down, as the solver has it, turns the whole wheel
       const f = (((marbles.t / m.period + phase(part.ob)) % 1) + 1) % 1;
-      const theta = Math.PI * 2 * f - Math.PI;
+      const theta = marbles.where?.(part.ob) ?? Math.PI * 2 * f - Math.PI;
       this.onTrack(track, this.wheels, k, part.segment, part.ob.along, part.ob.across, RADIUS + m.axle, 0, theta);
     });
     return [

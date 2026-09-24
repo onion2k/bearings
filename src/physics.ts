@@ -34,7 +34,10 @@ import type { Random } from './random';
 import type { Race, RaceEvents, RaceOptions, Roll } from './race';
 import {
   type Compiled,
+  GATE_HEIGHT,
   HALF_WIDTH,
+  type Obstacle,
+  PADDLE_HEIGHT,
   PEG_HEIGHT,
   SAMPLE_EVERY,
   TROUGH_DEPTH,
@@ -42,6 +45,8 @@ import {
   at,
   bowlHeight,
   moundHeight,
+  pose,
+  pose0,
 } from './track';
 
 /** Rapier, the module, once `init` has been awaited. */
@@ -106,11 +111,77 @@ const POLISHED = 0;
  * that does was thrown by something, which `check` rules on.
  */
 export const TERMINAL = Math.sqrt(GRAVITY / DRAG);
+/**
+ * Who meets whom, as Rapier's groups: a membership in the high half and a
+ * filter in the low. The track meets balls; balls meet everything; a moving
+ * part meets balls and nothing else, since a gate slides aside into its
+ * wall and a sweeper's ends swing through theirs, as the scene draws them.
+ */
+const TRACK = (0x1 << 16) | 0x2,
+  BALL = (0x2 << 16) | 0x7,
+  PART = (0x4 << 16) | 0x2;
 /** How far below a channel's floor a ball counts as fallen through it, and how far out of everything as off the run. */
 const THROUGH = RADIUS;
 const OFF = 3;
 
 type V3 = [number, number, number];
+type Quat = { x: number; y: number; z: number; w: number };
+
+/**
+ * How hard a moving part's motor may push, and how tightly it holds to where
+ * its clockwork would have it. A part is a body on a joint, driven toward the
+ * clock's own pose, and a ball caught between it and a wall holds it back
+ * rather than being crushed: the force is capped, so a jammed gate stops,
+ * and catches up once the ball gets out. A ball's own weight is about 11.
+ */
+const SLIDE_FORCE = 300,
+  SLIDE_STIFF = 4000,
+  SLIDE_DAMP = 180;
+/**
+ * A wheel is turned at its clock's pace by a motor that pushes in proportion
+ * to how far it has fallen behind that pace: `WHEEL_GRIP` times the shortfall,
+ * so at a dead stop about 79, a crowd pressed on a paddle can slow it and a
+ * ball under one stops it. Made a hundred times stronger, it was held back
+ * by nothing over 24 seeds, and threw a ball clean off the run.
+ */
+const WHEEL_GRIP = 60;
+
+/** `q` turned further by `angle` about its own z. */
+function turnZ(q: Quat, angle: number): Quat {
+  const s = Math.sin(angle / 2),
+    c = Math.cos(angle / 2);
+  return { x: q.x * c + q.y * s, y: q.y * c - q.x * s, z: q.z * c + q.w * s, w: q.w * c - q.z * s };
+}
+
+/** A vector turned by a quaternion. */
+function rotate(q: Quat, v: V3): V3 {
+  const tx = 2 * (q.y * v[2] - q.z * v[1]),
+    ty = 2 * (q.z * v[0] - q.x * v[2]),
+    tz = 2 * (q.x * v[1] - q.y * v[0]);
+  return [
+    v[0] + q.w * tx + (q.y * tz - q.z * ty),
+    v[1] + q.w * ty + (q.z * tx - q.x * tz),
+    v[2] + q.w * tz + (q.x * ty - q.y * tx),
+  ];
+}
+
+/**
+ * A moving part as a body: the obstacle it is (for a wheel, its first
+ * paddle), the segment it is on, the body and the joint it moves on, and the
+ * frame it moves in — where it rests and which way across is for a sweeper
+ * or a gate, where its axle is and which way along and up are for a wheel.
+ */
+interface Moving {
+  ob: Obstacle;
+  body: RAPIER_.RigidBody;
+  joint: RAPIER_.ImpulseJoint;
+  wheel: boolean;
+  origin: V3;
+  t: V3;
+  u: V3;
+  b: V3;
+  frame: Quat;
+}
 
 /** A rotation from a right-handed frame, `x`, `y` and `z` as its columns, as a quaternion. */
 function frameQuat(x: V3, y: V3, z: V3): { x: number; y: number; z: number; w: number } {
@@ -247,6 +318,10 @@ export class Physics implements Race {
   /** Whether the gate has opened: after it, nothing may put a ball anywhere. */
   private released = false;
   private readonly substeps: number;
+  /** The moving parts, each a body on a joint, and each found by its obstacle. */
+  private readonly parts: Moving[] = [];
+  private readonly partOf = new Map<Obstacle, Moving>();
+  private readonly posed = pose0();
 
   constructor(
     private readonly rapier: Rapier,
@@ -287,11 +362,17 @@ export class Physics implements Race {
     const run = channelMesh(track, (s) => s !== this.last);
     if (run.idx.length > 0)
       this.world.createCollider(
-        rapier.ColliderDesc.trimesh(run.verts, run.idx, flags).setFriction(GRIP).setRestitution(GIVE),
+        rapier.ColliderDesc.trimesh(run.verts, run.idx, flags)
+          .setFriction(GRIP)
+          .setRestitution(GIVE)
+          .setCollisionGroups(TRACK),
       );
     const lane = channelMesh(track, (s) => s === this.last);
     this.world.createCollider(
-      rapier.ColliderDesc.trimesh(lane.verts, lane.idx, flags).setFriction(POLISHED).setRestitution(GIVE),
+      rapier.ColliderDesc.trimesh(lane.verts, lane.idx, flags)
+        .setFriction(POLISHED)
+        .setRestitution(GIVE)
+        .setCollisionGroups(TRACK),
     );
     track.segments.forEach((seg, s) => {
       // what stands still in the way: a peg is a cone, its point up, stood on the floor where the track has it
@@ -311,7 +392,8 @@ export class Physics implements Race {
             )
             .setRotation(standing(t, u))
             .setFriction(GRIP)
-            .setRestitution(GIVE),
+            .setRestitution(GIVE)
+            .setCollisionGroups(TRACK),
         );
       }
       // a funnel's bowl, its rim wall and its throat: the very surface the scene turns, so what is drawn is met
@@ -327,7 +409,10 @@ export class Physics implements Race {
           [bowl.x, bowl.y, bowl.z],
         ).build();
         this.world.createCollider(
-          rapier.ColliderDesc.trimesh(built.positions, built.indices, flags).setFriction(GRIP).setRestitution(GIVE),
+          rapier.ColliderDesc.trimesh(built.positions, built.indices, flags)
+            .setFriction(GRIP)
+            .setRestitution(GIVE)
+            .setCollisionGroups(TRACK),
         );
       }
       // the way out from under a funnel's hole is walled at its back, as the scene draws it, so a ball dropping
@@ -346,7 +431,8 @@ export class Physics implements Race {
             )
             .setRotation(frameQuat(t, b, u))
             .setFriction(GRIP)
-            .setRestitution(GIVE),
+            .setRestitution(GIVE)
+            .setCollisionGroups(TRACK),
         );
       }
     });
@@ -370,34 +456,182 @@ export class Physics implements Race {
         .setTranslation(c[0], c[1], c[2])
         .setRotation(frameQuat(t, b, u))
         .setFriction(POLISHED)
-        .setRestitution(GIVE),
+        .setRestitution(GIVE)
+        .setCollisionGroups(TRACK),
     );
     for (let i = 0; i < n; i++) {
       // held still until the off: a ball let go on the gate's own slope would set off on its own
       const body = this.world.createRigidBody(rapier.RigidBodyDesc.fixed().setCcdEnabled(true).setCanSleep(false));
       this.world.createCollider(
-        rapier.ColliderDesc.ball(RADIUS).setFriction(GRIP).setRestitution(GIVE).setDensity(1),
+        rapier.ColliderDesc.ball(RADIUS).setFriction(GRIP).setRestitution(GIVE).setCollisionGroups(BALL).setDensity(1),
         body,
       );
       this.balls.push(body);
     }
+    this.build();
     this.draw(random);
     this.reset();
   }
 
   /**
+   * Every moving part as a body of its own: a sweeper's paddle and a gate's
+   * bar on a slide across the piece, and a wheel on its axle, each held by a
+   * joint to a fixed anchor and driven by a motor toward where its clockwork
+   * would have it. A wheel's paddles are one body, found by its first.
+   */
+  private build(): void {
+    const rapier = this.rapier;
+    this.track.segments.forEach((seg, s) => {
+      for (const ob of seg.obstacles) {
+        const m = ob.motion;
+        if (m.kind === 'fixed' || (m.kind === 'paddle' && m.turn !== 0)) continue;
+        const h = at(this.track, s, ob.along);
+        const t: V3 = [h.tx, h.ty, h.tz],
+          u: V3 = [h.ux, h.uy, h.uz];
+        const b: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+        const wheel = m.kind === 'paddle';
+        let origin: V3, frame: Quat;
+        const desc: RAPIER_.ColliderDesc[] = [];
+        if (wheel) {
+          // the axle, as high over the floor as a marble's middle and the axle's own height above it; x along, y
+          // up and z across, so a turn about z carries the lowest paddle on along the chute
+          const lift = RADIUS + m.axle;
+          origin = [h.x + u[0] * lift, h.y + u[1] * lift, h.z + u[2] * lift];
+          frame = frameQuat(t, u, b);
+          // every paddle of this wheel, a rod rounded at its tip from the axle to its arm's length, the pen wide
+          for (const other of seg.obstacles) {
+            if (other.motion.kind !== 'paddle' || other.along !== ob.along) continue;
+            const beta = Math.PI * 2 * other.motion.turn;
+            const r = other.radius;
+            desc.push(
+              rapier.ColliderDesc.roundCuboid(0.001, m.arm / 2 - r, other.half - r, r)
+                .setTranslation((Math.sin(beta) * m.arm) / 2, (-Math.cos(beta) * m.arm) / 2, 0)
+                .setRotation(turnZ({ x: 0, y: 0, z: 0, w: 1 }, beta)),
+            );
+          }
+        } else {
+          // a bar lying at its angle in the floor, standing on it as high as it is drawn: x along the bar, z up
+          const height = m.kind === 'gate' ? GATE_HEIGHT : PADDLE_HEIGHT;
+          const c = Math.cos(ob.angle),
+            sn = Math.sin(ob.angle);
+          const x: V3 = [t[0] * c + b[0] * sn, t[1] * c + b[1] * sn, t[2] * c + b[2] * sn];
+          const y: V3 = [u[1] * x[2] - u[2] * x[1], u[2] * x[0] - u[0] * x[2], u[0] * x[1] - u[1] * x[0]];
+          origin = [
+            h.x + b[0] * ob.across + u[0] * (height / 2),
+            h.y + b[1] * ob.across + u[1] * (height / 2),
+            h.z + b[2] * ob.across + u[2] * (height / 2),
+          ];
+          frame = frameQuat(x, y, u);
+          const length = m.kind === 'gate' ? ob.half : ob.half + ob.radius;
+          desc.push(rapier.ColliderDesc.cuboid(length, ob.radius, height / 2));
+        }
+        const anchor = this.world.createRigidBody(
+          rapier.RigidBodyDesc.fixed().setTranslation(origin[0], origin[1], origin[2]).setRotation(frame),
+        );
+        const body = this.world.createRigidBody(
+          rapier.RigidBodyDesc.dynamic()
+            .setTranslation(origin[0], origin[1], origin[2])
+            .setRotation(frame)
+            .setGravityScale(0)
+            .setCanSleep(false),
+        );
+        // a wheel's paddles are polished: one coming down on a ball closes a wedge on it against the floor, only a
+        // quarter-turn from flat, and a ball squeezed in a wedge that shallow squirts out only if the paddle grips it
+        // less than about 0.27, the tangent of half the angle; at the track's own grip it held, and stopped the wheel
+        for (const d of desc)
+          this.world.createCollider(
+            d
+              .setFriction(wheel ? POLISHED : GRIP)
+              .setFrictionCombineRule(wheel ? rapier.CoefficientCombineRule.Min : rapier.CoefficientCombineRule.Average)
+              .setRestitution(GIVE)
+              .setCollisionGroups(PART)
+              .setDensity(1),
+            body,
+          );
+        const zero = { x: 0, y: 0, z: 0 };
+        let joint: RAPIER_.ImpulseJoint;
+        if (wheel) {
+          joint = this.world.createImpulseJoint(
+            rapier.JointData.revolute(zero, zero, { x: 0, y: 0, z: 1 }),
+            anchor,
+            body,
+            true,
+          );
+          const turning = joint as RAPIER_.RevoluteImpulseJoint;
+          turning.configureMotorModel(rapier.MotorModel.ForceBased);
+          turning.configureMotorVelocity((Math.PI * 2) / m.period, WHEEL_GRIP);
+        } else {
+          // the slide's own axis in the bar's frame: across, which is how far round from the bar's length it lies
+          const across = { x: Math.sin(ob.angle), y: -Math.cos(ob.angle), z: 0 };
+          joint = this.world.createImpulseJoint(rapier.JointData.prismatic(zero, zero, across), anchor, body, true);
+          const sliding = joint as RAPIER_.PrismaticImpulseJoint;
+          sliding.configureMotorModel(rapier.MotorModel.ForceBased);
+          sliding.setMotorMaxForce(SLIDE_FORCE);
+        }
+        const part: Moving = { ob, body, joint, wheel, origin, t, u, b, frame };
+        this.parts.push(part);
+        this.partOf.set(ob, part);
+      }
+    });
+  }
+
+  /** Where each part's clockwork has it at the race's own time: before the off only, as the field is. */
+  private park(): void {
+    for (const part of this.parts) {
+      const { ob, body, origin, b } = part;
+      const phase = ob.slot >= 0 ? this.phase[ob.slot] : 0;
+      const m = ob.motion;
+      if (part.wheel && m.kind === 'paddle') {
+        const f = (((this.t / m.period + phase) % 1) + 1) % 1;
+        body.setTranslation({ x: origin[0], y: origin[1], z: origin[2] }, true);
+        body.setRotation(turnZ(part.frame, Math.PI * 2 * f - Math.PI), true);
+        const w = (Math.PI * 2) / m.period;
+        body.setAngvel({ x: b[0] * w, y: b[1] * w, z: b[2] * w }, true);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      } else {
+        const p = pose(ob, this.t, phase, this.posed);
+        const d = p.across - ob.across;
+        body.setTranslation({ x: origin[0] + b[0] * d, y: origin[1] + b[1] * d, z: origin[2] + b[2] * d }, true);
+        body.setRotation(part.frame, true);
+        body.setLinvel({ x: b[0] * p.vc, y: b[1] * p.vc, z: b[2] * p.vc }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    }
+  }
+
+  /** Every slide's motor set toward where its clockwork has it at `t`; a wheel's motor only ever turns at its pace. */
+  private drive(t: number): void {
+    for (const part of this.parts) {
+      if (part.wheel) continue;
+      const { ob } = part;
+      const p = pose(ob, t, ob.slot >= 0 ? this.phase[ob.slot] : 0, this.posed);
+      (part.joint as RAPIER_.PrismaticImpulseJoint).configureMotor(p.across - ob.across, p.vc, SLIDE_STIFF, SLIDE_DAMP);
+    }
+  }
+
+  where(ob: Obstacle): number | undefined {
+    const part = this.partOf.get(ob);
+    if (!part) return undefined;
+    const p = part.body.translation();
+    if (!part.wheel) {
+      const { origin, b } = part;
+      return ob.across + (p.x - origin[0]) * b[0] + (p.y - origin[1]) * b[1] + (p.z - origin[2]) * b[2];
+    }
+    // how far round the body's own x has come from along toward up: the first paddle's angle from straight down
+    const x = rotate(part.body.rotation(), [1, 0, 0]);
+    const { t, u } = part;
+    return Math.atan2(x[0] * u[0] + x[1] * u[1] + x[2] * u[2], x[0] * t[0] + x[1] * t[1] + x[2] * t[2]);
+  }
+
+  /**
    * Whether every piece of `track` is one physics races yet: a channel, with
-   * pegs and mounds in it or not, and a funnel, whose run in is the one lip
-   * a ball may fly off. Not yet the parts that move, a jump, or a branch.
+   * pegs, mounds or parts that move in it or not, and a funnel, whose run in
+   * is the one lip a ball may fly off. Not yet a jump, or a branch.
    */
   static supports(track: Track): boolean {
     return track.segments.every(
       (s) =>
-        s.obstacles.every((ob) => ob.motion.kind === 'fixed') &&
-        (!s.flies || (s.next >= 0 && track.segments[s.next].funnel !== null)) &&
-        !s.fork &&
-        s.branch === 0 &&
-        !s.felt,
+        (!s.flies || (s.next >= 0 && track.segments[s.next].funnel !== null)) && !s.fork && s.branch === 0 && !s.felt,
     );
   }
 
@@ -417,6 +651,7 @@ export class Physics implements Race {
       this.grid[j] = swap;
     }
     for (let s = 0; s < this.phase.length; s++) this.phase[s] = random();
+    this.park();
   }
 
   reset(): void {
@@ -445,6 +680,7 @@ export class Physics implements Race {
       this.throatUntil[i] = -1;
       this.set(i, 0, along, across, true);
     }
+    this.park();
     this.read();
   }
 
@@ -501,7 +737,9 @@ export class Physics implements Race {
     if (!this.away) return;
     this.t += dt;
     this.world.timestep = dt / this.substeps;
+    const t0 = this.t - dt;
     for (let k = 0; k < this.substeps; k++) {
+      this.drive(t0 + ((k + 1) * dt) / this.substeps);
       this.breathe(dt / this.substeps);
       this.world.step();
     }
@@ -566,8 +804,30 @@ export class Physics implements Race {
       const dx = p.x - seg.points[o],
         dy = p.y - seg.points[o + 1],
         dz = p.z - seg.points[o + 2];
+      // along, and on to the next segment or back to the one before where it runs past either end of this one: a
+      // ball over a join is on the piece it is going on to, and read against this one's last sample it read as
+      // sunk into the floor wherever the next begins with a turn downward, as the lane at the end does
+      let along = seg.arc[onSample] + dx * tx + dy * ty + dz * tz;
+      if (along > seg.length && seg.next >= 0) {
+        along = Math.min(along - seg.length, segments[seg.next].length);
+        onSeg = seg.next;
+      } else if (along < 0 && seg.prev >= 0) {
+        // back a segment only if it is behind the join by that segment's own measure too: at a join that turns
+        // downward there is a sliver past the end of the one and short of the start of the other, which is neither,
+        // and a ball in it is at the join, not back where it came from
+        const before = segments[seg.prev];
+        const b = (before.arc.length - 1) * 3;
+        const back =
+          (p.x - before.points[b]) * before.tangents[b] +
+          (p.y - before.points[b + 1]) * before.tangents[b + 1] +
+          (p.z - before.points[b + 2]) * before.tangents[b + 2];
+        if (back < 0) {
+          along = Math.max(0, before.length + back);
+          onSeg = seg.prev;
+        }
+      }
       this.segment[i] = onSeg;
-      this.along[i] = Math.min(Math.max(seg.arc[onSample] + dx * tx + dy * ty + dz * tz, 0), seg.length);
+      this.along[i] = Math.min(Math.max(along, 0), segments[onSeg].length);
       this.across[i] = dx * (ty * uz - tz * uy) + dy * (tz * ux - tx * uz) + dz * (tx * uy - ty * ux);
     }
   }

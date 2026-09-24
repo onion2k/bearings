@@ -8,6 +8,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { PHYSICAL, Physics } from '../src/physics';
 import { MARBLES, RACING, RADIUS } from '../src/marbles';
 import { seeded } from '../src/random';
+import { RUNS } from '../src/runs';
 import { type Facing, type Kind, type Placed, type Run, compile, exitOf } from '../src/track';
 
 await RAPIER.init();
@@ -15,8 +16,8 @@ await RAPIER.init();
 const DT = 1 / 60;
 
 /**
- * The kinds physics races: every one that is no more than a channel, or has
- * pegs or mounds fixed in it. The funnel is not among them: what "fed by
+ * The kinds physics races: every one that is no more than a channel, has
+ * pegs or mounds fixed in it, or a part that moves. The funnel is not among them: what "fed by
  * two drops" tests is the fastest any ONE piece hands a field on at, and a
  * ball off two drops straight into a funnel's bowl, at the extreme end of
  * its swirl, now and then misses the outlet's own catch and free-falls
@@ -39,6 +40,9 @@ export const CROSSED: Kind[] = [
   'brake',
   'pegs',
   'bumps',
+  'sweeper',
+  'gate',
+  'wheel',
 ];
 
 /** Pieces laid end to end from the lattice's origin, each where the one before hands a marble on. */
@@ -190,3 +194,6 @@ export function through(kinds: Kind[], on: number, seeds: number) {
   }
   return { in: inAt / n, out: outAt / n, pairs: pairs / n, home, of: seeds * MARBLES };
 }
+
+/** Every run that comes with the game and physics can race yet, in the order the shelf has them. */
+export const PHYSICS_RUNS: Run[] = RUNS.filter((run) => Physics.supports(compile(run)));

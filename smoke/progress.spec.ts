@@ -356,8 +356,15 @@ test('a piece raced under physics through the page: every marble home, in order,
 }) => {
   const problems = watch(page);
   await start(page, { seed: 7, paused: true, physics: true });
-  // First Drop has a gate, which lifts: physics cannot race a moving part yet, so the solver has it
-  expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
+  // First Drop, a peg board and a gate, is one physics races now: raced through the page, every marble home
+  expect(await page.evaluate(() => window.game!.engine())).toBe('physics');
+  await page.evaluate(() => window.game!.release());
+  await play(page, 120, 'the off down First Drop under physics');
+  expect(await page.evaluate(() => window.game!.settle(60))).toBeGreaterThan(0);
+  const dropped = await page.evaluate(() => window.game!.state());
+  expect(dropped.over).toBe(true);
+  expect(dropped.finished, 'every marble home down First Drop, past its gate, under physics').toBe(8);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   await page.evaluate(() => {
     const g = window.game!;
     g.browse('pieces');
@@ -397,11 +404,11 @@ test('a piece raced under physics through the page: every marble home, in order,
   expect(braked.finished, 'every marble home off the drop and through the brake').toBe(8);
   expect(braked.lost + braked.stalled).toBe(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
-  // and back to the solver for a piece with a moving part, which physics has not got to, with nothing left of the world behind
+  // and back to the solver for a jump, which physics has not got to, with nothing left of the world behind
   await page.evaluate(() => {
     const g = window.game!;
     g.browse('pieces');
-    g.pick(g.content().catalog.indexOf('Sweeper'));
+    g.pick(g.content().catalog.indexOf('Jump'));
   });
   expect(await page.evaluate(() => window.game!.engine())).toBe('solver');
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);

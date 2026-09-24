@@ -127,7 +127,7 @@ describe('the race as physics', () => {
     // the funnel is its own case: `CROSSED` is also the list "fed by two drops" tries every kind at, which the
     // funnel is deliberately left out of, but physics races it and `supports` says so
     expect(Physics.supports(compile(chain(['start', 'funnel', 'finish']))), 'funnel').toBe(true);
-    for (const kind of ['jump', 'sweeper', 'gate', 'wheel', 'splitter'] as const)
+    for (const kind of ['jump', 'splitter'] as const)
       expect(
         Physics.supports(
           compile(
@@ -144,8 +144,8 @@ describe('the race as physics', () => {
 
   it('is what the game races on when it is given physics, and the solver where physics cannot go yet', () => {
     const { game } = newGame(1, null, { physics: RAPIER });
-    // First Drop has a gate, which lifts, and physics cannot race a moving part yet
-    expect(game.engine).toBe('solver');
+    // First Drop, a peg board and a gate, is one physics races now
+    expect(game.engine).toBe('physics');
     game.browse('pieces');
     game.pick(game.list.findIndex((r) => r.id === 'piece-pegs'));
     expect(game.engine).toBe('physics');
@@ -153,8 +153,8 @@ describe('the race as physics', () => {
     game.release();
     for (let f = 0; f < 60 * 30 && !game.over; f++) game.step(DT);
     expect(game.marbles.finishers).toBe(MARBLES);
-    // and back to the solver for a piece with a moving part, which physics has not got to
-    game.pick(game.list.findIndex((r) => r.id === 'piece-sweeper'));
+    // and back to the solver for a jump, which physics has not got to
+    game.pick(game.list.findIndex((r) => r.id === 'piece-jump'));
     expect(game.engine).toBe('solver');
     expect(game.track.wall).toBeLessThan(PHYSICS_WALL);
   });
@@ -171,6 +171,34 @@ describe('the race as physics', () => {
       most = Math.max(most, Physics.alive - before);
     }
     expect(most, 'one world, for the run that is on').toBeLessThanOrEqual(1);
+  });
+
+  it('reads a ball rolled over a join as on the piece it has gone on to, not clamped to the end of the one it left', () => {
+    // one ball, rolled from just short of the end of a straight on to the lane: past the straight's last sample and
+    // nearer to it than to the lane's second, it was read as still on the straight, at its very end, and measured
+    // against the straight's floor carried on past the join, which the lane's cup falls away below
+    const track = compile(chain(['start', 'straight', 'finish']), PHYSICAL);
+    const race = new Physics(RAPIER, track, {}, { count: 1 });
+    const seg = track.segments[1];
+    const k = (seg.arc.length - 1) * 3;
+    expect(race.put(0, 1, seg.length - 1, 0)).toBe(true);
+    race.release();
+    let past = 0,
+      misread = 0;
+    for (let f = 0; f < 60 * 3; f++) {
+      race.step(DT);
+      const beyond =
+        (race.x[0] - seg.points[k]) * seg.tangents[k] +
+        (race.y[0] - seg.points[k + 1]) * seg.tangents[k + 1] +
+        (race.z[0] - seg.points[k + 2]) * seg.tangents[k + 2];
+      if (beyond > 0.02) {
+        past++;
+        if (race.segment[0] === 1) misread++;
+      }
+    }
+    expect(past, 'it went over the join').toBeGreaterThan(0);
+    expect(misread, 'frames it was past the join and still read on the straight').toBe(0);
+    race.dispose();
   });
 
   it('keeps a marble a marble: half a unit across, as the solver has it', () => {

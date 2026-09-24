@@ -138,7 +138,7 @@ test('draws a piece raced under physics within budget, and a drop under its grid
   test.setTimeout(180_000);
   const problems = watch(page);
   await start(page, { seed: 11, paused: true, physics: true });
-  const [engine, frame, braked] = await page.evaluate(async () => {
+  const [engine, frame, braked, moving] = await page.evaluate(async () => {
     const g = window.game!;
     g.browse('pieces');
     g.pick(g.content().catalog.indexOf('Ramp'));
@@ -152,13 +152,22 @@ test('draws a piece raced under physics within budget, and a drop under its grid
     if (g.keep('Drop and brake').length) throw new Error('the design was refused');
     g.release();
     g.step(90);
-    return [g.engine(), frame, await g.measureFrame()] as const;
+    const braked = await g.measureFrame();
+    // a run with parts that move, each a body on a joint: The Chute's sweeper and gate, the field among them
+    g.browse('runs');
+    g.pick(1);
+    g.release();
+    g.step(160);
+    return [g.engine(), frame, braked, await g.measureFrame()] as const;
   });
   expect(engine).toBe('physics');
   const ms = (n: number) => Math.round(n * 100) / 100;
-  console.log(`perf: physics, frame ${ms(frame)} ms on the ramp and ${ms(braked)} ms down a drop into a brake`);
+  console.log(
+    `perf: physics, frame ${ms(frame)} ms on the ramp, ${ms(braked)} ms down a drop into a brake and ${ms(moving)} ms on The Chute`,
+  );
   expect(frame, 'a race under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(braked, 'a drop and a brake under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
+  expect(moving, 'a run with parts that move under physics within budget').toBeLessThanOrEqual(BUDGET.frameMs);
   expect(problems).toEqual([]);
 });
 

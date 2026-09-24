@@ -621,6 +621,21 @@ const SPIRAL_RADIUS = CELL / 2;
  * 1.3 high at a wall of 1.2 and eight in 192 went over; at 1.8, none.
  */
 export const SPIRAL_WALL = 1.8;
+/**
+ * How high a sweeper's walls stand under physics: its paddle throws a ball
+ * across the board at whatever it was going, and one off two drops went over
+ * a wall of 1.2 where the board narrows, seven in 192; at 1.8, none in 384.
+ */
+export const SWEEPER_WALL = 1.8;
+/**
+ * Where a wheel's pen begins to close under physics, as a share of the
+ * piece: a field the wheel lets go abreast came to rest in a neck that closed
+ * over the ramp's flat end and arched there, three abreast, as a hopper
+ * does; closing from 0.7, where the ramp is still steep enough to keep it
+ * rolling, none stopped fed off a drop and a bend over 48 seeds, and fed
+ * straight off two drops, one seed in 48 still arched.
+ */
+export const WHEEL_CLOSE = 0.7;
 
 /**
  * A spiral: once right round while it falls two levels, coming out where it
@@ -818,6 +833,9 @@ const BOARD = 3.6;
 export const PEG = 0.22;
 /** How tall a peg stands, drawn and, under physics, met. */
 export const PEG_HEIGHT = 0.8;
+/** How tall a sweeper's paddle and a gate's bar stand, drawn and, under physics, met. */
+export const PADDLE_HEIGHT = 0.7;
+export const GATE_HEIGHT = 0.8;
 /**
  * A peg under physics is a cone, this wide at its foot, and not a post: a
  * ball on a gentle board came to rest against a post as often as not, held
@@ -828,6 +846,38 @@ export const PEG_HEIGHT = 0.8;
  * neighbour; at 0.28 none did in 192.
  */
 export const PEG_CONE = 0.28;
+/**
+ * How far apart a physics board's pegs stand across it, and how high its
+ * walls. The solver's pegs stand 1.6 apart, which leaves a gap wider than a
+ * ball and narrower than two: two balls coming down abreast wedged in it
+ * together, an arch of two between two cones, in 28 of 192 races fed off a
+ * straight. At 2.4 apart, a gap is wide enough for two, rows staggered by
+ * half of it so nothing goes straight down, the first row with a peg on the
+ * middle so the stream from the chute is split rather than aimed at a gap.
+ * A cone's side leans in, so it throws a fast ball up as well as aside, and
+ * off two drops twelve went over a wall of 1.8; at 2.2, one in 384. Four
+ * rows of them stop nothing over 48 seeds fed off the gate, a straight, a
+ * ramp or two drops.
+ */
+export const PEG_SPACING = 2.4;
+export const PEG_WALL = 2.2;
+/**
+ * How high a gate's pen walls stand under physics. The pen closes from a
+ * board's width to a chute's after the gate, steeply, and a field let go
+ * at once runs at that closing wall and up it: at a wall of 1.2 four balls
+ * in 384 went over it on First Drop and two on The Chute, and at 1.8 none.
+ */
+export const GATE_WALL = 1.8;
+/**
+ * Where a gate's bar stands under physics, as a share of the piece, and so
+ * where its pen begins to close. A crowd let go from a standstill at 0.6,
+ * into a neck closing over the ramp's flattening end, came to rest there
+ * arched, all eight, on one seed in 48; let go halfway down, it has picked
+ * up speed before the neck and the neck closes over twice the distance,
+ * and none did, alone or on First Drop, The Chute or The Tower. At 0.4 The
+ * Tower's field reached its spiral fast enough to lose a third of it.
+ */
+export const GATE_AT = 0.5;
 
 /**
  * A paddle wheel, which the scene draws as the solver has it: how wide its
@@ -856,12 +906,38 @@ export const WHEEL = { pen: 2.6, half: 2.42, radius: 0.18, axle: 1.35, arm: 1.81
  * gaps are wider than a marble, so nothing can wedge; what a marble cannot
  * do is go down in a straight line.
  */
-function pegRows(radius = PEG): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
+/** A gate's bar, right across its pen `u` of the way down the piece, where the pen begins to close. */
+function gateBar(u: number): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
+  return [
+    {
+      u,
+      across: 0,
+      half: 3.2,
+      angle: Math.PI / 2,
+      radius: 0.2,
+      motion: { kind: 'gate', shut: 1.6, period: 2.6, slide: 0.35 },
+    },
+  ];
+}
+
+/** A physics board's pegs, `PEG_SPACING` apart, a row with one on the middle first and a row without next. */
+function physicsPegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
+  const out: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] = [];
+  // four rows, the last well short of where the board closes: with a fifth nearer the neck, a ball came to rest dead
+  // astern of its middle peg, held there by another against the peg beside it, in 6 of 384 races off the gate
+  [0.22, 0.36, 0.5, 0.64].forEach((u, r) => {
+    const across = r % 2 === 0 ? [-PEG_SPACING, 0, PEG_SPACING] : [-PEG_SPACING / 2, PEG_SPACING / 2];
+    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius: PEG_CONE, motion: { kind: 'fixed' } });
+  });
+  return out;
+}
+
+function pegRows(): (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] {
   const out: (Omit<Obstacle, 'along' | 'slot'> & { u: number })[] = [];
   const rows = [0.22, 0.34, 0.46, 0.58, 0.7];
   rows.forEach((u, r) => {
     const across = r % 2 === 0 ? [-2.4, -0.8, 0.8, 2.4] : [-1.6, 0, 1.6];
-    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius, motion: { kind: 'fixed' } });
+    for (const c of across) out.push({ u, across: c, half: 0, angle: 0, radius: PEG, motion: { kind: 'fixed' } });
   });
   return out;
 }
@@ -1038,16 +1114,7 @@ const SHAPES: Record<Kind, Shape> = {
     // rest of the piece, asks far less of any one step without asking less of the pen: nothing narrows before
     // the gate, so the field waiting on it is exactly as wide as it ever was
     width: opening(3.2, 0.2, 0.6),
-    obstacles: [
-      {
-        u: 0.6,
-        across: 0,
-        half: 3.2,
-        angle: Math.PI / 2,
-        radius: 0.2,
-        motion: { kind: 'gate', shut: 1.6, period: 2.6, slide: 0.35 },
-      },
-    ],
+    obstacles: gateBar(0.6),
   },
   wheel: {
     exit: { x: 1, y: 0, z: -1, turn: 0 },
@@ -1170,9 +1237,15 @@ export const PHYSICS_SHAPES: Partial<Record<Kind, Partial<Shape>>> = {
   // speed clears the cell and comes down a level above whatever is next; no crest within a cell holds it
   drop: { lid: { from: 0, upto: 1 } },
   // the pegs cones, `PEG_CONE` wide at the foot: a ball comes to rest against a post and is pushed off a cone
-  pegs: { obstacles: pegRows(PEG_CONE) },
+  pegs: { obstacles: physicsPegRows(), wall: PEG_WALL },
   // the mounds steeper, `MOUND_PHYSICS`, since a shallow one barely turns a fast ball aside at all
   bumps: { mounds: moundRows(MOUND_PHYSICS) },
+  // walled higher, since the paddle throws a ball across the board at whatever it was going
+  sweeper: { wall: SWEEPER_WALL },
+  // walled higher, since a field let go at once runs up the pen's closing wall
+  gate: { wall: GATE_WALL, width: opening(3.2, 0.2, GATE_AT), obstacles: gateBar(GATE_AT) },
+  // the pen closing from further up, where the ramp still keeps a field let go abreast rolling into the neck
+  wheel: { width: opening(WHEEL.pen, 0.25, WHEEL_CLOSE) },
   // walled higher, since a ball at a drop's speed rides a spiral's outer wall higher than a chute's holds
   spiralLeft: { wall: SPIRAL_WALL },
   spiralRight: { wall: SPIRAL_WALL },
