@@ -27,6 +27,12 @@ function framesInASecond(page: Page) {
 }
 
 /** How much a screenshot has in it: the spread of its brightness, and the share of it that is not near black. */
+/**
+ * How much detail a frame of a run has at least: the works' hall, the darkest scene the game draws, measured 5.0,
+ * the sweet factory 7.7, and a canvas drawn blank 1.45, its only edges the grain.
+ */
+const EDGES = 3;
+
 function content(png: Buffer) {
   const img = PNG.sync.read(png);
   let sum = 0,
@@ -40,7 +46,20 @@ function content(png: Buffer) {
     if (y > 40) lit++;
   }
   const mean = sum / n;
-  return { spread: Math.sqrt(sq / n - mean * mean), lit: lit / n };
+  // how much the frame changes from each pixel to its neighbour across, on average: a frame drawn blank or one flat
+  // colour has none, however bright or dark, and a scene has edges all over it, a dark one as much as a bright one;
+  // the spread of brightness alone fell below its floor for a hall lit low on purpose, with nothing wrong with it
+  let edges = 0;
+  for (let y = 0; y < img.height; y++)
+    for (let x = 1; x < img.width; x++) {
+      const i = (y * img.width + x) * 4,
+        j = i - 4;
+      edges +=
+        Math.abs(img.data[i] - img.data[j]) +
+        Math.abs(img.data[i + 1] - img.data[j + 1]) +
+        Math.abs(img.data[i + 2] - img.data[j + 2]);
+    }
+  return { spread: Math.sqrt(sq / n - mean * mean), lit: lit / n, edges: edges / n };
 }
 
 test('boots with no errors and draws the run', async ({ page }, info) => {
@@ -50,11 +69,12 @@ test('boots with no errors and draws the run', async ({ page }, info) => {
   const state = await page.evaluate(() => window.game!.state());
   expect(state.waiting, 'a field on the gate').toBeGreaterThan(0);
   expect(state.runName, 'a run is on').not.toBe('');
-  const shot = await page.screenshot();
+  // the drawn frame alone, not the board over it, whose text has edges of its own whatever the canvas shows
+  const shot = await page.locator('#view').screenshot();
   await info.attach('run', { body: shot, contentType: 'image/png' });
   const c = content(shot);
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
-  expect(c.spread, 'variety in the picture').toBeGreaterThan(20);
+  expect(c.edges, 'detail in the picture').toBeGreaterThan(EDGES);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });

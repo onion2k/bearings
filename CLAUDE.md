@@ -342,7 +342,25 @@ What to copy the shape of, when building something new:
   out white. By a sweet factory's run: arches every other piece where no
   lamp is, placed before the gumdrops so those give way to their posts,
   gumdrops on every piece a chute wide, and small lollipops stood beside the
-  walls every third piece (`standingLollipop`). A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
+  walls every third piece (`standingLollipop`). A works stands inside a hall at dusk (`Site.hall`): a concrete floor
+  with painted walkway lines, brick walls as far out and as tall as the
+  backdrop's line allows, their windows lit by the dusk, and a truss along
+  each wall's top (not across: a roof would hide the run from a camera above
+  it); silos and a gantry crane in the hall's far reaches; cooling towers,
+  their steam rising, and sheds outside, seen over the walls against a dusk
+  sky (`WORLDS.industrial`, the renderer's `dusk` environment, bloom a
+  little stronger), lit low so that its lamps light the run: little sun or
+  sky light, and each lamp (`LIGHTS`, now with a reach of its own) strong
+  and wide enough to pool warm light on the track, with just enough left
+  that a marble between lamps still reads in a split view's close camera; and oil drums, crates, pallets, cable reels and traffic
+  cones on the floor just past the run. Its track is rust (`RUST`), the
+  walls streaked darker by the renderer's marbling (`TrackColours.streaks`).
+  Its chimneys' smoke is soot, each works lamp has a warm glow sprite, its
+  tanks are riveted, and its pipes and girders are thicker; a girder's leg
+  stops short of a sloping floor by as much as the floor falls across it,
+  since an upright square leg's downhill corner otherwise stood up through
+  the floor. The hall is held by `sceneryClear` at its walls' nearest (`HALL`).
+  A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
   ground and a river under everything, frosted mountains in pastel bands,
   rounded at the top as a scoop of ice cream is (`revolved`, `hillOf`), with
   sprinkles on their frosting and the donuts' icing, castle towers with

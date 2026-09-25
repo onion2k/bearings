@@ -30,6 +30,16 @@ import { seeded } from './random';
 
 /** Every kind of thing a run can be dressed with. */
 export type DecorKind =
+  | 'hall'
+  | 'silo'
+  | 'coolingTower'
+  | 'shed'
+  | 'crane'
+  | 'drum'
+  | 'crate'
+  | 'pallet'
+  | 'reel'
+  | 'trafficCone'
   | 'lamp'
   | 'pipes'
   | 'cog'
@@ -60,7 +70,26 @@ export type DecorKind =
 
 /** What each theme dresses a run with: every kind in one theme and one only. */
 export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
-  industrial: ['lamp', 'pipes', 'cog', 'chimney', 'girder', 'tank', 'piston', 'stripes'],
+  industrial: [
+    'lamp',
+    'pipes',
+    'cog',
+    'chimney',
+    'girder',
+    'tank',
+    'piston',
+    'stripes',
+    'hall',
+    'silo',
+    'coolingTower',
+    'shed',
+    'crane',
+    'drum',
+    'crate',
+    'pallet',
+    'reel',
+    'trafficCone',
+  ],
   sweets: [
     'lollipop',
     'candyStripes',
@@ -107,6 +136,16 @@ export const MOST: Record<DecorKind, number> = {
   giantLollipop: 3,
   fudgePot: 3,
   cupcake: 3,
+  hall: 1,
+  silo: 4,
+  coolingTower: 3,
+  shed: 5,
+  crane: 2,
+  drum: 10,
+  crate: 8,
+  pallet: 5,
+  reel: 4,
+  trafficCone: 10,
   arch: 12,
   standingLollipop: 12,
   donut: 6,
@@ -126,9 +165,32 @@ export const MOST: Record<DecorKind, number> = {
  * looking down on it (`sceneryClear`). The ground and a river lie flat on the
  * ground under everything and are held only to lying there.
  */
-export const SCENERY: readonly DecorKind[] = ['mountain', 'tower', 'tree', 'cloud', 'donut', 'pretzel', 'cake'];
+export const SCENERY: readonly DecorKind[] = [
+  'mountain',
+  'tower',
+  'tree',
+  'cloud',
+  'donut',
+  'pretzel',
+  'cake',
+  'silo',
+  'coolingTower',
+  'shed',
+  'crane',
+  'drum',
+  'crate',
+  'pallet',
+  'reel',
+  'trafficCone',
+];
 /** What lies flat on the ground, under the run and everything by it. */
 export const FLAT: readonly DecorKind[] = ['ground', 'river'];
+/**
+ * The hall round a works: its floor under everything, and its walls standing
+ * `length` out from the run's middle on every side, `height` tall, which the
+ * same line holds as everything else of the backdrop, at the walls' nearest.
+ */
+export const HALL: DecorKind = 'hall';
 
 /**
  * The world a run is in: the sky it is seen against, the ground it stands
@@ -142,6 +204,8 @@ export interface TrackColours {
   grid: [number, number, number];
   pegs: [number, number, number];
   trim: [number, number, number];
+  /** Streaks through the walls in a second colour, as rust runs, where the walls have them. */
+  streaks?: [number, number, number];
 }
 
 /** Steel, as the track always was. */
@@ -151,6 +215,19 @@ export const STEEL: TrackColours = {
   grid: [0.2, 0.2, 0.23],
   pegs: [0.2, 0.2, 0.23],
   trim: [0.25, 0.25, 0.28],
+};
+
+/**
+ * The works' track: rusted iron walls streaked darker, a dark iron floor that
+ * a marble of any colour still stands out on, and blackened grids.
+ */
+export const RUST: TrackColours = {
+  floor: [0.24, 0.21, 0.19],
+  walls: [0.46, 0.21, 0.1],
+  grid: [0.09, 0.08, 0.08],
+  pegs: [0.32, 0.16, 0.08],
+  trim: [0.36, 0.17, 0.09],
+  streaks: [0.2, 0.09, 0.05],
 };
 
 /**
@@ -173,7 +250,7 @@ export interface World {
   /** How it is shaded: as real surfaces are, or as a cartoon is, flat and bright, with its colours shown straight. */
   shading: 'pbr' | 'toon';
   /** The sky it reflects: a grey studio for the works' dark, a blue day for a candy world. */
-  env: 'studio' | 'daylight';
+  env: 'studio' | 'daylight' | 'dusk';
   sunColour: [number, number, number];
   exposure: number;
   ambient: number;
@@ -188,15 +265,20 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     exposure: 1.1,
     ambient: 0.65,
   },
+  // inside a hall at dusk: the glow of the sky through its windows, a warm low light, and rust
   industrial: {
-    track: STEEL,
-    sky: [0.04, 0.04, 0.05],
+    track: RUST,
+    // late dusk, dim enough that the lamps are what lights the run: pools of warm light down the track and the gloom
+    // of the hall between them
+    sky: [0.16, 0.08, 0.14],
     shading: 'pbr',
-    env: 'studio',
-    sunColour: [1, 0.96, 0.9],
+    env: 'dusk',
+    // a floor of light enough that a marble between lamps still reads, in a split view's close camera above all
+    sunColour: [0.36, 0.24, 0.19],
     exposure: 1.1,
-    ambient: 0.65,
+    ambient: 0.16,
   },
+
   // a clear blue sky reflected in everything, drawn as a cartoon is: in flat bands at every candy's own colour, and
   // the colours shown straight, where the physically based light and its filmic curve washed them all to grey
   sweets: {
@@ -211,11 +293,14 @@ export const WORLDS: Record<Theme | 'plain', World> = {
 };
 
 /** The things that light the run, and the colour of their light: a works' lamps warm, a sweet factory's lollipops pink. */
-export const LIGHTS: Partial<Record<DecorKind, { colour: [number, number, number]; intensity: number }>> = {
-  lamp: { colour: [1, 0.78, 0.45], intensity: 25 },
+export const LIGHTS: Partial<
+  Record<DecorKind, { colour: [number, number, number]; intensity: number; radius: number }>
+> = {
+  // strong and wide, since in the hall's gloom a lamp is what lights the track under it
+  lamp: { colour: [1, 0.7, 0.38], intensity: 110, radius: 14 },
   // a glow and not a floodlight: in a bright candy world, lit toon at the full colour, a lamp as strong as the works'
   // blew the sweet it hangs under out to white
-  lollipop: { colour: [1, 0.62, 0.82], intensity: 4 },
+  lollipop: { colour: [1, 0.62, 0.82], intensity: 4, radius: 8 },
 };
 
 /** The puffs of smoke over each chimney, rising and swelling in turn. */
@@ -234,8 +319,8 @@ export const SMOKE_THICK = 0.8;
 export const LAMP = { out: 0.32, height: 4.2, pole: 0.09, shade: 0.4, hangs: 0.55 } as const;
 /** Two pipes along the outside of a wall: how far out from the channel's edge, how high their middles, how thick. */
 export const PIPES = [
-  { out: 0.44, up: 0.35, radius: 0.2 },
-  { out: 0.4, up: 0.85, radius: 0.13 },
+  { out: 0.5, up: 0.38, radius: 0.26 },
+  { out: 0.45, up: 0.95, radius: 0.17 },
 ] as const;
 /** A pair of cogs on a wall, meshing: the big one's and the small one's reach, how far out, how high, how thick, how far apart. */
 export const COG = { big: 0.75, small: 0.45, out: 0.42, up: 0.5, thick: 0.16, apart: 1.12 } as const;
@@ -248,7 +333,7 @@ export const PISTON = { out: 0.8, radius: 0.28, below: 1.4, above: 0.3, stroke: 
 export const CHIMNEY = { out: 2.7, radius: 1.05, tallest: 22 } as const;
 export const TANK = { out: 2.3, radius: 0.9, height: 3.2 } as const;
 /** A girder's leg, a lattice column this far from its middle to its corners. */
-export const GIRDER = { half: 0.24 } as const;
+export const GIRDER = { half: 0.3 } as const;
 /** Hazard stripes, a plate on the outside of each wall, in blocks this long, a band up to this high. */
 export const STRIPE = { out: 0.19, block: 0.7, top: 1.05 } as const;
 
@@ -643,7 +728,11 @@ class Site {
       const along = segments[s].length / 2;
       for (const side of [1, -1] as const) {
         const h = this.spot(s, along);
-        const [x, y, top] = off(h, side * h.w, -0.25);
+        // an upright leg under a sloping floor: its top stops short by as much as the floor falls across the leg's
+        // own width, corner to corner, or its downhill corner stood up through the floor
+        const grade = Math.abs(h.tz) / (Math.hypot(h.tx, h.ty) || 1);
+        const [x, y, floorUnder] = off(h, side * h.w, -0.25);
+        const top = floorUnder - half * Math.SQRT2 * grade;
         const foot = footOf(this.track, x, y, top);
         if (foot === null || top - foot < 0.6) continue;
         this.put(kind, s, along, 0, side, [x, y, foot], top - foot);
@@ -734,6 +823,97 @@ class Site {
    * `sceneryClear` holds it to, and shrinks to fit under it where it must.
    */
   backdrop() {
+    this.sweetBackdrop();
+  }
+
+  /** Where the backdrop stands round, its chance, and how to place a thing of it under the line; for either theme's. */
+  private scene() {
+    const { box, ground, track } = this;
+    const cx = (box.min[0] + box.max[0]) / 2,
+      cy = (box.min[1] + box.max[1]) / 2;
+    const reach = reachOf(box);
+    const low = ground + GROUND;
+    const segment = this.pieces.length ? this.by.get(this.pieces[0])! : 0;
+    const random = seeded(Math.round(track.length * 1000) + Math.round((box.max[0] - box.min[0]) * 7919));
+    const place = (kind: DecorKind, dist: number, angle: number, height: number, lift = 0, turn = 0) => {
+      const x = cx + Math.cos(angle) * dist,
+        y = cy + Math.sin(angle) * dist;
+      const most = low + BACKDROP.slope * (dist - reach) - (ground + lift);
+      const tall = Math.min(height, most);
+      if (tall < Math.min(1, height)) return;
+      this.put(kind, segment, 0, 0, 1, [x, y, ground + lift], tall);
+      this.out[this.out.length - 1].heading = turn;
+    };
+    return { cx, cy, reach, low, segment, random, place, big: Math.max(1, reach / 25) };
+  }
+
+  /**
+   * A works' hall: its floor, and its walls as far out and as tall as the line
+   * allows, with windows; machinery in its far reaches, a gantry crane and
+   * silos; a skyline of sheds and cooling towers outside it, seen over the
+   * walls against the dusk; and clutter strewn on the floor just past the run.
+   */
+  hall() {
+    const { cx, cy, reach, low, segment, random, place, big } = this.scene();
+    const out = reach + 70;
+    const tall = Math.min(26, low + BACKDROP.slope * (out - reach) - this.ground);
+    this.put('hall', segment, 0, out, 1, [cx, cy, this.ground], tall);
+    this.out[this.out.length - 1].heading = 0;
+    // machinery in the hall's far reaches, between the run and the walls
+    for (let k = 0; k < MOST.silo; k++)
+      place(
+        'silo',
+        reach + 30 + random() * 25,
+        (k / MOST.silo) * Math.PI * 2 + random() * 0.6,
+        (9 + random() * 5) * Math.min(big, 1.6),
+      );
+    for (let k = 0; k < MOST.crane; k++)
+      place(
+        'crane',
+        reach + 42 + random() * 10,
+        (k / MOST.crane) * Math.PI * 2 + 1.1 + random() * 0.5,
+        14,
+        0,
+        random() * Math.PI,
+      );
+    // the skyline outside, beyond the walls and over them
+    for (let k = 0; k < MOST.coolingTower; k++)
+      place(
+        'coolingTower',
+        out + 30 + random() * 40,
+        (k / MOST.coolingTower) * Math.PI * 2 + random() * 0.8,
+        38 + random() * 14,
+      );
+    for (let k = 0; k < MOST.shed; k++)
+      place(
+        'shed',
+        out + 20 + random() * 60,
+        (k / MOST.shed) * Math.PI * 2 + 0.5 + random() * 0.7,
+        30 + random() * 10,
+        0,
+        random() * Math.PI,
+      );
+    // clutter on the floor just past the run, as the sweet factory's sweets are, in proportion to its size
+    const sizes: Record<'drum' | 'crate' | 'pallet' | 'reel' | 'trafficCone', number> = {
+      drum: 1.3,
+      crate: 1.1,
+      pallet: 0.3,
+      reel: 1.2,
+      trafficCone: 0.9,
+    };
+    for (const kind of ['drum', 'crate', 'pallet', 'reel', 'trafficCone'] as const)
+      for (let k = 0; k < MOST[kind]; k++)
+        place(
+          kind,
+          reach + BACKDROP.beyond + 2 * big + random() * 24 * big,
+          random() * Math.PI * 2,
+          sizes[kind] * big,
+          0,
+          random() * Math.PI * 2,
+        );
+  }
+
+  private sweetBackdrop() {
     const { box, ground, track } = this;
     const cx = (box.min[0] + box.max[0]) / 2,
       cy = (box.min[1] + box.max[1]) / 2;
@@ -830,6 +1010,7 @@ function industrial(site: Site) {
       CHIMNEY_SMOKE,
     );
   for (const f of [0.65, 0.9, 0.1]) site.stand('tank', f, TANK.radius, TANK.out, TANK.height);
+  site.hall();
 }
 
 /**
@@ -872,6 +1053,14 @@ export function sceneryClear(track: Track, d: Decoration): string {
   const low = box.min[2] + HALF_WIDTH + 4;
   const ground = low - GROUND;
   if (FLAT.includes(d.kind)) return Math.abs(d.z - ground) < 1e-6 && d.height === 0 ? '' : `a ${d.kind} off the ground`;
+  if (d.kind === HALL) {
+    const reachOut = reachOf(box);
+    if (Math.abs(d.z - ground) > 1e-6) return 'the hall off the ground';
+    if (d.length < reachOut + BACKDROP.beyond)
+      return `the hall's walls ${(d.length - reachOut).toFixed(1)} past the run's reach`;
+    const line = low + BACKDROP.slope * (d.length - reachOut);
+    return d.z + d.height > line + 1e-6 ? `the hall's walls ${(d.z + d.height - line).toFixed(1)} over the line` : '';
+  }
   if (!SCENERY.includes(d.kind)) return '';
   const reach = reachOf(box);
   const dist = Math.hypot(d.x - (box.min[0] + box.max[0]) / 2, d.y - (box.min[1] + box.max[1]) / 2);
@@ -968,7 +1157,13 @@ export const CHIMNEY_SMOKE: Smoke = { rise: 15, drift: [5, 1.8], size: 0.9, grow
 /** A fudge pot's steam: lower, smaller and gentler than a chimney's smoke, and gone sooner. */
 export const POT_STEAM: Smoke = { rise: 6, drift: [1.4, 0.5], size: 0.45, grows: 1.1 };
 /** What smokes, and how. */
-export const SMOKES: Partial<Record<DecorKind, Smoke>> = { chimney: CHIMNEY_SMOKE, fudgePot: POT_STEAM };
+/** A cooling tower's steam: a great slow billow rising far over it. */
+export const TOWER_STEAM: Smoke = { rise: 30, drift: [9, 3], size: 3, grows: 7 };
+export const SMOKES: Partial<Record<DecorKind, Smoke>> = {
+  chimney: CHIMNEY_SMOKE,
+  fudgePot: POT_STEAM,
+  coolingTower: TOWER_STEAM,
+};
 
 /**
  * Where a puff of smoke is when it is `age` of the way through its life, from

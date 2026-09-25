@@ -636,7 +636,10 @@ test('a run dressed as a works while it is built, made plain and dressed again, 
   expect((await decor()).theme).toBe('sweets');
   expect((await sky())[2], 'a blue sky').toBeGreaterThan(0.9);
   await page.evaluate(() => window.game!.pick(0));
-  expect((await sky())[2], 'the works in the dark').toBeLessThan(0.1);
+  // the works at dusk: a warm purple, red over blue, where the sweet factory's sky is blue over red
+  const dusk = await sky();
+  expect(dusk[0], 'the works at dusk').toBeGreaterThan(dusk[2]);
+  expect(dusk[2], 'not a day sky').toBeLessThan(0.5);
 
   // the runs that come with the game are dressed, and the catalog's pieces are not
   expect((await decor()).theme).toBe('industrial');

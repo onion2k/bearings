@@ -110,7 +110,11 @@ import {
 /** How thick the chute is, so it is a trough and not a sheet of paper. */
 const SKIN = 0.18;
 /** The smoke's grey, pale enough to read against the dark as smoke and not as a hole in it. */
-const SMOKE: [number, number, number] = [0.62, 0.62, 0.65];
+const SMOKE: [number, number, number] = [0.26, 0.25, 0.26];
+/** A cooling tower's steam, pale and clean beside a chimney's soot. */
+const TOWER_STEAM: [number, number, number] = [0.85, 0.82, 0.82];
+/** A works lamp's glow in the dusk: a warm haze round the bulb, how big and how thick. */
+const GLOW = { colour: [1, 0.6, 0.25] as [number, number, number], size: 1.4, alpha: 0.4 };
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
 /**
@@ -630,7 +634,12 @@ export class Scene {
   readonly cogs = new Float32Array(MOST.cog * 2 * 16);
   readonly rods = new Float32Array(MOST.piston * 16);
   /** The smoke, a soft sprite a puff, as the renderer takes them: where, how big, what colour and how thick. */
-  readonly smoke = new Float32Array((MOST.chimney + MOST.fudgePot) * PUFFS * SPRITE_STRIDE);
+  readonly smoke = new Float32Array(
+    ((MOST.chimney + MOST.fudgePot + MOST.coolingTower) * PUFFS + MOST.lamp) * SPRITE_STRIDE,
+  );
+  /** Where each works lamp's glow hangs, worked out once a run: three numbers a lamp. */
+  private glows = new Float32Array(MOST.lamp * 3);
+  private glowCount = 0;
   /** The whisks turning on a sweet factory's walls. */
   readonly whisks = new Float32Array(MOST.whisk * 16);
   /** Where each whisk turns, worked out once a run, as a cog's is. */
@@ -797,7 +806,14 @@ export class Scene {
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
-      { mesh: channel.build(), matrices: one, albedo: colours.walls, roughness: 0.65 },
+      {
+        mesh: channel.build(),
+        matrices: one,
+        albedo: colours.walls,
+        roughness: 0.65,
+        // rust runs in streaks through the walls, drawn from where on them a fragment is, as marbling
+        ...(colours.streaks ? { patterns: new Float32Array([3, 1.5, 0.3, 0, ...colours.streaks, 0]) } : {}),
+      },
       { mesh: floor.build(), matrices: one, albedo: colours.floor, roughness: 0.65 },
       // a peg is a cone, which is what a ball there meets
       {
@@ -885,6 +901,16 @@ export class Scene {
       paper = new MeshBuilder(),
       frosting = new MeshBuilder(),
       cherry = new MeshBuilder();
+    // and a works hall's
+    const concrete = new MeshBuilder(),
+      hallBrick = new MeshBuilder(),
+      glass = new MeshBuilder(),
+      wood = new MeshBuilder(),
+      orange = new MeshBuilder(),
+      steel = new MeshBuilder(),
+      pale = new MeshBuilder(),
+      drums = [new MeshBuilder(), new MeshBuilder(), new MeshBuilder()];
+    let glows = 0;
     // gumdrops and the lollipops' sweets are placed one each, the gumdrops each their colour and the sweets each
     // their colour and swirl
     const gumdrops: number[] = [];
@@ -924,6 +950,7 @@ export class Scene {
           sn = Math.sin(d.heading);
         block(iron, [over[0], over[1], over[2] - 0.12], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.28, 0.28, 0.12);
         ball(bulbs, [over[0], over[1], over[2] - 0.34], 0.17);
+        this.glows.set([over[0], over[1], over[2] - 0.34], glows++ * 3);
       },
       pipes: (d) => {
         // two pipes swept along the samples beside the wall, and a flange round each every few units
@@ -1008,6 +1035,21 @@ export class Scene {
         // a painted tank on the ground, an iron roof, a gauge and a ladder up its side
         column(paint, d.x, d.y, d.z, d.z + d.height, TANK.radius, TANK.radius, 18);
         column(iron, d.x, d.y, d.z + d.height, d.z + d.height + 0.5, TANK.radius + 0.05, 0.15, 18);
+        // riveted bands round it where its plates meet
+        for (const f of [0.08, 0.5, 0.92]) {
+          const z = d.z + d.height * f;
+          column(iron, d.x, d.y, z - 0.07, z + 0.07, TANK.radius + 0.035, TANK.radius + 0.035, 18);
+          for (let k = 0; k < 16; k++) {
+            const a = (k / 16) * Math.PI * 2;
+            ball(
+              iron,
+              [d.x + Math.cos(a) * (TANK.radius + 0.05), d.y + Math.sin(a) * (TANK.radius + 0.05), z],
+              0.045,
+              3,
+              5,
+            );
+          }
+        }
         const face: V3 = [
           Math.cos(d.heading + (Math.PI / 2) * d.side),
           Math.sin(d.heading + (Math.PI / 2) * d.side),
@@ -1028,6 +1070,217 @@ export class Scene {
           ];
           beam(iron, [rail[0], rail[1], d.z], [rail[0], rail[1], d.z + d.height + 0.3], 0.03);
         }
+      },
+      hall: (d) => {
+        // a concrete floor under everything, painted lines marking a walkway round the run, and brick walls with
+        // tall windows the dusk shows through, a truss along the top of each
+        const e = d.length,
+          z = d.z;
+        block(concrete, [d.x, d.y, z - 0.05], [1, 0, 0], [0, 1, 0], [0, 0, 1], e + 2, e + 2, 0.05);
+        for (const f of [0.55, 0.85])
+          for (let side = 0; side < 4; side++) {
+            const a = (side * Math.PI) / 2;
+            const c = Math.cos(a),
+              sn = Math.sin(a);
+            block(
+              yellow,
+              [d.x + c * e * f, d.y + sn * e * f, z + 0.02],
+              [-sn, c, 0],
+              [c, sn, 0],
+              [0, 0, 1],
+              e * f,
+              0.15,
+              0.01,
+            );
+          }
+        const top = z + d.height - 2.4;
+        for (let side = 0; side < 4; side++) {
+          const a = (side * Math.PI) / 2;
+          const c = Math.cos(a),
+            sn = Math.sin(a);
+          const mid: V3 = [d.x + c * e, d.y + sn * e, z];
+          const along: V3 = [-sn, c, 0],
+            out: V3 = [c, sn, 0];
+          block(hallBrick, mid, along, out, [0, 0, 1], e + 0.6, 0.6, top - z);
+          // windows in a row, through the wall so both faces show them, and a frame of iron between
+          const bay = 9;
+          for (let w = -e + bay / 2; w < e - bay / 2 + 1e-6; w += bay) {
+            const at: V3 = [mid[0] + along[0] * w, mid[1] + along[1] * w, z + (top - z) * 0.35];
+            block(glass, at, along, out, [0, 0, 1], bay * 0.34, 0.66, (top - z) * 0.45);
+            block(iron, [at[0], at[1], at[2] + (top - z) * 0.22], along, out, [0, 0, 1], bay * 0.36, 0.7, 0.12);
+          }
+          // the truss: a chord along the wall's top and one above it, braced in a zigzag between
+          const chord = (h: number) =>
+            beam(
+              iron,
+              [mid[0] - along[0] * e, mid[1] - along[1] * e, h],
+              [mid[0] + along[0] * e, mid[1] + along[1] * e, h],
+              0.12,
+            );
+          chord(top + 0.1);
+          chord(top + 2.2);
+          for (let w = -e, k = 0; w < e; w += 3, k++) {
+            const lo: V3 = [mid[0] + along[0] * w, mid[1] + along[1] * w, top + 0.1];
+            const hi: V3 = [mid[0] + along[0] * (w + 3), mid[1] + along[1] * (w + 3), top + 2.2];
+            beam(iron, k % 2 ? [lo[0], lo[1], top + 2.2] : lo, k % 2 ? [hi[0], hi[1], top + 0.1] : hi, 0.07);
+          }
+        }
+      },
+      silo: (d) => {
+        // a pale steel silo, a cone for a roof, bands round it and a ladder up its side
+        const r = d.height * 0.2,
+          body = d.height * 0.8;
+        column(steel, d.x, d.y, d.z, d.z + body, r, r, 20);
+        column(steel, d.x, d.y, d.z + body, d.z + d.height, r * 1.02, 0.2, 20);
+        for (const f of [0.25, 0.5, 0.75])
+          column(iron, d.x, d.y, d.z + body * f - 0.1, d.z + body * f + 0.1, r * 1.03, r * 1.03, 20);
+        beam(iron, [d.x + r * 1.08, d.y, d.z], [d.x + r * 1.08, d.y, d.z + body], 0.06);
+      },
+      coolingTower: (d) => {
+        // a concrete cooling tower, narrowing to a waist and flaring to its lip, steam rising from it
+        const h = d.height;
+        const waist = (z: number) => h * (0.36 - 0.55 * z + 0.6 * z * z);
+        const rows = 18;
+        for (let k = 0; k < rows; k++) {
+          const z0 = k / rows,
+            z1 = (k + 1) / rows;
+          column(pale, d.x, d.y, d.z + z0 * h, d.z + z1 * h, waist(z0), waist(z1), 26);
+        }
+      },
+      shed: (d) => {
+        // a long shed, corrugated walls and a pitched roof, as tall as the dressing allows
+        const h = d.height,
+          c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const along: V3 = [c, sn, 0],
+          across: V3 = [-sn, c, 0];
+        const wall = h * 0.65,
+          long = h * 0.9,
+          wide = h * 0.55;
+        block(steel, [d.x, d.y, d.z], along, across, [0, 0, 1], long, wide, wall);
+        for (const s of [-1, 1]) {
+          const rise = h - wall;
+          const slope = Math.hypot(wide, rise);
+          const nz: V3 = [across[0] * s * (rise / slope), across[1] * s * (rise / slope), wide / slope];
+          const dn: V3 = [-across[0] * s * (wide / slope), -across[1] * s * (wide / slope), rise / slope];
+          block(
+            iron,
+            [d.x + across[0] * s * wide * 0.5, d.y + across[1] * s * wide * 0.5, d.z + wall + rise * 0.5],
+            along,
+            dn,
+            nz,
+            long * 1.02,
+            slope * 0.52,
+            0.15,
+          );
+        }
+      },
+      crane: (d) => {
+        // a gantry crane: a legged frame either end, a beam across between, and its hoist hanging from the middle
+        const h = d.height,
+          span = h * 1.2,
+          c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        for (const e of [-1, 1]) {
+          const fx = d.x + c * e * span * 0.5,
+            fy = d.y + sn * e * span * 0.5;
+          for (const f of [-1, 1]) {
+            const ox = -sn * f * h * 0.25,
+              oy = c * f * h * 0.25;
+            beam(yellow, [fx + ox, fy + oy, d.z], [fx, fy, d.z + h - 0.5], 0.28);
+          }
+          block(yellow, [fx, fy, d.z + 0.1], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.5, h * 0.3, 0.2);
+        }
+        beam(
+          yellow,
+          [d.x - c * span * 0.55, d.y - sn * span * 0.55, d.z + h - 0.5],
+          [d.x + c * span * 0.55, d.y + sn * span * 0.55, d.z + h - 0.5],
+          0.45,
+        );
+        block(iron, [d.x, d.y, d.z + h - 1.6], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.8, 0.7, 0.7);
+        beam(iron, [d.x, d.y, d.z + h - 1.6], [d.x, d.y, d.z + h * 0.4], 0.04);
+        block(iron, [d.x, d.y, d.z + h * 0.4 - 0.3], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.3, 0.3, 0.3);
+      },
+      drum: (d) => {
+        // an oil drum, one of three colours, ringed at its ends and its middle
+        const s = d.height / 1.3;
+        const into = drums[Math.abs(Math.round(d.x * 7 + d.y * 3)) % drums.length];
+        column(into, d.x, d.y, d.z, d.z + d.height, 0.45 * s, 0.45 * s, 14);
+        for (const f of [0.02, 0.36, 0.64, 0.98])
+          column(iron, d.x, d.y, d.z + d.height * f - 0.03 * s, d.z + d.height * f + 0.03 * s, 0.47 * s, 0.47 * s, 14);
+      },
+      crate: (d) => {
+        // a wooden crate, its edges slatted darker
+        const s = d.height,
+          c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const a: V3 = [c, sn, 0],
+          b: V3 = [-sn, c, 0];
+        block(wood, [d.x, d.y, d.z], a, b, [0, 0, 1], s * 0.5, s * 0.5, s);
+        for (const [u, v] of [
+          [-1, -1],
+          [-1, 1],
+          [1, -1],
+          [1, 1],
+        ])
+          block(
+            iron,
+            [d.x + (a[0] * u + b[0] * v) * s * 0.47, d.y + (a[1] * u + b[1] * v) * s * 0.47, d.z],
+            a,
+            b,
+            [0, 0, 1],
+            s * 0.06,
+            s * 0.06,
+            s,
+          );
+      },
+      pallet: (d) => {
+        // boards across three runners, lying on the floor
+        const s = d.height / 0.3,
+          c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const a: V3 = [c, sn, 0],
+          b: V3 = [-sn, c, 0];
+        for (const v of [-1, 0, 1])
+          block(
+            wood,
+            [d.x + b[0] * v * 0.55 * s, d.y + b[1] * v * 0.55 * s, d.z],
+            a,
+            b,
+            [0, 0, 1],
+            0.8 * s,
+            0.08 * s,
+            d.height * 0.6,
+          );
+        for (let u = -3; u <= 3; u++)
+          block(
+            wood,
+            [d.x + a[0] * u * 0.24 * s, d.y + a[1] * u * 0.24 * s, d.z + d.height * 0.6],
+            a,
+            b,
+            [0, 0, 1],
+            0.09 * s,
+            0.65 * s,
+            d.height * 0.4,
+          );
+      },
+      reel: (d) => {
+        // a cable reel lying on its side: two wooden flanges and the cable wound between
+        const r = d.height,
+          lip = d.height * 0.14;
+        column(wood, d.x, d.y, d.z, d.z + lip, r, r, 18);
+        column(black, d.x, d.y, d.z + lip, d.z + d.height - lip, r * 0.72, r * 0.72, 18);
+        column(wood, d.x, d.y, d.z + d.height - lip, d.z + d.height, r, r, 18);
+      },
+      trafficCone: (d) => {
+        // an orange cone on a square foot, a white band round it
+        const s = d.height / 0.9;
+        const c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        block(orange, [d.x, d.y, d.z], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.32 * s, 0.32 * s, 0.05 * s);
+        column(orange, d.x, d.y, d.z + 0.05 * s, d.z + 0.45 * s, 0.24 * s, 0.14 * s, 12);
+        column(candyWhite, d.x, d.y, d.z + 0.45 * s, d.z + 0.6 * s, 0.14 * s, 0.1 * s, 12);
+        column(orange, d.x, d.y, d.z + 0.6 * s, d.z + d.height, 0.1 * s, 0.03 * s, 12);
       },
       girder: (d) => {
         // a girder's leg, and a plate it stands on
@@ -1275,6 +1528,7 @@ export class Scene {
     }
     this.cogCount = cogs;
     this.whiskCount = whisks;
+    this.glowCount = glows;
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [];
@@ -1295,6 +1549,17 @@ export class Scene {
     add(paper, [0.55, 0.78, 0.92], 0.75);
     add(frosting, [1, 0.78, 0.87], 0.55);
     add(cherry, [0.7, 0.02, 0.05], 0.2);
+    add(concrete, [0.36, 0.35, 0.34], 0.9);
+    add(hallBrick, [0.42, 0.2, 0.15], 0.85);
+    // the windows lit by the dusk outside: bright enough to bloom a little
+    add(glass, [6, 3.2, 1.6], 0.15);
+    add(wood, [0.6, 0.43, 0.24], 0.8);
+    add(orange, [0.95, 0.35, 0.05], 0.5);
+    add(steel, [0.5, 0.52, 0.55], 0.4);
+    add(pale, [0.66, 0.64, 0.6], 0.85);
+    add(drums[0], [0.1, 0.28, 0.6], 0.5);
+    add(drums[1], [0.62, 0.1, 0.07], 0.5);
+    add(drums[2], [0.1, 0.4, 0.2], 0.5);
     // the gumdrops, sugared, each its own colour in turn
     if (gumdrops.length) {
       const n = gumdrops.length / 3;
@@ -1372,8 +1637,8 @@ export class Scene {
     for (const d of dressing) {
       if (d.kind === 'piston' && rods < MOST.piston) {
         spin(this.rods, rods++, d.x, d.y, d.z + d.height - 1 + rodOut(d, t), 0, 0, 1, 0);
-      } else if ((d.kind === 'chimney' || d.kind === 'fudgePot') && puffs < (MOST.chimney + MOST.fudgePot) * PUFFS) {
-        const grey = d.kind === 'chimney' ? SMOKE : STEAM;
+      } else if (d.kind === 'chimney' || d.kind === 'fudgePot' || d.kind === 'coolingTower') {
+        const grey = d.kind === 'chimney' ? SMOKE : d.kind === 'fudgePot' ? STEAM : TOWER_STEAM;
         for (let j = 0; j < PUFFS; j++) {
           const p = puffOf(d, j, t, this.puff);
           const o = puffs++ * SPRITE_STRIDE;
@@ -1387,6 +1652,12 @@ export class Scene {
           this.smoke[o + 7] = p[4];
         }
       }
+    }
+    // each works lamp's warm glow, a sprite that stays where the lamp is
+    for (let k = 0; k < this.glowCount; k++) {
+      const o = puffs++ * SPRITE_STRIDE;
+      this.smoke.set([this.glows[k * 3], this.glows[k * 3 + 1], this.glows[k * 3 + 2], GLOW.size], o);
+      this.smoke.set([...GLOW.colour, GLOW.alpha], o + 4);
     }
     return [this.cogCount, rods, puffs, this.whiskCount];
   }

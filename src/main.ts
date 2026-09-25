@@ -26,8 +26,6 @@ import { LIGHTS, WORLDS, bulbOf } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
-/** How far a lamp's light carries, in the renderer's own terms; how bright each is, is `LIGHTS`'s. */
-const LAMP_REACH = 8;
 const LIGHT_CAPACITY = 16,
   EFFECT_CAPACITY = 16,
   PARTICLE_CAPACITY = 1024;
@@ -114,6 +112,7 @@ async function main() {
   const envs = {
     studio: bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 }),
     daylight: bakeEnvironment(ctx, 'daylight', { size: 128, mips: 6 }),
+    dusk: bakeEnvironment(ctx, 'dusk', { size: 128, mips: 6 }),
   };
   let reflecting: keyof typeof envs = 'studio';
   renderer.setEnvironment(envs.studio.specular, envs.studio.brdf, envs.studio.mips);
@@ -191,6 +190,8 @@ async function main() {
     renderer.post = {
       ...renderer.post,
       vignette: world.env === 'daylight' ? 0 : DEFAULT_POST.vignette,
+      // a hall at dusk: its lamps and windows bloom a little more than the dark ever did
+      bloom: world.env === 'dusk' ? 0.55 : DEFAULT_POST.bloom,
       tone: world.shading === 'toon' ? 'clamp' : 'filmic',
     };
     if (world.env !== reflecting) {
@@ -222,7 +223,7 @@ async function main() {
     // which its ceiling keeps inside the pool with the light over the whole run
     for (const d of game.decor) {
       const light = LIGHTS[d.kind];
-      if (light) lights.add({ position: bulbOf(game.track, d, bulb), radius: LAMP_REACH, ...light });
+      if (light) lights.add({ position: bulbOf(game.track, d, bulb), ...light });
     }
     renderer.setLights(lights);
   };

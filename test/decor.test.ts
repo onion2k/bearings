@@ -14,6 +14,7 @@ import {
   CANE,
   DECOR_KINDS,
   FLAT,
+  HALL,
   SCENERY,
   sceneryClear,
   type DecorKind,
@@ -25,6 +26,7 @@ import {
   CANDY,
   LIGHTS,
   LOLLIPOP,
+  RUST,
   STEEL,
   THEME_KINDS,
   WORLDS,
@@ -118,9 +120,10 @@ describe('dressing a run', () => {
     expect(apart, 'the light well under the sweet').toBeGreaterThan(0.8);
   });
 
-  it("colours a sweet factory's track in candy and the works' in steel", () => {
+  it("colours a sweet factory's track in candy, the works' in rust, and a plain run's in steel", () => {
     expect(WORLDS.sweets.track).toBe(CANDY);
-    expect(WORLDS.industrial.track).toBe(STEEL);
+    expect(WORLDS.industrial.track).toBe(RUST);
+    expect(RUST.streaks, 'the works streaked with rust').toBeDefined();
     expect(WORLDS.plain.track).toBe(STEEL);
     const run = RUNS.find((r) => r.theme === 'sweets')!;
     const groups = new Scene().static(compile(run), [], WORLDS.sweets.track);
@@ -193,7 +196,7 @@ describe('dressing a run', () => {
       const { track, items } = dressed(run);
       const box = boxOf(track);
       // the backdrop stands beyond the box on purpose, held by its own rule below
-      for (const d of items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind)))
+      for (const d of items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind) && d.kind !== HALL))
         for (const z of [d.z, d.z + d.height]) {
           const at = [d.x, d.y, z];
           for (let a = 0; a < 3; a++) {
@@ -413,7 +416,7 @@ describe('what a run is dressed with, drawn', () => {
       const { track, items } = dressed(run);
       const inside = where(track);
       // the backdrop is held by its own rule; the ground and a river lie under everything
-      const near = items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind));
+      const near = items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind) && d.kind !== HALL);
       const still = scene.decor(track, near);
       for (const [t, groups] of [
         [0, still],
@@ -522,12 +525,16 @@ describe('what a run is dressed with, drawn', () => {
     for (const theme of THEMES) {
       const { track, items } = dressed(themed(theme)(RUNS.find((r) => r.id.startsWith('stress'))!));
       scene.decor(track, items);
-      const chimneys = items.filter((d) => d.kind === 'chimney' || d.kind === 'fudgePot').length;
+      const chimneys = items.filter(
+        (d) => d.kind === 'chimney' || d.kind === 'fudgePot' || d.kind === 'coolingTower',
+      ).length;
+      // after the smoke, a works lamp's glow each
+      const glows = items.filter((d) => d.kind === 'lamp').length;
       expect(chimneys, `${theme}: something smokes`).toBeGreaterThan(0);
       expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(8);
       for (const t of [0.4, 2.2, 5.1]) {
         const [, , puffs] = scene.animate(items, t);
-        expect(puffs).toBe(chimneys * PUFFS);
+        expect(puffs).toBe(chimneys * PUFFS + glows);
         for (let c = 0; c < chimneys; c++) {
           const own = Array.from({ length: PUFFS }, (_, j) => {
             const o = (c * PUFFS + j) * SPRITE_STRIDE;
