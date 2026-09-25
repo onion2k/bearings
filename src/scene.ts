@@ -31,7 +31,10 @@ import {
   mound,
   sphere,
   hillOf,
+  radar,
   revolved,
+  rock,
+  satelliteDish,
   smoothCone,
   sweep,
   torus,
@@ -41,6 +44,15 @@ import {
   face,
 } from './meshes';
 import {
+  ANTENNA,
+  BACKDROP,
+  DIODES,
+  DEBRIS,
+  DISH,
+  SOLAR,
+  SPINE,
+  STARS,
+  THRUSTER,
   STANDING,
   STEEL,
   type TrackColours,
@@ -90,6 +102,7 @@ import {
   type Pose,
   type Segment,
   type Spot,
+  boxOf,
   finishOf,
   type Track,
   at,
@@ -114,6 +127,20 @@ const SMOKE: [number, number, number] = [0.26, 0.25, 0.26];
 /** A cooling tower's steam, pale and clean beside a chimney's soot. */
 const TOWER_STEAM: [number, number, number] = [0.85, 0.82, 0.82];
 /** A works lamp's glow in the dusk: a warm haze round the bulb, how big and how thick. */
+/** How many glows a run may have: a works' lamps, or a space station's beacons and thrusters. */
+const GLOWS = Math.max(MOST.lamp, MOST.beacon + MOST.thruster);
+/** How many diodes a run may have: a row along every piece that has them, one every `DIODES.every`. */
+const DIODE_MOST = 400;
+/** A beacon's cold glow, and a thruster's blue flame. */
+const BEACON_GLOW = { colour: [0.35, 0.8, 1] as [number, number, number], size: 1.3, alpha: 0.35 };
+const THRUST = { colour: [0.35, 0.55, 1] as [number, number, number], size: 0.9, alpha: 0.6 };
+/** The diodes' colours in turn, lit, and how dim each is when it is off. */
+const DIODE_COLOURS: readonly [number, number, number][] = [
+  [0.2, 3, 0.6],
+  [3.2, 0.4, 0.3],
+  [0.4, 1.8, 3.4],
+];
+const DIODE_OFF = 0.08;
 const GLOW = { colour: [1, 0.6, 0.25] as [number, number, number], size: 1.4, alpha: 0.4 };
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
@@ -635,11 +662,20 @@ export class Scene {
   readonly rods = new Float32Array(MOST.piston * 16);
   /** The smoke, a soft sprite a puff, as the renderer takes them: where, how big, what colour and how thick. */
   readonly smoke = new Float32Array(
-    ((MOST.chimney + MOST.fudgePot + MOST.coolingTower) * PUFFS + MOST.lamp) * SPRITE_STRIDE,
+    ((MOST.chimney + MOST.fudgePot + MOST.coolingTower) * PUFFS + GLOWS) * SPRITE_STRIDE,
   );
-  /** Where each works lamp's glow hangs, worked out once a run: three numbers a lamp. */
-  private glows = new Float32Array(MOST.lamp * 3);
+  /** Each glow round a lamp, a beacon or a thruster, worked out once a run as a sprite, and whether it pulses. */
+  private glows = new Float32Array(GLOWS * SPRITE_STRIDE);
+  private glowPulse = new Uint8Array(GLOWS);
   private glowCount = 0;
+  /** A space station's turning dishes and antennas, and its drifting debris, each pool sized once. */
+  readonly dishes = new Float32Array(MOST.dish * 16);
+  readonly antennas = new Float32Array(MOST.antenna * 16);
+  readonly debris = new Float32Array(MOST.debris * 16);
+  /** Its diodes, placed once a run, their colours written each frame as they blink. */
+  readonly diodes = new Float32Array(DIODE_MOST * 16);
+  readonly diodeLooks = new Float32Array(DIODE_MOST * 4);
+  private diodeCount = 0;
   /** The whisks turning on a sweet factory's walls. */
   readonly whisks = new Float32Array(MOST.whisk * 16);
   /** Where each whisk turns, worked out once a run, as a cog's is. */
@@ -911,6 +947,14 @@ export class Scene {
       pale = new MeshBuilder(),
       drums = [new MeshBuilder(), new MeshBuilder(), new MeshBuilder()];
     let glows = 0;
+    // and a space station's
+    const hull = new MeshBuilder(),
+      cyan = new MeshBuilder(),
+      panel = new MeshBuilder(),
+      cells = new MeshBuilder(),
+      red = new MeshBuilder(),
+      stars: number[] = [];
+    let diodes = 0;
     // gumdrops and the lollipops' sweets are placed one each, the gumdrops each their colour and the sweets each
     // their colour and swirl
     const gumdrops: number[] = [];
@@ -950,7 +994,7 @@ export class Scene {
           sn = Math.sin(d.heading);
         block(iron, [over[0], over[1], over[2] - 0.12], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.28, 0.28, 0.12);
         ball(bulbs, [over[0], over[1], over[2] - 0.34], 0.17);
-        this.glows.set([over[0], over[1], over[2] - 0.34], glows++ * 3);
+        this.glow(glows++, over[0], over[1], over[2] - 0.34, GLOW, false);
       },
       pipes: (d) => {
         // two pipes swept along the samples beside the wall, and a flange round each every few units
@@ -1282,6 +1326,150 @@ export class Scene {
         column(candyWhite, d.x, d.y, d.z + 0.45 * s, d.z + 0.6 * s, 0.14 * s, 0.1 * s, 12);
         column(orange, d.x, d.y, d.z + 0.6 * s, d.z + d.height, 0.1 * s, 0.03 * s, 12);
       },
+      beacon: (d) => {
+        // a white pole beside the wall, an arm in over the middle, and a glowing cyan orb under it
+        const top = d.z + LAMP.height;
+        column(hull, d.x, d.y, d.z - 0.3, top + 0.1, LAMP.pole, LAMP.pole, 8);
+        const over = off(0, LAMP.height);
+        beam(hull, [d.x, d.y, top], over, 0.06);
+        ball(cyan, [over[0], over[1], over[2] - 0.3], 0.22);
+        this.glow(glows++, over[0], over[1], over[2] - 0.3, BEACON_GLOW, false);
+      },
+      strut: (d) => {
+        // scaffolding between two pieces: a square truss, braced
+        lattice(hull, d.x, d.y, d.z, d.z + d.height, GIRDER.half);
+      },
+      spine: (d) => {
+        // a box truss under the floor, four chords swept along it and braces across, every so often a panel
+        const seg = track.segments[d.segment];
+        const top = -0.3,
+          bottom = -0.3 - d.height,
+          w = SPINE.half,
+          r = SPINE.chord;
+        for (const [a, u] of [
+          [-w, top],
+          [w, top],
+          [-w, bottom],
+          [w, bottom],
+        ] as const) {
+          const ring: [number, number][] = [
+            [a - r, u - r],
+            [a + r, u - r],
+            [a + r, u + r],
+            [a - r, u + r],
+            [a - r, u - r],
+          ];
+          sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, ring, hull);
+        }
+        for (let a = 0.4, k = 0; a < d.length; a += 1.1, k++) {
+          at(track, d.segment, a, h);
+          const [bx, by, bz] = right(h);
+          const pt = (across: number, up: number): V3 => [
+            h.x + bx * across + h.ux * up,
+            h.y + by * across + h.uy * up,
+            h.z + bz * across + h.uz * up,
+          ];
+          beam(hull, pt(-w, bottom), pt(w, bottom), 0.03);
+          beam(hull, pt(k % 2 ? -w : w, top), pt(k % 2 ? w : -w, bottom), 0.025);
+          beam(hull, pt(-w, top), pt(-w, bottom), 0.03);
+          beam(hull, pt(w, top), pt(w, bottom), 0.03);
+          if (k % 4 === 1)
+            block(
+              panel,
+              pt(0, bottom - 0.02),
+              [h.tx, h.ty, h.tz],
+              [-bx, -by, -bz],
+              [h.ux, h.uy, h.uz],
+              0.4,
+              w * 0.8,
+              0.04,
+            );
+        }
+      },
+      dish: (d) => {
+        // a mast up beside the wall; the dish on it turns
+        column(hull, d.x, d.y, d.z, d.z + d.height, 0.1, 0.07, 10);
+        block(panel, [d.x, d.y, d.z], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.2, 0.2, 0.2);
+      },
+      antenna: (d) => {
+        // a thin mast with a light at its top; the radar on it turns
+        column(hull, d.x, d.y, d.z, d.z + d.height, 0.07, 0.04, 8);
+        ball(red, [d.x, d.y, d.z + d.height + 0.62], 0.07, 3, 6);
+      },
+      thruster: (d) => {
+        // a pod hung under the floor, its bell pointing down, its flame a pulsing glow
+        column(hull, d.x, d.y, d.z + 0.5, d.z + d.height, THRUSTER.radius, THRUSTER.radius * 0.8, 12);
+        column(panel, d.x, d.y, d.z, d.z + 0.5, THRUSTER.radius * 0.95, THRUSTER.radius * 0.5, 12);
+        this.glow(glows++, d.x, d.y, d.z - 0.35, THRUST, true);
+      },
+      solar: (d) => {
+        // an arm out from the wall, and a wing of panels on it, tilted to the sun, a grid of cells in its frame
+        const [wx, wy, wz] = off(d.side * h.w, 0);
+        const mid: V3 = [d.x, d.y, d.z + SOLAR.below];
+        beam(hull, [wx, wy, wz], mid, 0.06);
+        const c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const along: V3 = [c, sn, 0];
+        const tip = 0.5;
+        const up: V3 = [-sn * Math.sin(tip) * d.side, c * Math.sin(tip) * d.side, Math.cos(tip)];
+        const across: V3 = [
+          up[1] * along[2] - up[2] * along[1],
+          up[2] * along[0] - up[0] * along[2],
+          up[0] * along[1] - up[1] * along[0],
+        ];
+        block(cells, mid, along, across, up, SOLAR.long / 2, SOLAR.wide / 2, 0.03);
+        for (let k = -4; k <= 4; k++)
+          block(
+            hull,
+            [mid[0] + along[0] * k * (SOLAR.long / 8), mid[1] + along[1] * k * (SOLAR.long / 8), mid[2] + 0.035],
+            along,
+            across,
+            up,
+            0.02,
+            SOLAR.wide / 2,
+            0.02,
+          );
+        block(hull, [mid[0], mid[1], mid[2] + 0.035], along, across, up, SOLAR.long / 2, 0.02, 0.02);
+      },
+      diodes: (d) => {
+        // a row of diodes along the outside of the wall, each placed once and blinking by the clock
+        for (let a = DIODES.every / 2; a < d.length && diodes < DIODE_MOST; a += DIODES.every) {
+          at(track, d.segment, a, h);
+          const [bx, by, bz] = right(h);
+          const across = d.side * (h.w + DIODES.out);
+          spin(
+            this.diodes,
+            diodes++,
+            h.x + bx * across + h.ux * DIODES.up,
+            h.y + by * across + h.uy * DIODES.up,
+            h.z + bz * across + h.uz * DIODES.up,
+            0,
+            0,
+            1,
+            0,
+            DIODES.radius,
+          );
+        }
+      },
+      debris: () => {
+        // drawn where the clock has it, tumbling as it drifts
+      },
+      stars: (d) => {
+        // a starfield below and round the station, every star beyond its reach and under the line a camera looks
+        // down along, so none comes between it and the run; the bigger the further, so all look alike in size
+        const random = seeded(Math.round(d.x * 13 + d.y * 7));
+        const box = boxOf(track);
+        const reach = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1]) / 2;
+        const low = box.min[2] + HALF_WIDTH + 4;
+        for (let k = 0; k < STARS.count; k++) {
+          const dist = d.length + random() * STARS.deep;
+          const angle = random() * Math.PI * 2;
+          const line = low + BACKDROP.slope * (dist - reach);
+          const size = dist * (0.0006 + random() * 0.0014);
+          const z = line - size - 2 - random() * dist * 1.1;
+          stars.push(d.x + Math.cos(angle) * dist, d.y + Math.sin(angle) * dist, z, size, k % 7 === 0 ? 1 : 0);
+        }
+      },
       girder: (d) => {
         // a girder's leg, and a plate it stands on
         lattice(iron, d.x, d.y, d.z, d.z + d.height, GIRDER.half);
@@ -1529,6 +1717,7 @@ export class Scene {
     this.cogCount = cogs;
     this.whiskCount = whisks;
     this.glowCount = glows;
+    this.diodeCount = diodes;
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [];
@@ -1549,6 +1738,24 @@ export class Scene {
     add(paper, [0.55, 0.78, 0.92], 0.75);
     add(frosting, [1, 0.78, 0.87], 0.55);
     add(cherry, [0.7, 0.02, 0.05], 0.2);
+    add(hull, [0.82, 0.84, 0.88], 0.35);
+    // the beacons' orbs lit from within, bright enough to bloom
+    add(cyan, [1.2, 3.2, 4], 0.2);
+    add(panel, [0.3, 0.32, 0.36], 0.45);
+    add(cells, [0.08, 0.14, 0.4], 0.12);
+    add(red, [4, 0.3, 0.2], 0.3);
+    if (stars.length) {
+      // lit from within, white and a few blue, bright enough to bloom
+      const n = stars.length / 5;
+      const at = new Float32Array(n * 16),
+        looks = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) {
+        const [x, y, z, size, blue] = stars.slice(k * 5, k * 5 + 5);
+        spin(at, k, x, y, z, 0, 0, 1, 0, size);
+        looks.set(blue ? [2.2, 3, 5, 1] : [4, 4, 4.2, 1], k * 4);
+      }
+      groups.push({ mesh: sphere(1, 4, 6), matrices: at, count: n, materials: looks });
+    }
     add(concrete, [0.36, 0.35, 0.34], 0.9);
     add(hallBrick, [0.42, 0.2, 0.15], 0.85);
     // the windows lit by the dusk outside: bright enough to bloom a little
@@ -1616,6 +1823,13 @@ export class Scene {
   }
   private cogCount = 0;
 
+  /** Glow `k`, a sprite at `x`, `y`, `z` as `look` has it, pulsing or not. */
+  private glow(k: number, x: number, y: number, z: number, look: typeof GLOW, pulse: boolean) {
+    if (k >= GLOWS) return;
+    this.glows.set([x, y, z, look.size, ...look.colour, look.alpha], k * SPRITE_STRIDE);
+    this.glowPulse[k] = pulse ? 1 : 0;
+  }
+
   /**
    * What of a run's dressing moves, where the clock has it at `t` seconds:
    * the cogs turning, a big one each way and its small one back the faster,
@@ -1623,7 +1837,10 @@ export class Scene {
    * How many of each: the cogs, the rods and the puffs. Written in place and
    * making nothing, since it is every frame.
    */
-  animate(dressing: readonly Decoration[], t: number): [number, number, number, number] {
+  animate(
+    dressing: readonly Decoration[],
+    t: number,
+  ): [number, number, number, number, number, number, number, number] {
     const turn = cogTurn(t);
     for (let k = 0; k < this.cogCount; k++) {
       // the big one turns one way; the small one, meshed with it, the other and faster by as much as it is smaller
@@ -1653,13 +1870,60 @@ export class Scene {
         }
       }
     }
-    // each works lamp's warm glow, a sprite that stays where the lamp is
+    // each glow, a sprite that stays where its lamp is; a thruster's pulses, each on a beat of its own
     for (let k = 0; k < this.glowCount; k++) {
       const o = puffs++ * SPRITE_STRIDE;
-      this.smoke.set([this.glows[k * 3], this.glows[k * 3 + 1], this.glows[k * 3 + 2], GLOW.size], o);
-      this.smoke.set([...GLOW.colour, GLOW.alpha], o + 4);
+      for (let f = 0; f < SPRITE_STRIDE; f++) this.smoke[o + f] = this.glows[k * SPRITE_STRIDE + f];
+      if (this.glowPulse[k]) this.smoke[o + 7] *= 0.55 + 0.45 * Math.sin(t * 9 + k * 2.1);
     }
-    return [this.cogCount, rods, puffs, this.whiskCount];
+    // the dishes turning slowly on their masts, the antennas faster, and the debris tumbling as it drifts and bobs
+    let dishes = 0,
+      antennas = 0,
+      debris = 0;
+    for (const d of dressing) {
+      const phase = d.piece * 1.7 + d.x * 0.1;
+      if (d.kind === 'dish' && dishes < MOST.dish)
+        spin(
+          this.dishes,
+          dishes++,
+          d.x,
+          d.y,
+          d.z + d.height + 0.5 * DISH.radius,
+          0,
+          0,
+          1,
+          t * 0.35 + phase,
+          DISH.radius,
+        );
+      else if (d.kind === 'antenna' && antennas < MOST.antenna)
+        spin(this.antennas, antennas++, d.x, d.y, d.z + d.height, 0, 0, 1, t * 1.6 + phase, ANTENNA.radius);
+      else if (d.kind === 'debris' && debris < MOST.debris) {
+        const r = d.height / 2;
+        spin(
+          this.debris,
+          debris++,
+          d.x + Math.cos(d.heading) * DEBRIS.drift * Math.sin(t * 0.13 + phase),
+          d.y + Math.sin(d.heading) * DEBRIS.drift * Math.sin(t * 0.13 + phase),
+          d.z + r + DEBRIS.bob * Math.sin(t * 0.21 + phase),
+          Math.cos(d.heading),
+          Math.sin(d.heading),
+          0.6,
+          t * 0.3 + phase,
+          r,
+        );
+      }
+    }
+    // the diodes blinking, each on its own beat, in three colours
+    for (let k = 0; k < this.diodeCount; k++) {
+      const on = Math.sin(t * (2 + (k % 5) * 0.7) + k * 1.3) > 0.2;
+      const [r, g, b] = DIODE_COLOURS[k % DIODE_COLOURS.length];
+      const f = on ? 1 : DIODE_OFF;
+      this.diodeLooks[k * 4] = r * f;
+      this.diodeLooks[k * 4 + 1] = g * f;
+      this.diodeLooks[k * 4 + 2] = b * f;
+      this.diodeLooks[k * 4 + 3] = 0.3;
+    }
+    return [this.cogCount, rods, puffs, this.whiskCount, dishes, antennas, debris, this.diodeCount];
   }
 
   /** What moves: the marbles, then the sweepers, the gates and the wheels, each pool sized once. */
@@ -1693,6 +1957,11 @@ export class Scene {
       { mesh: cog(12, COG.thick), matrices: this.cogs, count: 0, albedo: [0.72, 0.56, 0.26], roughness: 0.35 },
       { mesh: post(0.1, 1.2), matrices: this.rods, count: 0, albedo: [0.72, 0.74, 0.78], roughness: 0.25 },
       { mesh: whisk(), matrices: this.whisks, count: 0, albedo: [0.82, 0.83, 0.86], roughness: 0.2 },
+      // a space station's: white dishes, radar bars, grey tumbling rock, and its diodes, coloured as they blink
+      { mesh: satelliteDish(), matrices: this.dishes, count: 0, albedo: [0.88, 0.89, 0.92], roughness: 0.3 },
+      { mesh: radar(), matrices: this.antennas, count: 0, albedo: [0.8, 0.82, 0.86], roughness: 0.3 },
+      { mesh: rock(7), matrices: this.debris, count: 0, albedo: [0.32, 0.3, 0.29], roughness: 0.9 },
+      { mesh: sphere(1, 6, 8), matrices: this.diodes, count: 0, materials: this.diodeLooks },
     ];
   }
 

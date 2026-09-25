@@ -625,3 +625,68 @@ export const hillOf =
   (ratio: number) =>
   (z: number): number =>
     ratio * Math.pow(Math.max(0, Math.cos((Math.min(1, z) * Math.PI) / 2)), 0.75);
+
+/**
+ * A lump of rock inside a ball `1` round, its faces flat and its surface
+ * pushed in by a chance from `seed`, so no two are the same: space debris.
+ * Never out past the ball, since debris is kept clear of the run by how far
+ * the ball reaches.
+ */
+export function rock(seed: number, rings = 5, sides = 8): Mesh {
+  const b = new MeshBuilder();
+  let s = seed * 9301 + 49297;
+  const next = () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+  const bump: number[] = [];
+  for (let i = 0; i <= rings; i++) for (let j = 0; j < sides; j++) bump.push(0.55 + next() * 0.45);
+  const p = (i: number, j: number): V3 => {
+    const phi = (i / rings) * Math.PI,
+      th = ((j % sides) / sides) * Math.PI * 2;
+    // the poles one point each, however many sides meet there
+    const r = i === 0 || i === rings ? bump[i * sides] : bump[i * sides + (j % sides)];
+    return [Math.sin(phi) * Math.cos(th) * r, Math.sin(phi) * Math.sin(th) * r * 0.8, Math.cos(phi) * r];
+  };
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) face(b, p(i + 1, j), p(i + 1, j + 1), p(i, j + 1), p(i, j));
+  return b.build();
+}
+
+/**
+ * A satellite dish on its own, its bowl opening along +x and a little up, a
+ * feed horn on struts at its focus and a hinge under it, for turning about
+ * the mast it stands on (z): `1` round across its rim.
+ */
+export function satelliteDish(): Mesh {
+  const b = new MeshBuilder();
+  const rings = 6,
+    sides = 20,
+    tilt = 0.6;
+  const c = Math.cos(tilt),
+    s = Math.sin(tilt);
+  // a bowl in its own frame, opening along +u, then tilted up by `tilt`
+  const at = (u: number, v: number, w: number): V3 => [u * c - w * s, v, u * s + w * c];
+  const bowl = (i: number, j: number): V3 => {
+    const r = i / rings,
+      a = (j / sides) * Math.PI * 2;
+    return at(0.35 * r * r, Math.cos(a) * r, Math.sin(a) * r);
+  };
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) face(b, bowl(i, j), bowl(i, j + 1), bowl(i + 1, j + 1), bowl(i + 1, j));
+  for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3])
+    beam(b, at(0.35, Math.cos(a), Math.sin(a)), at(0.9, 0, 0), 0.02);
+  ball(b, at(0.95, 0, 0), 0.08, 3, 6);
+  beam(b, [0, 0, -0.5], at(0, 0, 0), 0.06);
+  return b.build();
+}
+
+/** A turning radar antenna: a lattice bar across a short post, `1` long either side of it, and a knob on its post. */
+export function radar(): Mesh {
+  const b = new MeshBuilder();
+  beam(b, [0, 0, 0], [0, 0, 0.35], 0.06);
+  for (const z of [0.3, 0.55]) beam(b, [-1, 0, z], [1, 0, z], 0.035);
+  for (let k = -5; k < 5; k++) beam(b, [k / 5, 0, k % 2 ? 0.3 : 0.55], [(k + 1) / 5, 0, k % 2 ? 0.55 : 0.3], 0.02);
+  ball(b, [0, 0, 0.42], 0.08, 3, 6);
+  return b.build();
+}

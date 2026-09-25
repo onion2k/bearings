@@ -436,10 +436,16 @@ async function main() {
     // where the next piece of a run being built goes, and nothing over a run being raced
     renderer.move(4, scene.marker, scene.mark(game.track, game.designer?.open ?? null));
     // the cogs, the pistons' rods and the smoke, where the game's own clock has them, so a paused game stands still
-    const [cogs, rods, puffs, whisks] = scene.animate(game.decor, game.t);
+    const [cogs, rods, puffs, whisks, dishes, antennas, debris, diodes] = scene.animate(game.decor, game.t);
     renderer.move(5, scene.cogs, cogs);
     renderer.move(6, scene.rods, rods);
     renderer.move(7, scene.whisks, whisks);
+    // a space station's turning dishes and antennas, its drifting debris, and its diodes blinking
+    renderer.move(8, scene.dishes, dishes);
+    renderer.move(9, scene.antennas, antennas);
+    renderer.move(10, scene.debris, debris);
+    renderer.move(11, scene.diodes, diodes);
+    if (diodes) renderer.tint(11, scene.diodeLooks);
     renderer.setSprites(scene.smoke, puffs);
   }
 

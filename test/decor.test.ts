@@ -16,6 +16,7 @@ import {
   FLAT,
   HALL,
   SCENERY,
+  backdropClear,
   sceneryClear,
   type DecorKind,
   type Decoration,
@@ -150,7 +151,13 @@ describe('dressing a run', () => {
       ).toBe(true);
     for (const theme of THEMES) {
       const seen = new Set<string>();
-      for (const run of [...RUNS.filter((r) => r.theme === theme), ...PIECES.map(themed(theme))]) {
+      // and the Stress Test, which folds over itself, since a space station's struts link a piece to one under it
+      const stress = RUNS.find((r) => r.id.startsWith('stress'))!;
+      for (const run of [
+        ...RUNS.filter((r) => r.theme === theme),
+        ...PIECES.map(themed(theme)),
+        themed(theme)(stress),
+      ]) {
         const kinds = new Set(dressed(run).items.map((d) => d.kind));
         for (const k of kinds) seen.add(k);
       }
@@ -189,6 +196,24 @@ describe('dressing a run', () => {
       }
     }
     expect(backdrop, 'a backdrop to hold').toBeGreaterThan(100);
+  });
+
+  it('keeps debris past the run and under the line wherever it drifts and bobs to as it tumbles', () => {
+    const scene = new Scene();
+    let points = 0;
+    for (const run of [...RUNS.map(themed('space')), folded('space'), ...designs(4, 8, 'space')]) {
+      const { track, items } = dressed(run);
+      const debris = items.filter((d) => d.kind === 'debris');
+      const clear = backdropClear(track);
+      for (let t = 0; t < 60; t += 0.7) {
+        scene.animate(debris, t);
+        const group = { ...scene.dynamic()[10], count: debris.length };
+        const out = surface(group, (x, y, z) => !clear(x, y, z));
+        points += out.points;
+        expect(out.hits, `${run.id} at ${t.toFixed(1)} s: debris in the way at ${out.first}`).toBe(0);
+      }
+    }
+    expect(points).toBeGreaterThan(10_000);
   });
 
   it('keeps everything by the run inside the box the run is framed and shadowed by', () => {
@@ -392,8 +417,8 @@ function surface(group: GameGroup, visit: (x: number, y: number, z: number) => b
  * the camera is and any of it may be where a marble goes.
  */
 function moving(scene: Scene, items: Decoration[], t: number): GameGroup[] {
-  const [cogs, rods, puffs, whisks] = scene.animate(items, t);
-  const [cogGroup, rodGroup, whiskGroup] = scene.dynamic().slice(5);
+  const [cogs, rods, puffs, whisks, dishes, antennas, debris, diodes] = scene.animate(items, t);
+  const [cogGroup, rodGroup, whiskGroup, dishGroup, antennaGroup, debrisGroup, diodeGroup] = scene.dynamic().slice(5);
   const smoke = new Float32Array(Math.max(1, puffs) * 16);
   for (let k = 0; k < puffs; k++) {
     const o = k * SPRITE_STRIDE;
@@ -404,15 +429,50 @@ function moving(scene: Scene, items: Decoration[], t: number): GameGroup[] {
     { ...cogGroup, count: cogs },
     { ...rodGroup, count: rods },
     { ...whiskGroup, count: whisks },
+    { ...dishGroup, count: dishes },
+    { ...antennaGroup, count: antennas },
+    { ...debrisGroup, count: debris },
+    { ...diodeGroup, count: diodes },
     { mesh: sphere(1, 8, 12), matrices: smoke, count: puffs },
   ];
+}
+
+/**
+ * Every point inside any channel but those in `mine`, or within `skin` of its floor and walls: where a truss under
+ * one piece would touch the next piece over or beside it, though no marble could reach it there.
+ */
+function body(track: Track, mine: ReadonlySet<number>, skin: number) {
+  return (x: number, y: number, z: number) => {
+    for (let s = 0; s < track.segments.length; s++) {
+      const seg = track.segments[s];
+      if (mine.has(s) || seg.funnel) continue;
+      for (let i = 0; i < seg.arc.length; i++) {
+        const o = i * 3;
+        const px = x - seg.points[o],
+          py = y - seg.points[o + 1],
+          pz = z - seg.points[o + 2];
+        const tx = seg.tangents[o],
+          ty = seg.tangents[o + 1],
+          tz = seg.tangents[o + 2];
+        const spacing = i + 1 < seg.arc.length ? seg.arc[i + 1] - seg.arc[i] : seg.arc[i] - seg.arc[i - 1];
+        if (Math.abs(px * tx + py * ty + pz * tz) > spacing / 2 + 1e-3) continue;
+        const ux = seg.ups[o],
+          uy = seg.ups[o + 1],
+          uz = seg.ups[o + 2];
+        const across = px * (ty * uz - tz * uy) + py * (tz * ux - tx * uz) + pz * (tx * uy - ty * ux);
+        const up = px * ux + py * uy + pz * uz;
+        if (Math.abs(across) < seg.width[i] + skin && up > -skin && up < seg.wall) return true;
+      }
+    }
+    return false;
+  };
 }
 
 describe('what a run is dressed with, drawn', () => {
   it('puts nothing where a marble can be, on every run, every piece of the catalog and designs laid at random', () => {
     const scene = new Scene();
     let tried = 0;
-    for (const run of [...RUNS, ...everyTheme(9)]) {
+    for (const run of [...RUNS.flatMap((r) => THEMES.map((t) => themed(t)(r))), ...everyTheme(9)]) {
       const { track, items } = dressed(run);
       const inside = where(track);
       // the backdrop is held by its own rule; the ground and a river lie under everything
@@ -435,6 +495,25 @@ describe('what a run is dressed with, drawn', () => {
     process.stderr.write(`${tried} points tried\n`);
     expect(tried).toBeGreaterThan(1_000_000);
   }, 120_000);
+
+  it("hangs a space station's truss under its own piece, a hand's width clear of every other", () => {
+    const scene = new Scene();
+    let trusses = 0;
+    for (const run of [...RUNS.map(themed('space')), folded('space'), ...designs(9, 16, 'space')]) {
+      const { track, items } = dressed(run);
+      for (const d of items.filter((d) => d.kind === 'spine')) {
+        const seg = track.segments[d.segment];
+        const mine = new Set([d.segment, seg.prev, seg.next, ...(seg.fork ? [seg.fork.a, seg.fork.b] : [])]);
+        const touches = body(track, mine, 0.5);
+        for (const group of scene.decor(track, [d])) {
+          const { hits, first } = surface(group, touches);
+          expect(hits, `${run.id}: the truss under segment ${d.segment} touches another piece at ${first}`).toBe(0);
+        }
+        trusses++;
+      }
+    }
+    expect(trusses).toBeGreaterThan(100);
+  });
 
   it("keeps a lamp's arm a hand's width off every channel, its own included, and not only out of where a marble goes", () => {
     let arms = 0;
@@ -473,11 +552,13 @@ describe('what a run is dressed with, drawn', () => {
       const scene = new Scene();
       const { track, items } = dressed(themed(theme)(stress));
       const still = scene.decor(track, items);
-      const [cogs, rods, puffs, whisks] = scene.animate(items, 0);
+      const [cogs, rods, puffs, whisks, dishes, antennas, debris, diodes] = scene.animate(items, 0);
       expect(still.length, theme).toBeGreaterThan(0);
-      expect(puffs, `${theme}: smoke`).toBeGreaterThan(0);
+      // a works and a sweet factory smoke; a space station's glows are sprites too
+      expect(puffs, `${theme}: smoke or glow`).toBeGreaterThan(0);
       if (theme === 'industrial') expect(cogs * rods, 'cogs and rods').toBeGreaterThan(0);
-      else expect(whisks, 'whisks').toBeGreaterThan(0);
+      else if (theme === 'sweets') expect(whisks, 'whisks').toBeGreaterThan(0);
+      else expect(dishes * antennas * debris * diodes, 'dishes, antennas, debris and diodes').toBeGreaterThan(0);
     }
   });
 
@@ -530,8 +611,12 @@ describe('what a run is dressed with, drawn', () => {
       ).length;
       // after the smoke, a works lamp's glow each
       const glows = items.filter((d) => d.kind === 'lamp').length;
+      if (theme === 'space') {
+        expect(chimneys, 'nothing smokes in space').toBe(0);
+        continue;
+      }
       expect(chimneys, `${theme}: something smokes`).toBeGreaterThan(0);
-      expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(8);
+      expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(12);
       for (const t of [0.4, 2.2, 5.1]) {
         const [, , puffs] = scene.animate(items, t);
         expect(puffs).toBe(chimneys * PUFFS + glows);
@@ -567,14 +652,17 @@ describe('what a run is dressed with, drawn', () => {
             .dynamic()
             .slice(5)
             .map((g) => Array.from(g.matrices)),
+          Array.from(scene.diodeLooks),
           Array.from(scene.smoke),
         ];
       };
       const first = at(2);
       expect(at(2)).toEqual(first);
       const later = at(2.5);
-      // what the theme has moves: the cogs and rods of the works, the whisks of the sweet factory, and the smoke of both
-      const moves = theme === 'industrial' ? [0, 1, 3] : [2, 3];
+      // what the theme has moves: the cogs and rods of the works, the whisks of the sweet factory, the smoke of both,
+      // and a space station's dishes, antennas, debris, blinking diodes and pulsing thrusters
+      const smoke = 8;
+      const moves = theme === 'industrial' ? [0, 1, smoke] : theme === 'sweets' ? [2, smoke] : [3, 4, 5, 7, smoke];
       for (const k of moves) expect(later[k], `${theme}: group ${k} moved`).not.toEqual(first[k]);
     }
   });

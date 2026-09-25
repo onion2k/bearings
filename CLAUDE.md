@@ -297,10 +297,11 @@ What to copy the shape of, when building something new:
   one row that scrolls sideways, so the builder stands no taller than the
   board over a race. Every click checks the whole run again and compiles it
   once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
-  click and never a frame. A row of themes, Plain and Industrial, dresses
+  click and never a frame. A row of themes, Plain, Industrial, Sweets and Space, dresses
   the run being built (`Designer.dress`, `Game.dress`); see the dressing.
 - **The dressing:** a run that names a theme (`Run.theme`: `'industrial'`,
-  a works, or `'sweets'`, a sweet factory; plain written as nothing at all)
+  a works, `'sweets'`, a sweet factory, or `'space'`, a space station; plain
+  written as nothing at all)
   is dressed by `dress` in `src/decor.ts`, from its own track and nothing
   else. A `Site` holds what every theme places by — the room checks, the
   supports, the ground, the box, the spreading along the run — as rules
@@ -370,7 +371,24 @@ What to copy the shape of, when building something new:
   nothing nearer the run's middle than its reach and 6, and no top over a
   line rising 0.6 from the run's lowest point past its reach, under the
   0.73 the framing camera looks down at, so none of it can stand between
-  the camera and the run however far back it is. The Tower and The Leap are sweet factories, the other six works. A works:
+  the camera and the run however far back it is. The Tower and The Leap are sweet factories, The Crossing a space station,
+  the other five works. A space station floats: no ground and nothing
+  standing on one, a starfield (`stars`, one thing, drawn as `STARS` points
+  below the line and past its `length`) and debris tumbling past the run,
+  held by `sceneryClear` with room for how far it drifts and bobs (`DEBRIS`)
+  and by `backdropClear` at every point of every rock as drawn over a minute
+  of its clock, which is why a `rock` never reaches out of its unit ball. A
+  truss hangs under every piece (`spine`, `underneath`), tried for room
+  against every channel but its own and its neighbours, and kept a hand's
+  width off every other piece (a test, since a truss nearer than that is in
+  no marble's way and the clearance sampler never saw it); scaffolding
+  (`strut`, `legs` with no ground) stands only between a piece and one under
+  it. Beacons hang cyan over the channel with a glow each; satellite dishes
+  and radar antennas turn on masts; thruster pods pulse (the glows' pool is
+  `GLOWS`, a works lamp's or a station's beacons and thrusters); solar
+  panels stand off the walls; and rows of diodes blink along them in three
+  colours, the renderer's group 11 tinted every frame (`diodeLooks`). The
+  dishes, antennas, debris and diodes are groups 8 to 11. A works:
   lamps on poles with an arm over the channel, copper pipes along a wall,
   meshing cogs on one, pistons pumping beside one, hazard stripes low on the
   walls where the field is let go, something moves and the race is won,

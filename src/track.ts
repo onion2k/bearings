@@ -116,8 +116,8 @@ export interface Run {
 }
 
 /** The ways a run can be dressed, beyond plain: a works, and a sweet factory. */
-export type Theme = 'industrial' | 'sweets';
-export const THEMES: readonly Theme[] = ['industrial', 'sweets'];
+export type Theme = 'industrial' | 'sweets' | 'space';
+export const THEMES: readonly Theme[] = ['industrial', 'sweets', 'space'];
 
 /** A stretch of track from one piece, sampled: where it goes, which way, and how far along. */
 export interface Segment {

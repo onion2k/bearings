@@ -676,6 +676,41 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the crossing as a space station: floating over the stars, its dishes, antennas and diodes', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const theme = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(6);
+      g.step(60);
+      return g.decor().theme;
+    });
+    expect(theme).toBe('space');
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('space.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a space station close to: a beacon, a dish turning, scaffolding and debris against the stars', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(6);
+      g.follow(false);
+      const [x, y, z] = g.decor().lamps[0];
+      g.look(x, y, z - 3, { azimuth: 2.3, polar: 1.05, radius: 14 });
+      g.step(90);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('space-close.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a design kept, on its shelf, the field part way down it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

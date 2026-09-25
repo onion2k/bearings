@@ -179,7 +179,7 @@ export const FORK: Run = {
 export const CROSSING: Run = {
   id: 'the-crossing-2',
   name: 'The Crossing',
-  theme: 'industrial',
+  theme: 'space',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },

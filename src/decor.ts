@@ -30,6 +30,16 @@ import { seeded } from './random';
 
 /** Every kind of thing a run can be dressed with. */
 export type DecorKind =
+  | 'beacon'
+  | 'strut'
+  | 'spine'
+  | 'dish'
+  | 'antenna'
+  | 'thruster'
+  | 'solar'
+  | 'diodes'
+  | 'debris'
+  | 'stars'
   | 'hall'
   | 'silo'
   | 'coolingTower'
@@ -90,6 +100,7 @@ export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
     'reel',
     'trafficCone',
   ],
+  space: ['beacon', 'strut', 'spine', 'dish', 'antenna', 'thruster', 'solar', 'diodes', 'debris', 'stars'],
   sweets: [
     'lollipop',
     'candyStripes',
@@ -112,7 +123,11 @@ export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
     'cloud',
   ],
 };
-export const DECOR_KINDS: readonly DecorKind[] = [...THEME_KINDS.industrial, ...THEME_KINDS.sweets];
+export const DECOR_KINDS: readonly DecorKind[] = [
+  ...THEME_KINDS.industrial,
+  ...THEME_KINDS.sweets,
+  ...THEME_KINDS.space,
+];
 
 /**
  * How many of each a run may have at most. Lamps are lights, and the renderer
@@ -136,6 +151,16 @@ export const MOST: Record<DecorKind, number> = {
   giantLollipop: 3,
   fudgePot: 3,
   cupcake: 3,
+  beacon: 12,
+  strut: 24,
+  spine: 40,
+  dish: 4,
+  antenna: 4,
+  thruster: 8,
+  solar: 4,
+  diodes: 30,
+  debris: 14,
+  stars: 1,
   hall: 1,
   silo: 4,
   coolingTower: 3,
@@ -166,6 +191,8 @@ export const MOST: Record<DecorKind, number> = {
  * ground under everything and are held only to lying there.
  */
 export const SCENERY: readonly DecorKind[] = [
+  'debris',
+  'stars',
   'mountain',
   'tower',
   'tree',
@@ -230,6 +257,15 @@ export const RUST: TrackColours = {
   streaks: [0.2, 0.09, 0.05],
 };
 
+/** A space station's track: white walls and trim, a dark floor a marble stands out on, and cyan grids. */
+export const HULL: TrackColours = {
+  floor: [0.16, 0.17, 0.2],
+  walls: [0.82, 0.84, 0.88],
+  grid: [0.2, 0.75, 0.9],
+  pegs: [0.9, 0.5, 0.15],
+  trim: [0.82, 0.84, 0.88],
+};
+
 /**
  * The sweet factory's track: a soft lilac floor that a marble of any colour
  * stands out on, cream walls and trim, grids white as icing, and pink pegs.
@@ -279,6 +315,18 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     ambient: 0.16,
   },
 
+  // the black of space, lit coldly by a far sun and the station's own beacons
+  // the black of space, lit hard and white by a far sun, the station's own lights doing the rest
+  space: {
+    track: HULL,
+    sky: [0.004, 0.005, 0.012],
+    shading: 'pbr',
+    env: 'studio',
+    sunColour: [1.8, 1.8, 1.9],
+    exposure: 1.1,
+    ambient: 0.35,
+  },
+
   // a clear blue sky reflected in everything, drawn as a cartoon is: in flat bands at every candy's own colour, and
   // the colours shown straight, where the physically based light and its filmic curve washed them all to grey
   sweets: {
@@ -301,6 +349,8 @@ export const LIGHTS: Partial<
   // a glow and not a floodlight: in a bright candy world, lit toon at the full colour, a lamp as strong as the works'
   // blew the sweet it hangs under out to white
   lollipop: { colour: [1, 0.62, 0.82], intensity: 4, radius: 8 },
+  // a cold blue beacon over the channel, a pool of light in the dark of space
+  beacon: { colour: [0.45, 0.8, 1], intensity: 60, radius: 12 },
 };
 
 /** The puffs of smoke over each chimney, rising and swelling in turn. */
@@ -375,6 +425,23 @@ export const CAKE = { radius: 1.2, height: 1.8 } as const;
  */
 export const BACKDROP = { beyond: 6, slope: 0.6 } as const;
 
+/**
+ * A space station's things: a truss under each piece this deep, masts beside
+ * the walls with a turning dish and a turning antenna on them, a thruster pod
+ * under the floor beside a wall, solar panels out on an arm, and a row of
+ * diodes along the outside of the walls, this far apart.
+ */
+export const SPINE = { depth: 0.9, half: 0.75, chord: 0.05 } as const;
+export const DISH = { out: 1.4, radius: 0.9, below: 1.0, above: 2.2 } as const;
+export const ANTENNA = { out: 0.7, radius: 0.5, below: 0.8, above: 3.4 } as const;
+export const THRUSTER = { out: 0.55, radius: 0.35, below: 1.7, above: -0.25 } as const;
+export const SOLAR = { out: 2.6, radius: 1.8, below: 0.5, above: 0.9, long: 3.2, wide: 1.3 } as const;
+export const DIODES = { out: 0.32, up: 0.55, radius: 0.07, every: 0.6 } as const;
+/** How many stars a starfield has, and how far they reach past its inner edge. */
+export const STARS = { count: 1600, deep: 700 } as const;
+/** How far a piece of debris drifts either way along its heading, and bobs up and down, as it tumbles. */
+export const DEBRIS = { drift: 2, bob: 1 } as const;
+
 /** How far below the run's lowest point the ground is that chimneys, tanks and the lowest girders stand on. */
 const GROUND = 2;
 /** How far over the run's highest point a chimney stands. */
@@ -392,6 +459,9 @@ const ROOM = 0.35;
 const CLEAR = 0.7;
 /** How far over and under a channel's floor and wall top a thing is taken as being in its way. */
 const ABOVE = 0.4;
+
+/** No segment spared from being in a thing's way. */
+const NONE: ReadonlySet<number> = new Set();
 
 /** One thing standing by the run. */
 export interface Decoration {
@@ -509,8 +579,18 @@ class Site {
   }
 
   /** Whether a round column `r` wide from `lo` to `hi` comes within `keep` of any channel, bowl or thing already standing. */
-  inTheWay(x: number, y: number, r: number, lo: number, hi: number, keep: number): boolean {
-    for (const seg of this.track.segments) {
+  inTheWay(
+    x: number,
+    y: number,
+    r: number,
+    lo: number,
+    hi: number,
+    keep: number,
+    mine: ReadonlySet<number> = NONE,
+  ): boolean {
+    for (let s = 0; s < this.track.segments.length; s++) {
+      if (mine.has(s)) continue;
+      const seg = this.track.segments[s];
       const b = seg.funnel;
       if (b) {
         if (
@@ -720,7 +800,7 @@ class Site {
    * on the ground; as many pieces as two legs each allows, spread along the
    * run. Each then stands, `half` from its middle to its side.
    */
-  legs(kind: DecorKind, half: number) {
+  legs(kind: DecorKind, half: number, ground = true) {
     const { segments } = this.track;
     const before = this.out.length;
     for (const k of spread(this.pieces, MOST[kind] / 2)) {
@@ -733,7 +813,7 @@ class Site {
         const grade = Math.abs(h.tz) / (Math.hypot(h.tx, h.ty) || 1);
         const [x, y, floorUnder] = off(h, side * h.w, -0.25);
         const top = floorUnder - half * Math.SQRT2 * grade;
-        const foot = footOf(this.track, x, y, top);
+        const foot = footOf(this.track, x, y, top, ground);
         if (foot === null || top - foot < 0.6) continue;
         this.put(kind, s, along, 0, side, [x, y, foot], top - foot);
       }
@@ -913,6 +993,52 @@ class Site {
         );
   }
 
+  /**
+   * A truss under every piece, as deep as `depth` and as wide as the floor,
+   * following it along: tried a step at a time against every channel but its
+   * own and those it joins, and left out where a piece passing under it
+   * leaves no room.
+   */
+  underneath(kind: DecorKind, depth: number, half: number) {
+    const { segments } = this.track;
+    for (const k of spread(this.pieces, MOST[kind])) {
+      const s = this.by.get(k)!;
+      const seg = segments[s];
+      const mine = new Set([s, seg.prev, seg.next, ...(seg.fork ? [seg.fork.a, seg.fork.b] : [])]);
+      let clear = true;
+      for (let along = 0; along <= seg.length && clear; along += 0.5) {
+        const h = this.spot(s, along);
+        const [x, y, z] = off(h, 0, -0.3);
+        if (this.inTheWay(x, y, half, z - depth - 0.1, z, SKIN, mine)) clear = false;
+      }
+      if (!clear) continue;
+      const h = this.spot(s, 0);
+      this.put(kind, s, 0, seg.length, 1, off(h, 0, -0.3 - depth), depth);
+    }
+  }
+
+  /**
+   * A space station's surroundings: a starfield below and round it, beyond
+   * everything and under the line a camera looks down along, and debris
+   * drifting just past the run, each with room for how far it drifts and
+   * bobs as it tumbles.
+   */
+  spaceBackdrop() {
+    const { cx, cy, reach, low, segment, random } = this.scene();
+    this.put('stars', segment, 0, reach + 300, 1, [cx, cy, this.ground], 0);
+    for (let k = 0; k < MOST.debris; k++) {
+      const size = 0.4 + random() * 1.4;
+      // room for its drift either way, its bob, and its own size
+      const dist = reach + BACKDROP.beyond + DEBRIS.drift + size + random() * 30;
+      const angle = random() * Math.PI * 2;
+      const line = low + BACKDROP.slope * (dist - DEBRIS.drift - size - reach);
+      const top = line - DEBRIS.bob;
+      const z = top - size * 2 - random() * 18;
+      this.put('debris', segment, 0, 0, 1, [cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist, z], size * 2);
+      this.out[this.out.length - 1].heading = random() * Math.PI * 2;
+    }
+  }
+
   private sweetBackdrop() {
     const { box, ground, track } = this;
     const cx = (box.min[0] + box.max[0]) / 2,
@@ -1042,6 +1168,23 @@ export function reachOf(box: { min: number[]; max: number[] }): number {
 }
 
 /**
+ * Whether a point of the backdrop, where it is drawn at some moment, is past
+ * the run's reach and under the line a camera looks down along: what
+ * `sceneryClear` holds a thing to wherever it stands, for what moves.
+ */
+export function backdropClear(track: Track): (x: number, y: number, z: number) => boolean {
+  const box = boxOf(track);
+  const low = box.min[2] + HALF_WIDTH + 4;
+  const reach = reachOf(box);
+  const cx = (box.min[0] + box.max[0]) / 2,
+    cy = (box.min[1] + box.max[1]) / 2;
+  return (x, y, z) => {
+    const dist = Math.hypot(x - cx, y - cy);
+    return dist >= reach + BACKDROP.beyond && z <= low + BACKDROP.slope * (dist - reach) + 1e-6;
+  };
+}
+
+/**
  * Why a thing of the backdrop stands in the way, or nothing where it does
  * not: nearer the run's middle than its reach and `beyond`, or its top over
  * the line rising `slope` from the run's lowest point past its reach, where a
@@ -1061,18 +1204,47 @@ export function sceneryClear(track: Track, d: Decoration): string {
     const line = low + BACKDROP.slope * (d.length - reachOut);
     return d.z + d.height > line + 1e-6 ? `the hall's walls ${(d.z + d.height - line).toFixed(1)} over the line` : '';
   }
+  if (d.kind === 'stars') {
+    const reachOut = reachOf(box);
+    return d.length < reachOut + BACKDROP.beyond
+      ? `the stars ${(d.length - reachOut).toFixed(1)} past the run's reach`
+      : '';
+  }
   if (!SCENERY.includes(d.kind)) return '';
   const reach = reachOf(box);
-  const dist = Math.hypot(d.x - (box.min[0] + box.max[0]) / 2, d.y - (box.min[1] + box.max[1]) / 2);
+  // debris is held to wherever it may drift and bob to
+  const drift = d.kind === 'debris' ? DEBRIS.drift + d.height / 2 : 0,
+    bob = d.kind === 'debris' ? DEBRIS.bob : 0;
+  const dist = Math.hypot(d.x - (box.min[0] + box.max[0]) / 2, d.y - (box.min[1] + box.max[1]) / 2) - drift;
   if (dist < reach + BACKDROP.beyond) return `a ${d.kind} ${(dist - reach).toFixed(1)} past the run's reach`;
   const line = low + BACKDROP.slope * (dist - reach);
-  if (d.z + d.height > line + 1e-6)
+  if (d.z + d.height + bob > line + 1e-6)
     return `a ${d.kind} ${(d.z + d.height - line).toFixed(1)} over the line a camera looks under`;
   return '';
 }
 
+/**
+ * A space station, floating: beacons over the channel, a truss under every
+ * piece and struts between pieces that pass over each other but none down to
+ * a ground, turning dishes and antennas on masts, thruster pods and solar
+ * panels holding it in place, rows of blinking diodes, and debris drifting
+ * round it against the stars.
+ */
+function space(site: Site) {
+  site.lamps('beacon', LAMP);
+  site.againstWall('dish', DISH.out, DISH.radius, DISH.below, DISH.above, 0, 4, 1);
+  site.againstWall('antenna', ANTENNA.out, ANTENNA.radius, ANTENNA.below, ANTENNA.above, 0, 4, 3);
+  site.againstWall('thruster', THRUSTER.out, THRUSTER.radius, THRUSTER.below, THRUSTER.above, 0, 5, 0);
+  site.againstWall('solar', SOLAR.out, SOLAR.radius, SOLAR.below, SOLAR.above, 0, 6, 4);
+  // struts only from a piece to the one under it, never down to a ground: it floats
+  site.legs('strut', GIRDER.half, false);
+  site.underneath('spine', SPINE.depth, SPINE.half);
+  site.alongWall('diodes', [DIODES], 1);
+  site.spaceBackdrop();
+}
+
 /** How each theme dresses a run: one for every theme there is, which the compiler holds it to. */
-const DRESSERS: Record<Theme, (site: Site) => void> = { industrial, sweets };
+const DRESSERS: Record<Theme, (site: Site) => void> = { industrial, sweets, space };
 
 /** What `run` is dressed with, on `track`, its own working out: nothing, unless it names a theme. */
 export function dress(run: Run, track: Track): Decoration[] {
@@ -1087,7 +1259,7 @@ export function dress(run: Run, track: Track): Decoration[] {
  * or grid of the first piece below it, on the ground where there is none, or
  * nowhere where it would come down into an open channel or a bowl.
  */
-function footOf(track: Track, x: number, y: number, top: number): number | null {
+function footOf(track: Track, x: number, y: number, top: number, ground = true): number | null {
   let low = Infinity;
   for (const seg of track.segments) for (let i = 2; i < seg.points.length; i += 3) low = Math.min(low, seg.points[i]);
   let best = -Infinity,
@@ -1118,7 +1290,7 @@ function footOf(track: Track, x: number, y: number, top: number): number | null 
       onIt = lidded || (across >= seg.width[i] - 0.1 && across <= seg.width[i] + 0.35);
     }
   }
-  if (best === -Infinity) return low - GROUND;
+  if (best === -Infinity) return ground ? low - GROUND : null;
   return onIt ? best : null;
 }
 

@@ -38,6 +38,12 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '07-themes.json': { races: 12, run: 'design-1', bests: { 'first-drop-3': 2.74, 'design-1': 3.2 } },
   // written when a design could be dressed as a sweet factory as well as a works: one of each, the sweet one on
   '08-sweets.json': { races: 20, run: 'design-2', bests: { 'first-drop-3': 2.74, 'design-1': 3.2, 'design-2': 3.3 } },
+  // written when a design could be dressed as a space station too: one of each theme, the station on
+  '09-space.json': {
+    races: 26,
+    run: 'design-3',
+    bests: { 'first-drop-3': 2.74, 'design-1': 3.2, 'design-2': 3.3, 'design-3': 3.4 },
+  },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -106,6 +112,14 @@ describe('saves from every shape the game has written', () => {
     expect(game.progress.save.designs.map((d) => d.theme)).toEqual(['industrial', 'sweets']);
     expect(game.current.id).toBe('design-2');
     expect(game.decor.map((d) => d.kind)).toContain('lollipop');
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('brings back a design dressed as a space station beside the other themes, and puts it on floating', () => {
+    const game = new Game(RAPIER, new Progress(memoryStore(read('09-space.json'))), {}, { random: seeded(7) });
+    expect(game.progress.save.designs.map((d) => d.theme)).toEqual(['industrial', 'sweets', 'space']);
+    expect(game.current.id).toBe('design-3');
+    expect(game.decor.map((d) => d.kind)).toContain('stars');
     expect(checkInvariants(game)).toEqual([]);
   });
 

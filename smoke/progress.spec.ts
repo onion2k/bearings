@@ -668,6 +668,17 @@ test('a run dressed as a works while it is built, made plain and dressed again, 
   expect(sweet.kinds.candyStripes, 'candy stripes by the sweeper').toBeGreaterThan(0);
   expect(sweet.kinds.stripes).toBe(0);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  // a space station, floating among the stars, with none of the sweet factory's things
+  const space = page.locator('#themes [data-theme="space"]');
+  await space.click();
+  await expect(space).toHaveAttribute('aria-pressed', 'true');
+  await expect(sweets).toHaveAttribute('aria-pressed', 'false');
+  const station = await decor();
+  expect(station.theme).toBe('space');
+  expect(station.kinds.stars, 'a starfield').toBe(1);
+  expect(station.kinds.beacon, 'beacons').toBeGreaterThan(0);
+  expect(station.kinds.candyStripes).toBe(0);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   await works.click();
   expect(await decor()).toEqual(dressed);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
