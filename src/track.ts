@@ -195,6 +195,11 @@ export interface Segment {
 export interface Track {
   name: string;
   segments: Segment[];
+  /**
+   * Whether it ends in a finish, a line and a cup: a run being built may end
+   * anywhere, and nothing of a finish is drawn at an end that is not one.
+   */
+  finished: boolean;
   /** How long the run is, end to end. */
   length: number;
   /** How many samples it came to, all told: what `MAX_SAMPLES` is a ceiling on. */
@@ -1377,6 +1382,7 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
     slots: 0,
     wall: WALL,
     lean,
+    finished: false,
   };
   // every piece's own entry, and a joiner's second one besides, each to which piece and which of its segments
   const entries = new Map<string, { piece: number; part: number }>();
@@ -1537,6 +1543,8 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
   continueFrom(start, segs, 0, 0);
   leanTrack(track, lean);
   openWalls(run, track);
+  const end = finishOf(track);
+  track.finished = end >= 0 && run.pieces[track.segments[end].piece].kind === 'finish';
   return track;
 }
 
@@ -1996,4 +2004,14 @@ export function boxOf(track: Track): { min: [number, number, number]; max: [numb
     min: [minX - pad, minY - pad, minZ - pad],
     max: [maxX + pad, maxY + pad, maxZ + pad],
   };
+}
+
+/**
+ * Which segment the run ends at: the one that hands the field on to nothing
+ * and does not fork. Not the last segment in the list, which on a run with a
+ * split is a lane's, committed after the finish was reached by the other
+ * lane; the race and what is drawn of the finish both ask this.
+ */
+export function finishOf(track: Track): number {
+  return track.segments.findIndex((s) => s.next < 0 && !s.fork);
 }

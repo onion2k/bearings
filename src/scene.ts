@@ -88,7 +88,9 @@ import {
   WHEEL,
   type Obstacle,
   type Pose,
+  type Segment,
   type Spot,
+  finishOf,
   type Track,
   at,
   bowlHeight,
@@ -116,10 +118,10 @@ const POST = 0.7;
  * Down one wall, across the floor, up the other, then back along the
  * outside, so the trough has a thickness to it when seen from below.
  */
-const profile = (wall: number): readonly (readonly [number, number])[] => [
+const profile = (wall: number, strips = 1): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH, wall],
-  [-HALF_WIDTH, 0],
-  [HALF_WIDTH, 0],
+  // the floor in strips across, flat all the same, so that part of a lane's may be left out where it lies in another
+  ...cutsOf(strips).map((a): [number, number] => [a, 0]),
   [HALF_WIDTH, wall],
   [HALF_WIDTH + SKIN, wall],
   [HALF_WIDTH + SKIN, -SKIN],
@@ -134,14 +136,65 @@ const MARK = { radius: 0.6, height: 1.8, over: 1.8 };
 /**
  * Which edges of `profile` are a wall, its inside face, its top and its
  * outside, on the left and on the right: what is left out where physics has
- * that wall open.
+ * that wall open, for a floor in `strips`: after the left wall's inside
+ * come the floor's strips.
  */
-const LEFT_WALL = [0, 6, 7],
-  RIGHT_WALL = [2, 3, 4];
+const leftWall = (strips: number) => [0, 5 + strips, 6 + strips];
+const rightWall = (strips: number) => [1 + strips, 2 + strips, 3 + strips];
+/** How many strips across a split's lane's floor is cut into: fine enough that the seam where one is left out is not seen. */
+const LANE_STRIPS = 16;
 
 /** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end and the narrow. */
-/** Which edges of a section are the floor: the one across a flat channel, and the three of a trough's V. */
-const FLOOR_OF_PROFILE: readonly number[] = [1];
+/**
+ * Whether the middle of a floor strip of `seg`, between sample `i` and the
+ * next and across edge `k` of the section, lies in the channel of segment
+ * `other`: within its width and a hair of its floor.
+ */
+function inLane(track: Track, other: number, seg: Segment, i: number, k: number): boolean {
+  const j = Math.min(i + 1, seg.arc.length - 1);
+  const w = (seg.width[i] + seg.width[j]) / 2;
+  // across the strip's middle, as `sweep` places a section's point by the width there
+  const cuts = cutsOf(LANE_STRIPS);
+  const a = (cuts[k - 1] + cuts[k]) / 2;
+  const across = Math.sign(a) * (Math.abs(a) - HALF_WIDTH + w);
+  const at = [0, 1, 2].map((c) => (seg.points[i * 3 + c] + seg.points[j * 3 + c]) / 2);
+  const t = [0, 1, 2].map((c) => seg.tangents[i * 3 + c]);
+  const u = [0, 1, 2].map((c) => seg.ups[i * 3 + c]);
+  const b = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+  const x = at[0] + b[0] * across,
+    y = at[1] + b[1] * across,
+    z = at[2] + b[2] * across;
+  const o = track.segments[other];
+  let best = -1,
+    along = Infinity;
+  for (let n = 0; n < o.arc.length; n++) {
+    const p = n * 3;
+    const d =
+      (x - o.points[p]) * o.tangents[p] +
+      (y - o.points[p + 1]) * o.tangents[p + 1] +
+      (z - o.points[p + 2]) * o.tangents[p + 2];
+    if (Math.abs(d) < Math.abs(along)) {
+      along = d;
+      best = n;
+    }
+  }
+  const p = best * 3;
+  const px = x - o.points[p],
+    py = y - o.points[p + 1],
+    pz = z - o.points[p + 2];
+  const ot = [o.tangents[p], o.tangents[p + 1], o.tangents[p + 2]];
+  const ou = [o.ups[p], o.ups[p + 1], o.ups[p + 2]];
+  const cross =
+    px * (ot[1] * ou[2] - ot[2] * ou[1]) + py * (ot[2] * ou[0] - ot[0] * ou[2]) + pz * (ot[0] * ou[1] - ot[1] * ou[0]);
+  const up = px * ou[0] + py * ou[1] + pz * ou[2];
+  return Math.abs(cross) < o.width[best] && Math.abs(up) < 0.1;
+}
+
+/** Where a flat floor is cut across, from wall to wall: the strips a lane's floor is left out of in the other lane by. */
+const cutsOf = (strips: number): number[] =>
+  Array.from({ length: strips + 1 }, (_, k) => -HALF_WIDTH + (2 * HALF_WIDTH * k) / strips);
+/** Which edges of a flat floor in `strips` are the floor. */
+const floorOf = (strips: number): number[] => Array.from({ length: strips }, (_, k) => k + 1);
 const FLOOR_OF_TROUGH: readonly number[] = [1, 2, 3];
 
 const trough = (wall: number): readonly (readonly [number, number])[] => [
@@ -629,8 +682,10 @@ export class Scene {
     const mounds: number[] = [];
     // the floor under each funnel's hole, whose back end is walled
     const backs: number[] = [];
-    // the line a race is won at, across the start of the last piece, and the stop at the far end of its lane
-    const end = track.segments.length - 1;
+    // the line a race is won at, across the start of the last piece, and the stop at the far end of its lane: the
+    // segment the race ends at, as the race finds it, and not the last in the list, which on a run with a split is a
+    // lane's, and drew a stop across the lane where it joins the other
+    const end = Math.max(0, finishOf(track));
     const lineAt = new Float32Array(16),
       stopAt = new Float32Array(16);
     this.onTrack(track, lineAt, 0, end, 0.06, 0, 0, Math.PI / 2);
@@ -656,8 +711,12 @@ export class Scene {
       else {
         // the floor and the walls swept apart, the same section, so that a theme may colour them apart: the floor is
         // the section's edges along the bottom, one across a flat channel and the three of a trough's V
-        const floorEdges = seg.trough ? FLOOR_OF_TROUGH : FLOOR_OF_PROFILE;
-        const open = seg.open && !seg.trough ? openWall(seg.open) : undefined;
+        // a split's lane has its floor in strips, which part of may be left out; every other piece has one strip
+        const strips = seg.open ? LANE_STRIPS : 1;
+        const floorEdges = seg.trough ? FLOOR_OF_TROUGH : floorOf(strips);
+        const open = seg.open && !seg.trough ? openWall(seg.open, strips) : undefined;
+        // the first lane of the same piece, where this is the second of a split's two, which overlap at a fork and a join
+        const partner = seg.open ? track.segments.findIndex((o, j) => j < s && o.open && o.piece === seg.piece) : -1;
         for (const [into, isFloor] of [
           [floor, true],
           [channel, false],
@@ -667,13 +726,17 @@ export class Scene {
             seg.tangents,
             seg.ups,
             seg.arc.length,
-            seg.trough ? trough(seg.wall) : profile(seg.wall),
+            seg.trough ? trough(seg.wall) : profile(seg.wall, strips),
             into,
             seg.width,
             HALF_WIDTH,
             seg.trough ? seg.floor : undefined,
-            // a lane's wall left out wherever physics leaves it open, at both ends of the stretch, as it is met
-            (i, k) => floorEdges.includes(k) !== isFloor || (open?.(i, k) ?? false),
+            // a lane's wall left out wherever physics leaves it open, at both ends of the stretch, as it is met; and
+            // the second lane's floor left out where it lies in the first's, which is drawn there once
+            (i, k) =>
+              floorEdges.includes(k) !== isFloor ||
+              (open?.(i, k) ?? false) ||
+              (isFloor && partner >= 0 && inLane(track, partner, seg, i, k)),
           );
       }
       // a lid's grid over whatever stretch is covered: bars swept along the samples under it, and rungs across
@@ -759,10 +822,18 @@ export class Scene {
         albedo: colours.floor,
         roughness: 0.65,
       },
-      { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
+      // the line and the stop only where the run ends in a finish, and not at an open end of one being built
+      {
+        mesh: bar(HALF_WIDTH * 2, 0.12, 0.03),
+        matrices: lineAt,
+        count: track.finished ? 1 : 0,
+        albedo: [0.95, 0.72, 0.2],
+        roughness: 0.4,
+      },
       {
         mesh: bar((HALF_WIDTH + SKIN) * 2, LANE_STOP * 2, track.segments[end].wall),
         matrices: stopAt,
+        count: track.finished ? 1 : 0,
         albedo: colours.trim,
         roughness: 0.5,
       },
@@ -1514,9 +1585,11 @@ export class Scene {
 }
 
 /** What `sweep` leaves out of a lane whose walls are open along `open`: the side's wall, where open at both ends. */
-function openWall(open: Uint8Array): (i: number, k: number) => boolean {
+function openWall(open: Uint8Array, strips: number): (i: number, k: number) => boolean {
+  const left = leftWall(strips),
+    right = rightWall(strips);
   return (i, k) => {
     const both = open[i] & open[i + 1];
-    return (both & 1 ? LEFT_WALL.includes(k) : false) || (both & 2 ? RIGHT_WALL.includes(k) : false);
+    return (both & 1 ? left.includes(k) : false) || (both & 2 ? right.includes(k) : false);
   };
 }

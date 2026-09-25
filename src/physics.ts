@@ -44,6 +44,7 @@ import {
   pose,
   pose0,
   LANE_STOP,
+  finishOf,
   OUTLET_BACK,
 } from './track';
 
@@ -360,7 +361,7 @@ export class Physics implements Race {
     for (const seg of track.segments)
       for (let k = 2; k < seg.points.length; k += 3) bottom = Math.min(bottom, seg.points[k]);
     this.bottom = bottom;
-    this.last = track.segments.findIndex((s) => s.next < 0 && !s.fork);
+    this.last = finishOf(track);
 
     this.world = new rapier.World({ x: 0, y: 0, z: -GRAVITY });
     Physics.alive++;

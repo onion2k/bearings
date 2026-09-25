@@ -205,7 +205,11 @@ What to copy the shape of, when building something new:
   said to come back round on itself, since wiring it on left a gap and two
   ideas of how far along the run the piece was. Where the two lanes overlap, a wall of one that would stand
   inside the other is left open (`Segment.open`, `openWalls`), met and drawn
-  so, and they part at the crotch where their inner walls meet, as a real Y
+  so; where their floors overlap, lying a hair apart at the two lanes' own
+  leans, only the first lane's is drawn, the second lane's floor cut in
+  `LANE_STRIPS` strips across and those lying in the first left out
+  (`inLane`), since the one poking through the other showed as a wedge
+  (`test/scene-lanes.test.ts`), and they part at the crotch where their inner walls meet, as a real Y
   does. Both are shown together on the catalog's shelf (`CATALOG`'s `laid`,
   an `Entry` field that lays a shelf piece out by hand instead of chaining
   `among`, since neither piece means anything alone). A kind at a chute's
@@ -531,7 +535,13 @@ What to copy the shape of, when building something new:
 - **The end of the run:** `finish` is the line and a cup behind it, a V a
   chute wide under a grid, eased down a level and up half of one again to
   level at its end (`cup`, its bottom where both halves curve alike), with a
-  solid block at its end (`LANE_STOP`). A marble is placed as it crosses, by
+  solid block at its end (`LANE_STOP`). Which segment the run ends at is
+  `finishOf`, the race's and the scene's alike: the one handing on to nothing
+  that does not fork, and not the last in the list, which on a run with a
+  split is a lane's, and drew the line and the stop across it where it
+  joined the other (`test/scene-finish.test.ts`). Nothing of a finish is
+  drawn where a run does not end in one (`Track.finished`), so a run being
+  built shows no line or stop at its open end. A marble is placed as it crosses, by
   which crossed first in the step, and comes to rest in the cup, not always
   in the order it finished, since two may sit abreast in a V. Under a grid
   because balls that barely grip each other pass a knock down a queue at
