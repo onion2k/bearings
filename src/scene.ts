@@ -14,6 +14,7 @@ import { FIELD } from './field';
 import { MARBLES, RADIUS } from './race';
 import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
+import { seeded } from './random';
 import {
   bar,
   ball,
@@ -29,7 +30,8 @@ import {
   lattice,
   mound,
   sphere,
-  frosting,
+  hillOf,
+  revolved,
   smoothCone,
   sweep,
   torus,
@@ -39,6 +41,9 @@ import {
   face,
 } from './meshes';
 import {
+  STANDING,
+  STEEL,
+  type TrackColours,
   ARCH,
   CAKE,
   CANE,
@@ -135,6 +140,10 @@ const LEFT_WALL = [0, 6, 7],
   RIGHT_WALL = [2, 3, 4];
 
 /** A trough in section: the walls meet at a narrow bottom, a V a chute wide, for the lane at the end and the narrow. */
+/** Which edges of a section are the floor: the one across a flat channel, and the three of a trough's V. */
+const FLOOR_OF_PROFILE: readonly number[] = [1];
+const FLOOR_OF_TROUGH: readonly number[] = [1, 2, 3];
+
 const trough = (wall: number): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH, wall],
   [-HALF_WIDTH, TROUGH_DEPTH],
@@ -327,10 +336,142 @@ function mountainGroups(mountains: number[]): GameGroup[] {
     bands.set([2, 3.6, (k * 0.29) % 1, 0, 0.99, 0.98, 0.97, 0], k * PATTERN_STRIDE);
     tops.set([...caps[k % caps.length], 0.6], k * 4);
   }
+  // rounded at the top, as a scoop of ice cream is, and frosted from two thirds up, a little proud of it, dripping
+  const hill = hillOf(0.75);
   return [
-    { mesh: smoothCone(0.75), matrices: at, count: n, materials: looks, patterns: bands },
-    { mesh: frosting(0.75), matrices: at, count: n, materials: tops },
+    { mesh: revolved(hill), matrices: at, count: n, materials: looks, patterns: bands },
+    { mesh: revolved((z) => hill(z) * 1.04 + 0.004, 0.64, 1, 12, 48), matrices: at, count: n, materials: tops },
   ];
+}
+
+/** How many sprinkles on a mountain's frosting, and on a donut's icing. */
+const SPRINKLES = { mountain: 40, donut: 22 } as const;
+/** The colours sprinkles come in. */
+const SPRINKLE: readonly [number, number, number][] = [
+  [1, 0.25, 0.45],
+  [0.2, 0.6, 1],
+  [1, 0.85, 0.1],
+  [0.3, 0.85, 0.35],
+  [0.7, 0.35, 1],
+  [0.98, 0.98, 0.98],
+];
+
+/**
+ * Sprinkles on the frosting of every mountain and the icing of every donut:
+ * small rods lying on the surface at every angle, each its own colour, from a
+ * chance seeded by where each thing stands, so they are the same every time.
+ */
+function sprinkleGroup(mountains: number[], donuts: number[]): GameGroup {
+  const n = (mountains.length / 4) * SPRINKLES.mountain + (donuts.length / 4) * SPRINKLES.donut;
+  const at = new Float32Array(n * 16),
+    looks = new Float32Array(n * 4);
+  let k = 0;
+  const put = (
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    turn: number,
+    len: number,
+    r: number,
+  ) => {
+    // lying along the surface: its axis square to the surface's normal, turned about the normal by `turn`
+    const ref: V3 = Math.abs(nz) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+    let ax = ny * ref[2] - nz * ref[1],
+      ay = nz * ref[0] - nx * ref[2],
+      az = nx * ref[1] - ny * ref[0];
+    const m = Math.hypot(ax, ay, az);
+    ax /= m;
+    ay /= m;
+    az /= m;
+    const bx = ny * az - nz * ay,
+      by = nz * ax - nx * az,
+      bz = nx * ay - ny * ax;
+    const c = Math.cos(turn),
+      sn = Math.sin(turn);
+    const dx = ax * c + bx * sn,
+      dy = ay * c + by * sn,
+      dz = az * c + bz * sn;
+    // across it: the normal, and the third direction square to both
+    const ex = ny * dz - nz * dy,
+      ey = nz * dx - nx * dz,
+      ez = nx * dy - ny * dx;
+    at.set(
+      [
+        ex * r,
+        ey * r,
+        ez * r,
+        0,
+        nx * r,
+        ny * r,
+        nz * r,
+        0,
+        dx * len,
+        dy * len,
+        dz * len,
+        0,
+        x - (dx * len) / 2,
+        y - (dy * len) / 2,
+        z - (dz * len) / 2,
+        1,
+      ],
+      k * 16,
+    );
+    looks.set([...SPRINKLE[k % SPRINKLE.length], 0.35], k * 4);
+    k++;
+  };
+  const hill = hillOf(0.75);
+  for (let m = 0; m < mountains.length / 4; m++) {
+    const [x, y, z, height] = mountains.slice(m * 4, m * 4 + 4);
+    const random = seeded(Math.round(x * 131 + y * 17));
+    for (let j = 0; j < SPRINKLES.mountain; j++) {
+      const u = 0.68 + random() * 0.27;
+      const a = random() * Math.PI * 2;
+      const rr = hill(u) * 1.04 + 0.004;
+      // the frosting's normal there, from its slope
+      const dr = (hill(u + 1e-3) - hill(u - 1e-3)) / 2e-3;
+      const l = Math.hypot(1, dr);
+      put(
+        x + Math.cos(a) * rr * height,
+        y + Math.sin(a) * rr * height,
+        z + u * height,
+        Math.cos(a) / l,
+        Math.sin(a) / l,
+        -dr / l,
+        random() * Math.PI,
+        height * 0.028,
+        height * 0.006,
+      );
+    }
+  }
+  for (let q = 0; q < donuts.length / 4; q++) {
+    const [x, y, z, big] = donuts.slice(q * 4, q * 4 + 4);
+    const random = seeded(Math.round(x * 97 + y * 53));
+    const R = DONUT.radius * big,
+      t = DONUT.tube * big * 1.06;
+    for (let j = 0; j < SPRINKLES.donut; j++) {
+      // over the icing's top, round the ring
+      const u = random() * Math.PI * 2,
+        v = (0.2 + random() * 0.6) * (Math.PI / 2);
+      const nx = Math.cos(v) * Math.cos(u),
+        ny = Math.cos(v) * Math.sin(u),
+        nz = Math.sin(v);
+      put(
+        x + (R + t * Math.cos(v)) * Math.cos(u),
+        y + (R + t * Math.cos(v)) * Math.sin(u),
+        z + t * Math.sin(v),
+        nx,
+        ny,
+        nz,
+        random() * Math.PI,
+        0.18 * big,
+        0.035 * big,
+      );
+    }
+  }
+  return { mesh: tube(8), matrices: at, count: k, materials: looks };
 }
 
 /** Castle towers' roofs: cones swirled red and white. */
@@ -359,7 +500,10 @@ function treeGroup(trees: number[]): GameGroup {
   const at = new Float32Array(n * 16);
   for (let k = 0; k < n; k++)
     spin(at, k, trees[k * 4], trees[k * 4 + 1], trees[k * 4 + 2], 0, 0, 1, 0, trees[k * 4 + 3]);
-  return { mesh: smoothCone(0.4, 16), matrices: at, count: n, albedo: [0.33, 0.18, 0.09], roughness: 0.55 };
+  // a chocolate kiss: wide and round at the bottom, drawn up to a soft point
+  const kiss = (z: number) =>
+    0.45 * Math.pow(1 - z, 1.3) * (0.7 + 0.6 * Math.sin(Math.min(1, z * 2.2) * Math.PI * 0.5));
+  return { mesh: revolved(kiss, 0, 1, 16, 20), matrices: at, count: n, albedo: [0.33, 0.18, 0.09], roughness: 0.4 };
 }
 
 /** Clouds, soft white balls. */
@@ -474,8 +618,9 @@ export class Scene {
    * each frame. A funnel's own centre line is only for ordering the field,
    * and is not drawn: its bowl is.
    */
-  static(track: Track, dressing: readonly Decoration[] = []): GameGroup[] {
+  static(track: Track, dressing: readonly Decoration[] = [], colours: TrackColours = STEEL): GameGroup[] {
     const channel = new MeshBuilder();
+    const floor = new MeshBuilder();
     const bowls = new MeshBuilder();
     const grid = new MeshBuilder();
     const rungs: number[] = [];
@@ -508,20 +653,29 @@ export class Scene {
           bowl.y,
           bowl.z,
         ]);
-      else
-        sweep(
-          seg.points,
-          seg.tangents,
-          seg.ups,
-          seg.arc.length,
-          seg.trough ? trough(seg.wall) : profile(seg.wall),
-          channel,
-          seg.width,
-          HALF_WIDTH,
-          seg.trough ? seg.floor : undefined,
-          // a lane's wall left out wherever physics leaves it open, at both ends of the stretch, as it is met
-          seg.open && !seg.trough ? openWall(seg.open) : undefined,
-        );
+      else {
+        // the floor and the walls swept apart, the same section, so that a theme may colour them apart: the floor is
+        // the section's edges along the bottom, one across a flat channel and the three of a trough's V
+        const floorEdges = seg.trough ? FLOOR_OF_TROUGH : FLOOR_OF_PROFILE;
+        const open = seg.open && !seg.trough ? openWall(seg.open) : undefined;
+        for (const [into, isFloor] of [
+          [floor, true],
+          [channel, false],
+        ] as const)
+          sweep(
+            seg.points,
+            seg.tangents,
+            seg.ups,
+            seg.arc.length,
+            seg.trough ? trough(seg.wall) : profile(seg.wall),
+            into,
+            seg.width,
+            HALF_WIDTH,
+            seg.trough ? seg.floor : undefined,
+            // a lane's wall left out wherever physics leaves it open, at both ends of the stretch, as it is met
+            (i, k) => floorEdges.includes(k) !== isFloor || (open?.(i, k) ?? false),
+          );
+      }
       // a lid's grid over whatever stretch is covered: bars swept along the samples under it, and rungs across
       if (seg.lid) {
         let from = 0;
@@ -580,20 +734,21 @@ export class Scene {
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [
-      { mesh: channel.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.65 },
+      { mesh: channel.build(), matrices: one, albedo: colours.walls, roughness: 0.65 },
+      { mesh: floor.build(), matrices: one, albedo: colours.floor, roughness: 0.65 },
       // a peg is a cone, which is what a ball there meets
       {
         mesh: cone(PEG_CONE, PEG_HEIGHT),
         matrices: pegAt,
         count: pegs.length / 3,
-        albedo: [0.2, 0.2, 0.23],
+        albedo: colours.pegs,
         roughness: 0.5,
       },
       {
         mesh: bar(POST, 0.9, GATE_HEIGHT + 0.15),
         matrices: postAt,
         count: posts.length / 3,
-        albedo: [0.25, 0.25, 0.28],
+        albedo: colours.trim,
         roughness: 0.5,
       },
       // the mounds the same grey as the floor they rise out of, so they read as the floor's own shape
@@ -601,38 +756,38 @@ export class Scene {
         mesh: mound(MOUND.radius, MOUND.height),
         matrices: moundAt,
         count: mounds.length / 3,
-        albedo: [0.42, 0.44, 0.5],
+        albedo: colours.floor,
         roughness: 0.65,
       },
       { mesh: bar(HALF_WIDTH * 2, 0.12, 0.03), matrices: lineAt, albedo: [0.95, 0.72, 0.2], roughness: 0.4 },
       {
         mesh: bar((HALF_WIDTH + SKIN) * 2, LANE_STOP * 2, track.segments[end].wall),
         matrices: stopAt,
-        albedo: [0.25, 0.25, 0.28],
+        albedo: colours.trim,
         roughness: 0.5,
       },
       {
         mesh: bar((HALF_WIDTH + SKIN) * 2, OUTLET_BACK * 2, track.wall),
         matrices: backAt,
         count: backs.length,
-        albedo: [0.42, 0.44, 0.5],
+        albedo: colours.walls,
         roughness: 0.65,
       },
     ];
     // the grid the same dark as the pegs, so it reads as ironwork over the channel and not part of it
     if (grid.vertexCount > 0) {
-      groups.push({ mesh: grid.build(), matrices: one, albedo: [0.2, 0.2, 0.23], roughness: 0.5 });
+      groups.push({ mesh: grid.build(), matrices: one, albedo: colours.grid, roughness: 0.5 });
       groups.push({
         mesh: bar((HALF_WIDTH + SKIN) * 2, BAR, BAR),
         matrices: rungAt,
         count: rungs.length / 2,
-        albedo: [0.2, 0.2, 0.23],
+        albedo: colours.grid,
         roughness: 0.5,
       });
     }
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)
-      groups.push({ mesh: bowls.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.6 });
+      groups.push({ mesh: bowls.build(), matrices: one, albedo: colours.floor, roughness: 0.6 });
     groups.push(...this.decor(track, dressing));
     return groups;
   }
@@ -668,6 +823,8 @@ export class Scene {
     const donuts: number[] = [];
     const mountains: number[] = [];
     const roofs: number[] = [];
+    // a rounded ring round each tower under its battlements, as the references' towers have
+    const rims: number[] = [];
     const trees: number[] = [];
     const clouds: number[] = [];
     const cakeSponge = new MeshBuilder(),
@@ -882,6 +1039,12 @@ export class Scene {
         path.push(off(span, ARCH.rise), off(span, -0.3));
         chain(tubes, path, ARCH.thick, CANDY);
       },
+      standingLollipop: (d) => {
+        // a white stick up beside the wall, and a swirled sweet on it facing along the channel, at the field coming
+        const r = STANDING.radius;
+        column(candyWhite, d.x, d.y, d.z, d.z + d.height - r, 0.06, 0.06, 8);
+        sweets.push(d.x, d.y, d.z + d.height - r, d.heading + Math.PI / 2, r, 0);
+      },
       donut: (d) => {
         // lying on the ground, dough under and icing over, each its own icing, as big as the dressing made it
         const big = d.height / (DONUT.tube * 2);
@@ -958,6 +1121,7 @@ export class Scene {
           );
         }
         roofs.push(d.x, d.y, d.z + body, r * 1.25);
+        rims.push(d.x, d.y, d.z + body - 1.1, r * 1.12);
       },
       tree: (d) => {
         // a chocolate cone on a stub of a trunk
@@ -966,10 +1130,15 @@ export class Scene {
       },
       cloud: (d) => {
         // three soft balls of cloud together
+        // a puffy heap of balls, the biggest in the middle and smaller round and under it
         for (const [ox, oy, oz, r] of [
-          [0, 0, 0, 1],
-          [1.1, 0.3, -0.3, 0.75],
-          [-1.1, -0.2, -0.35, 0.8],
+          [0, 0, 0.1, 1],
+          [0.95, 0.35, -0.2, 0.8],
+          [-0.95, -0.25, -0.25, 0.85],
+          [0.4, -0.6, -0.3, 0.7],
+          [-0.35, 0.65, -0.3, 0.7],
+          [1.7, 0, -0.45, 0.55],
+          [-1.75, 0.1, -0.5, 0.55],
         ])
           clouds.push(
             d.x + ox * d.height,
@@ -1074,7 +1243,20 @@ export class Scene {
     if (tubes.length) groups.push(tubeGroup(tubes));
     if (donuts.length) groups.push(...donutGroups(donuts));
     if (mountains.length) groups.push(...mountainGroups(mountains));
+    if (donuts.length || mountains.length) groups.push(sprinkleGroup(mountains, donuts));
     if (roofs.length) groups.push(roofGroup(roofs));
+    if (rims.length) {
+      const at = new Float32Array((rims.length / 4) * 16);
+      for (let k = 0; k < rims.length / 4; k++)
+        spin(at, k, rims[k * 4], rims[k * 4 + 1], rims[k * 4 + 2], 0, 0, 1, 0, rims[k * 4 + 3]);
+      groups.push({
+        mesh: torus(0.12),
+        matrices: at,
+        count: rims.length / 4,
+        albedo: [0.98, 0.72, 0.45],
+        roughness: 0.6,
+      });
+    }
     if (trees.length) groups.push(treeGroup(trees));
     if (clouds.length) groups.push(cloudGroup(clouds));
     // the lollipops' sweets, upright and facing the way given, each a swirl of its colour and white

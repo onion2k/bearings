@@ -327,10 +327,22 @@ What to copy the shape of, when building something new:
   quarter of each colour, added the sky's light grey over it and ran it
   through a filmic curve that pulled it all to mauve; and no vignette; `main.ts` applies it at every rebuild,
   and `sky()` in the test API reads it. The works and plain keep the dark.
-  A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
-  ground and a river under everything, frosted mountains in pastel bands
-  (the renderer's bands pattern, and a frosting mesh), castle towers with
-  swirled roofs, chocolate cone trees, clouds, and donuts, pretzels and cakes
+  A world also colours the track (`World.track`, `TrackColours`: `STEEL`
+  for the works and plain, `CANDY` for a sweet factory, a lilac floor
+  deeper than a pastel since toon light at full colour washes a pale one to
+  white, cream walls and trim, white grids and pink pegs); the channel is
+  swept twice, its floor edges and the rest apart (`FLOOR_OF_PROFILE`,
+  `FLOOR_OF_TROUGH`), which draws the steel track exactly as before. Each
+  light has its own strength (`LIGHTS`): a lollipop's is a fifth of a works
+  lamp's and hangs well under its sweet, which a works lamp's strength blew
+  out white. By a sweet factory's run: arches every other piece where no
+  lamp is, placed before the gumdrops so those give way to their posts,
+  gumdrops on every piece a chute wide, and small lollipops stood beside the
+  walls every third piece (`standingLollipop`). A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
+  ground and a river under everything, frosted mountains in pastel bands,
+  rounded at the top as a scoop of ice cream is (`revolved`, `hillOf`), with
+  sprinkles on their frosting and the donuts' icing, castle towers with
+  swirled roofs and a rounded rim, chocolate kisses for trees, clouds, and donuts, pretzels and cakes
   strewn just past the run in proportion to its reach, all from a chance
   seeded by the run's own shape. It is held by `sceneryClear` and a rule:
   nothing nearer the run's middle than its reach and 6, and no top over a

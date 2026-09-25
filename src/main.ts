@@ -26,9 +26,8 @@ import { LIGHTS, WORLDS, bulbOf } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
-/** How far a lamp's light carries, and how bright it is, in the renderer's own terms. */
-const LAMP_REACH = 8,
-  LAMP_BRIGHT = 25;
+/** How far a lamp's light carries, in the renderer's own terms; how bright each is, is `LIGHTS`'s. */
+const LAMP_REACH = 8;
 const LIGHT_CAPACITY = 16,
   EFFECT_CAPACITY = 16,
   PARTICLE_CAPACITY = 1024;
@@ -185,9 +184,9 @@ async function main() {
   /** The middle of the run that is on. */
   const home: [number, number, number] = [0, 0, 0];
   const rebuild = () => {
-    renderer.setStatic(scene.static(game.track, game.decor));
-    // the world the run is in: its sky, and the light, as its theme has them
+    // the world the run is in: its track's colours, its sky, and the light, as its theme has them
     const world = WORLDS[(game.designer?.run ?? game.current).theme ?? 'plain'];
+    renderer.setStatic(scene.static(game.track, game.decor, world.track));
     // a candy world is bright and clean: no darkened corners, which in a pale sky read as a grey haze
     renderer.post = {
       ...renderer.post,
@@ -222,9 +221,8 @@ async function main() {
     // each lamp, or lollipop, a light of its own in its own colour, hung just under it: as many as the dressing has,
     // which its ceiling keeps inside the pool with the light over the whole run
     for (const d of game.decor) {
-      const colour = LIGHTS[d.kind];
-      if (colour)
-        lights.add({ position: bulbOf(game.track, d, bulb), radius: LAMP_REACH, colour, intensity: LAMP_BRIGHT });
+      const light = LIGHTS[d.kind];
+      if (light) lights.add({ position: bulbOf(game.track, d, bulb), radius: LAMP_REACH, ...light });
     }
     renderer.setLights(lights);
   };
@@ -778,6 +776,15 @@ async function main() {
     measureFrame,
     chase: () => [cam.target[0], cam.target[1], cam.target[2]],
     sky: () => [...renderer.look.background] as [number, number, number],
+    project: (x, y, z) => {
+      // the camera's view and projection, as the renderer draws with, to a point on the page's own canvas
+      const m = cam.viewProjection;
+      const cx = m[0] * x + m[4] * y + m[8] * z + m[12],
+        cy = m[1] * x + m[5] * y + m[9] * z + m[13],
+        cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+      const r = canvas.getBoundingClientRect();
+      return [r.left + ((cx / cw + 1) / 2) * r.width, r.top + ((1 - cy / cw) / 2) * r.height];
+    },
     events: eventLog,
   });
 

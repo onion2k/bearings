@@ -591,3 +591,37 @@ export function torus(tube: number, top = false, rings = 28, sides = 14): Mesh {
     for (let j = 0; j < sides; j++) b.quad(i * row + j, (i + 1) * row + j, (i + 1) * row + j + 1, i * row + j + 1);
   return b.build();
 }
+
+/**
+ * A smooth solid turned about z from `z0` to `z1` of a unit height, `r(z)`
+ * from its axis at each height, its normals worked out from the profile's own
+ * slope so light runs round it smoothly; open at the bottom and closed at a
+ * top where `r` comes to nothing. A mountain, a tree, a frosting.
+ */
+export function revolved(r: (z: number) => number, z0 = 0, z1 = 1, rows = 24, sides = 32, lift = 0): Mesh {
+  const b = new MeshBuilder();
+  const e = 1e-3;
+  for (let i = 0; i <= rows; i++) {
+    const z = z0 + ((z1 - z0) * i) / rows;
+    const rr = r(z);
+    // the profile's slope: outward normal of (r, z) is (dz, -dr) turned round the axis
+    const dr = (r(Math.min(1, z + e)) - r(Math.max(0, z - e))) / (Math.min(1, z + e) - Math.max(0, z - e));
+    const l = Math.hypot(1, dr);
+    for (let j = 0; j <= sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const c = Math.cos(a),
+        s = Math.sin(a);
+      b.vertex(c * rr, s * rr, z + lift, c / l, s / l, -dr / l, j / sides, i / rows);
+    }
+  }
+  const row = sides + 1;
+  for (let i = 0; i < rows; i++)
+    for (let j = 0; j < sides; j++) b.quad(i * row + j, i * row + j + 1, (i + 1) * row + j + 1, (i + 1) * row + j);
+  return b.build();
+}
+
+/** A mountain's profile, `ratio` round at its foot for its height of one, easing into a rounded top and not a point. */
+export const hillOf =
+  (ratio: number) =>
+  (z: number): number =>
+    ratio * Math.pow(Math.max(0, Math.cos((Math.min(1, z) * Math.PI) / 2)), 0.75);

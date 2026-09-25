@@ -22,6 +22,10 @@ import {
   MOST,
   PUFFS,
   SMOKE_THICK,
+  CANDY,
+  LIGHTS,
+  LOLLIPOP,
+  STEEL,
   THEME_KINDS,
   WORLDS,
   bulbOf,
@@ -32,7 +36,7 @@ import { Designer, PALETTE } from '../src/designer';
 import { seeded } from '../src/random';
 import { RUNS } from '../src/runs';
 import { Scene, boxOf } from '../src/scene';
-import { THEMES, type Run, type Theme, type Track, bowlHeight, check, compile } from '../src/track';
+import { THEMES, type Run, type Theme, type Track, at, bowlHeight, check, compile } from '../src/track';
 
 const themed =
   (theme: Theme) =>
@@ -96,6 +100,37 @@ describe('dressing a run', () => {
     expect(WORLDS.sweets.shading).toBe('toon');
     expect(WORLDS.industrial.shading).toBe('pbr');
     expect(WORLDS.plain.shading).toBe('pbr');
+  });
+
+  it("lights a lollipop lamp as a glow under its sweet, not a works lamp's floodlight on it", () => {
+    // at a works lamp's strength, hung a hair under the sweet, the sweet was lit to a blown-out white in toon light
+    expect(LIGHTS.lollipop!.intensity).toBeLessThanOrEqual(LIGHTS.lamp!.intensity / 5);
+    const run = RUNS.find((r) => r.theme === 'sweets')!;
+    const { track, items } = dressed(run);
+    const lollipop = items.find((d) => d.kind === 'lollipop')!;
+    const light = bulbOf(track, lollipop, [0, 0, 0]);
+    // the sweet's middle is its disc's reach under the end of the arm, over the channel's middle where the light hangs
+    const over = at(track, lollipop.segment, lollipop.along);
+    const up = LOLLIPOP.height - 0.1 - LOLLIPOP.disc;
+    const sweet = [over.x + over.ux * up, over.y + over.uy * up, over.z + over.uz * up];
+    // how far apart they are, which on a steep piece is along its own up and not straight up
+    const apart = Math.hypot(sweet[0] - light[0], sweet[1] - light[1], sweet[2] - light[2]);
+    expect(apart, 'the light well under the sweet').toBeGreaterThan(0.8);
+  });
+
+  it("colours a sweet factory's track in candy and the works' in steel", () => {
+    expect(WORLDS.sweets.track).toBe(CANDY);
+    expect(WORLDS.industrial.track).toBe(STEEL);
+    expect(WORLDS.plain.track).toBe(STEEL);
+    const run = RUNS.find((r) => r.theme === 'sweets')!;
+    const groups = new Scene().static(compile(run), [], WORLDS.sweets.track);
+    for (const colour of [CANDY.floor, CANDY.walls])
+      expect(
+        groups.some((g) => g.albedo === colour),
+        colour.join(' '),
+      ).toBe(true);
+    const steel = new Scene().static(compile(run));
+    expect(steel.some((g) => g.albedo === CANDY.floor)).toBe(false);
   });
 
   it('has every kind in one theme and one only', () => {

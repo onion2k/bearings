@@ -47,6 +47,7 @@ export type DecorKind =
   | 'fudgePot'
   | 'cupcake'
   | 'arch'
+  | 'standingLollipop'
   | 'donut'
   | 'pretzel'
   | 'cake'
@@ -70,6 +71,7 @@ export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
     'fudgePot',
     'cupcake',
     'arch',
+    'standingLollipop',
     'donut',
     'pretzel',
     'cake',
@@ -105,7 +107,8 @@ export const MOST: Record<DecorKind, number> = {
   giantLollipop: 3,
   fudgePot: 3,
   cupcake: 3,
-  arch: 8,
+  arch: 12,
+  standingLollipop: 12,
   donut: 6,
   pretzel: 4,
   cake: 5,
@@ -132,7 +135,40 @@ export const FLAT: readonly DecorKind[] = ['ground', 'river'];
  * over, if any, and the light. For the eye alone, as the rest of a theme is;
  * a run with no theme, or the works, is in the dark it always was.
  */
+/** What a run's track is coloured, piece by piece of it: its floor, its walls, its grids, the pegs, and the trim. */
+export interface TrackColours {
+  floor: [number, number, number];
+  walls: [number, number, number];
+  grid: [number, number, number];
+  pegs: [number, number, number];
+  trim: [number, number, number];
+}
+
+/** Steel, as the track always was. */
+export const STEEL: TrackColours = {
+  floor: [0.42, 0.44, 0.5],
+  walls: [0.42, 0.44, 0.5],
+  grid: [0.2, 0.2, 0.23],
+  pegs: [0.2, 0.2, 0.23],
+  trim: [0.25, 0.25, 0.28],
+};
+
+/**
+ * The sweet factory's track: a soft lilac floor that a marble of any colour
+ * stands out on, cream walls and trim, grids white as icing, and pink pegs.
+ */
+export const CANDY: TrackColours = {
+  // deeper than a pastel would be, since toon light at a candy's full colour washes a pale one out to white
+  floor: [0.55, 0.4, 0.88],
+  walls: [0.98, 0.92, 0.8],
+  grid: [0.98, 0.97, 0.96],
+  pegs: [0.95, 0.4, 0.62],
+  trim: [0.98, 0.92, 0.8],
+};
+
 export interface World {
+  /** What its track is coloured. */
+  track: TrackColours;
   sky: [number, number, number];
   /** How it is shaded: as real surfaces are, or as a cartoon is, flat and bright, with its colours shown straight. */
   shading: 'pbr' | 'toon';
@@ -144,6 +180,7 @@ export interface World {
 }
 export const WORLDS: Record<Theme | 'plain', World> = {
   plain: {
+    track: STEEL,
     sky: [0.04, 0.04, 0.05],
     shading: 'pbr',
     env: 'studio',
@@ -152,6 +189,7 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     ambient: 0.65,
   },
   industrial: {
+    track: STEEL,
     sky: [0.04, 0.04, 0.05],
     shading: 'pbr',
     env: 'studio',
@@ -162,6 +200,7 @@ export const WORLDS: Record<Theme | 'plain', World> = {
   // a clear blue sky reflected in everything, drawn as a cartoon is: in flat bands at every candy's own colour, and
   // the colours shown straight, where the physically based light and its filmic curve washed them all to grey
   sweets: {
+    track: CANDY,
     sky: [0.45, 0.72, 0.98],
     shading: 'toon',
     env: 'daylight',
@@ -172,9 +211,11 @@ export const WORLDS: Record<Theme | 'plain', World> = {
 };
 
 /** The things that light the run, and the colour of their light: a works' lamps warm, a sweet factory's lollipops pink. */
-export const LIGHTS: Partial<Record<DecorKind, [number, number, number]>> = {
-  lamp: [1, 0.78, 0.45],
-  lollipop: [1, 0.62, 0.82],
+export const LIGHTS: Partial<Record<DecorKind, { colour: [number, number, number]; intensity: number }>> = {
+  lamp: { colour: [1, 0.78, 0.45], intensity: 25 },
+  // a glow and not a floodlight: in a bright candy world, lit toon at the full colour, a lamp as strong as the works'
+  // blew the sweet it hangs under out to white
+  lollipop: { colour: [1, 0.62, 0.82], intensity: 4 },
 };
 
 /** The puffs of smoke over each chimney, rising and swelling in turn. */
@@ -231,6 +272,8 @@ export const POT = { out: 2.4, radius: 0.95, height: 1.5 } as const;
 /** A cupcake on the ground: its paper case's reach and height, then its frosting and a cherry. */
 export const CUPCAKE = { out: 2.4, radius: 0.85, height: 2 } as const;
 
+/** A small lollipop stood beside a wall: how far out from the channel's edge, how round its sweet, how tall its stick. */
+export const STANDING = { out: 0.75, radius: 0.5, height: 2.6 } as const;
 /** A candy-cane arch over the channel: its posts this far out from its edge and this thick, and this high before they bend over. */
 export const ARCH = { out: 0.55, thick: 0.26, rise: 2.8 } as const;
 /** A donut lying on the ground, and a pretzel: how far round, how thick. */
@@ -563,13 +606,22 @@ class Site {
    * reaching `below` under its floor and `above` over it, and with room for
    * what it pushes out `reach` further up.
    */
-  againstWall(kind: DecorKind, out: number, radius: number, below: number, above: number, reach: number) {
+  againstWall(
+    kind: DecorKind,
+    out: number,
+    radius: number,
+    below: number,
+    above: number,
+    reach: number,
+    every = 5,
+    at = 3,
+  ) {
     const { segments } = this.track;
     for (const k of this.pieces) {
-      if (k % 5 !== 3 || this.count(kind) >= MOST[kind]) continue;
+      if (k % every !== at || this.count(kind) >= MOST[kind]) continue;
       const s = this.by.get(k)!;
       if (!this.plainWidth(s)) continue;
-      const side: 1 | -1 = k % 10 < 5 ? 1 : -1;
+      const side: 1 | -1 = k % (every * 2) < every ? 1 : -1;
       const along = segments[s].length / 2;
       const h = this.spot(s, along);
       const [x, y, z] = off(h, side * (h.w + out), 0);
@@ -649,7 +701,8 @@ class Site {
   arches(kind: DecorKind) {
     const { segments } = this.track;
     for (const k of this.pieces) {
-      if (k % 3 !== 2 || this.aloft.has(k) || this.count(kind) >= MOST[kind]) continue;
+      // every other piece, where no lamp is
+      if (k % 2 !== 0 || k % 3 === 1 || this.aloft.has(k) || this.count(kind) >= MOST[kind]) continue;
       const s = this.by.get(k)!;
       if (!this.plainWidth(s)) continue;
       const along = segments[s].length / 2;
@@ -787,15 +840,18 @@ function industrial(site: Site) {
 function sweets(site: Site) {
   site.stripes('candyStripes');
   site.lamps('lollipop', LOLLIPOP);
-  // small, and many of them: every other piece, where the works' pipes go on every fourth
-  site.alongWall('gumdrops', [GUMDROPS], 2);
+  // the arches before what runs along a wall, which gives way to their posts rather than they to it
+  site.arches('arch');
+  // small, and many of them: every piece a chute wide, where the works' pipes go on every fourth
+  site.alongWall('gumdrops', [GUMDROPS], 1);
+  // small lollipops stood beside the walls, every third piece where the lamps are not
+  site.againstWall('standingLollipop', STANDING.out, STANDING.radius, 0, STANDING.height, 0, 3, 0);
   site.onWall('whisk', [[0, WHISK.reach]], WHISK.out, WHISK.up, WHISK.thick);
   site.legs('cane', CANE.half);
   for (const f of [0.3, 0.55, 0.8])
     site.stand('giantLollipop', f, GIANT.radius, GIANT.out, Math.min(site.high + OVER - site.ground, GIANT.tallest));
   for (const f of [0.45, 0.7, 0.95]) site.stand('fudgePot', f, POT.radius, POT.out, POT.height, POT_STEAM);
   for (const f of [0.65, 0.9, 0.1]) site.stand('cupcake', f, CUPCAKE.radius, CUPCAKE.out, CUPCAKE.height);
-  site.arches('arch');
   site.backdrop();
 }
 
@@ -881,7 +937,7 @@ function footOf(track: Track, x: number, y: number, top: number): number | null 
 export function bulbOf(track: Track, d: Decoration, out: [number, number, number]): [number, number, number] {
   const h = at(track, d.segment, d.along);
   // a lamp's bulb under its shade; a lollipop's light just under the sweet, since a light inside it lights nothing
-  const [x, y, z] = off(h, 0, d.kind === 'lollipop' ? LOLLIPOP.height - LOLLIPOP.hangs - 0.1 : LAMP.height - 0.45);
+  const [x, y, z] = off(h, 0, d.kind === 'lollipop' ? LOLLIPOP.height - LOLLIPOP.hangs - 0.6 : LAMP.height - 0.45);
   out[0] = x;
   out[1] = y;
   out[2] = z;

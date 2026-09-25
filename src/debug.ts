@@ -19,7 +19,7 @@ import { seeded } from './random';
 import { PIECES } from './catalog';
 import { type Lane, PALETTE } from './designer';
 import { type Kind, type Theme, at, spot } from './track';
-import { DECOR_KINDS, type DecorKind, bulbOf } from './decor';
+import { DECOR_KINDS, type DecorKind, LIGHTS, bulbOf } from './decor';
 import { RUNS } from './runs';
 
 declare global {
@@ -103,7 +103,7 @@ export interface Dressing {
   theme: Theme | 'plain';
   /** How many of each kind stand by it, every kind named, none or not. */
   kinds: Record<DecorKind, number>;
-  /** Where each lamp's light hangs, for a picture to look at. */
+  /** Where each lamp's light hangs, a works' or a sweet factory's, for a picture to look at. */
   lamps: [number, number, number][];
   /** Where each chimney's top is, for a picture to look at. */
   chimneys: [number, number, number][];
@@ -208,6 +208,8 @@ export interface GameApi {
   chase(): [number, number, number];
   /** The colour of the sky the page draws the run against, which the run's theme sets. */
   sky(): [number, number, number];
+  /** Where a point of the world is on the page, in CSS pixels from its top left, seen through the camera as it stands. */
+  project(x: number, y: number, z: number): [number, number];
 }
 
 /** What the page gives the API that is not the game's: time, the camera and the renderer. */
@@ -232,6 +234,8 @@ export interface DebugHost {
   chase(): [number, number, number];
   /** The colour of the sky the page draws the run against, which the run's theme sets. */
   sky(): [number, number, number];
+  /** Where a point of the world is on the page, in CSS pixels from its top left, seen through the camera as it stands. */
+  project(x: number, y: number, z: number): [number, number];
   events: string[];
 }
 
@@ -383,7 +387,7 @@ export function createApi(host: DebugHost): GameApi {
       return {
         theme: on.theme ?? 'plain',
         kinds: kinds as Record<DecorKind, number>,
-        lamps: game.decor.filter((d) => d.kind === 'lamp').map((d) => bulbOf(game.track, d, [0, 0, 0])),
+        lamps: game.decor.filter((d) => LIGHTS[d.kind]).map((d) => bulbOf(game.track, d, [0, 0, 0])),
         chimneys: game.decor
           .filter((d) => d.kind === 'chimney')
           .map((d): [number, number, number] => [d.x, d.y, d.z + d.height]),
@@ -455,6 +459,9 @@ export function createApi(host: DebugHost): GameApi {
     },
     sky() {
       return host.sky();
+    },
+    project(x, y, z) {
+      return host.project(x, y, z);
     },
     chase() {
       return host.chase();
