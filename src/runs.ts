@@ -104,10 +104,14 @@ export const LEAP: Run = {
 
 /**
  * The long one: down the hill in drops and ramps, turning back on itself
- * again and again, over two peg boards, under a wheel, and round a spiral.
+ * again and again, over a peg board, under a wheel, round a spiral and
+ * across a sweeper. The sweeper was a second peg board, which the field
+ * reached in single file along the outside of the bend before it, and
+ * identical balls in one line strike cones alike: it kept their order at
+ * 0.93. A paddle swinging across the stream at its own moment keeps 0.72.
  */
 export const SWITCHBACK: Run = {
-  id: 'switchback-3',
+  id: 'switchback-4',
   name: 'Switchback',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
@@ -125,7 +129,7 @@ export const SWITCHBACK: Run = {
     { kind: 'ramp', x: 5, y: -7, z: -9, facing: 3 },
     { kind: 'spiralRight', x: 5, y: -8, z: -10, facing: 3 },
     { kind: 'curveRight', x: 5, y: -8, z: -12, facing: 3 },
-    { kind: 'pegs', x: 4, y: -9, z: -12, facing: 2 },
+    { kind: 'sweeper', x: 4, y: -9, z: -12, facing: 2 },
     { kind: 'curveLeft', x: 2, y: -9, z: -13, facing: 2 },
     { kind: 'ramp', x: 1, y: -10, z: -13, facing: 3 },
     { kind: 'straight', x: 1, y: -11, z: -14, facing: 3 },
@@ -186,28 +190,30 @@ export const CROSSING: Run = {
 
 /**
  * The stress test: a hundred pieces, `MAX_PIECES`'s own ceiling, and every
- * kind of piece the catalog has, at least once. Folded into a box with
+ * kind of piece the catalog has but the sweeper. Folded into a box with
  * turns rather than run straight out — laid out end to end the first time,
  * it needed a camera three hundred units further back than any other run
  * and stood a sliver in the corner of the screen for it — so what carries
  * the length is depth, one level further down each turn, not width.
  *
- * Every piece with something in the way to break the field up sits early,
- * while the field is still off the gate and fresh, save the pegboards
- * scattered through the long middle for the fold's own sake: a splitter
- * and a joiner hand two equal lanes back on in lock step, exactly as evenly
- * spaced as they went in, and the first piece with something in the way to
- * meet that field reads as though it did nothing, whatever it is — moved
- * once, tried right after the joiner and failing there however it was
- * built around, not tuned in place. The pegboards sit before the fork
- * instead, and nothing stands between the joiner and the cup.
+ * Every piece with something in the way sits early, while the field is
+ * still off the gate and bunched: a board met by a field strung out over
+ * seconds is passed one ball at a time, and keeps the order it was handed.
+ * The peg and bumps boards once scattered through the long middle kept it
+ * at 0.93 to 1.00, and are plain wide shallows now. The two early boards,
+ * the bumps and the pegs, were the sweeper and the pegs, and there is room
+ * for only two while the field is bunched: the sweeper is on three other
+ * runs, and bumps on no other. Nothing with something in the way stands
+ * after the fork either: a splitter and a joiner hand two equal lanes back
+ * on in lock step, and the first thing to meet that field read as though it
+ * did nothing, whatever it was.
  */
 export const STRESS: Run = {
-  id: 'stress-test-2',
+  id: 'stress-test-3',
   name: 'Stress Test',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
-    { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
+    { kind: 'bumps', x: 1, y: 0, z: -1, facing: 0 },
     { kind: 'curveRight', x: 3, y: 0, z: -2, facing: 0 },
     { kind: 'pegs', x: 4, y: -1, z: -2, facing: 3 },
     { kind: 'curveLeft', x: 4, y: -3, z: -3, facing: 3 },
@@ -232,57 +238,57 @@ export const STRESS: Run = {
     { kind: 'narrow', x: 13, y: -14, z: -18, facing: 3 },
     { kind: 'curveRight', x: 13, y: -16, z: -19, facing: 3 },
     { kind: 'drop', x: 12, y: -17, z: -19, facing: 2 },
-    { kind: 'pegs', x: 11, y: -17, z: -21, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: -17, z: -21, facing: 2 },
     { kind: 'drop', x: 9, y: -17, z: -22, facing: 2 },
     { kind: 'curveRight', x: 8, y: -17, z: -24, facing: 2 },
     { kind: 'curveRight', x: 7, y: -16, z: -24, facing: 1 },
     { kind: 'ramp', x: 8, y: -15, z: -24, facing: 0 },
-    { kind: 'bumps', x: 9, y: -15, z: -25, facing: 0 },
+    { kind: 'shallowWide', x: 9, y: -15, z: -25, facing: 0 },
     { kind: 'ramp', x: 11, y: -15, z: -26, facing: 0 },
     { kind: 'curveLeft', x: 12, y: -15, z: -27, facing: 0 },
     { kind: 'curveLeft', x: 13, y: -14, z: -27, facing: 1 },
     { kind: 'drop', x: 12, y: -13, z: -27, facing: 2 },
-    { kind: 'bumps', x: 11, y: -13, z: -29, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: -13, z: -29, facing: 2 },
     { kind: 'drop', x: 9, y: -13, z: -30, facing: 2 },
     { kind: 'curveRight', x: 8, y: -13, z: -32, facing: 2 },
     { kind: 'curveRight', x: 7, y: -12, z: -32, facing: 1 },
     { kind: 'ramp', x: 8, y: -11, z: -32, facing: 0 },
-    { kind: 'pegs', x: 9, y: -11, z: -33, facing: 0 },
+    { kind: 'shallowWide', x: 9, y: -11, z: -33, facing: 0 },
     { kind: 'ramp', x: 11, y: -11, z: -34, facing: 0 },
     { kind: 'curveLeft', x: 12, y: -11, z: -35, facing: 0 },
     { kind: 'curveLeft', x: 13, y: -10, z: -35, facing: 1 },
     { kind: 'drop', x: 12, y: -9, z: -35, facing: 2 },
-    { kind: 'pegs', x: 11, y: -9, z: -37, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: -9, z: -37, facing: 2 },
     { kind: 'drop', x: 9, y: -9, z: -38, facing: 2 },
     { kind: 'curveRight', x: 8, y: -9, z: -40, facing: 2 },
     { kind: 'curveRight', x: 7, y: -8, z: -40, facing: 1 },
     { kind: 'ramp', x: 8, y: -7, z: -40, facing: 0 },
-    { kind: 'bumps', x: 9, y: -7, z: -41, facing: 0 },
+    { kind: 'shallowWide', x: 9, y: -7, z: -41, facing: 0 },
     { kind: 'ramp', x: 11, y: -7, z: -42, facing: 0 },
     { kind: 'curveLeft', x: 12, y: -7, z: -43, facing: 0 },
     { kind: 'curveLeft', x: 13, y: -6, z: -43, facing: 1 },
     { kind: 'drop', x: 12, y: -5, z: -43, facing: 2 },
-    { kind: 'bumps', x: 11, y: -5, z: -45, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: -5, z: -45, facing: 2 },
     { kind: 'drop', x: 9, y: -5, z: -46, facing: 2 },
     { kind: 'curveRight', x: 8, y: -5, z: -48, facing: 2 },
     { kind: 'curveRight', x: 7, y: -4, z: -48, facing: 1 },
     { kind: 'ramp', x: 8, y: -3, z: -48, facing: 0 },
-    { kind: 'pegs', x: 9, y: -3, z: -49, facing: 0 },
+    { kind: 'shallowWide', x: 9, y: -3, z: -49, facing: 0 },
     { kind: 'ramp', x: 11, y: -3, z: -50, facing: 0 },
     { kind: 'curveLeft', x: 12, y: -3, z: -51, facing: 0 },
     { kind: 'curveLeft', x: 13, y: -2, z: -51, facing: 1 },
     { kind: 'drop', x: 12, y: -1, z: -51, facing: 2 },
-    { kind: 'pegs', x: 11, y: -1, z: -53, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: -1, z: -53, facing: 2 },
     { kind: 'drop', x: 9, y: -1, z: -54, facing: 2 },
     { kind: 'curveRight', x: 8, y: -1, z: -56, facing: 2 },
     { kind: 'curveRight', x: 7, y: 0, z: -56, facing: 1 },
     { kind: 'ramp', x: 8, y: 1, z: -56, facing: 0 },
-    { kind: 'bumps', x: 9, y: 1, z: -57, facing: 0 },
+    { kind: 'shallowWide', x: 9, y: 1, z: -57, facing: 0 },
     { kind: 'ramp', x: 11, y: 1, z: -58, facing: 0 },
     { kind: 'curveLeft', x: 12, y: 1, z: -59, facing: 0 },
     { kind: 'curveLeft', x: 13, y: 2, z: -59, facing: 1 },
     { kind: 'drop', x: 12, y: 3, z: -59, facing: 2 },
-    { kind: 'bumps', x: 11, y: 3, z: -61, facing: 2 },
+    { kind: 'shallowWide', x: 11, y: 3, z: -61, facing: 2 },
     { kind: 'drop', x: 9, y: 3, z: -62, facing: 2 },
     { kind: 'splitter', x: 8, y: 3, z: -64, facing: 2 },
     { kind: 'straight', x: 7, y: 3, z: -64, facing: 2 },

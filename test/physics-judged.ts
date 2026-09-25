@@ -26,10 +26,12 @@ export function judgesRun(k: number): void {
   const run = RUNS[k];
   describe(`${run.name}, judged under physics over ${JUDGED} races`, () => {
     const track = compile(run);
-    // the pieces with something in the way, and for each how far the order the field left it in followed the
+    // the pieces with something in the way, mounds included, and for each how far the order the field left it in followed the
     // order it came on to it in, on average; how far the finishing order followed the grid, summed; how often the
     // back half of the grid won; and what went wrong in any race
-    const inTheWay = track.segments.flatMap((s, i) => (s.obstacles.length > 0 || s.funnel ? [i] : []));
+    const inTheWay = track.segments.flatMap((s, i) =>
+      s.obstacles.length > 0 || s.funnel || s.mounds.length > 0 ? [i] : [],
+    );
     const kept = new Map(inTheWay.map((s) => [s, 0]));
     let follows = 0,
       fromTheBack = 0;
