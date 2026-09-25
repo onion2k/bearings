@@ -111,7 +111,13 @@ export interface Run {
   id: string;
   name: string;
   pieces: Placed[];
+  /** What the run is dressed as, for the eye alone: plain where it is not given, and nothing a marble meets either way. */
+  theme?: Theme;
 }
+
+/** The ways a run can be dressed, beyond plain. */
+export type Theme = 'industrial';
+export const THEMES: readonly Theme[] = ['industrial'];
 
 /** A stretch of track from one piece, sampled: where it goes, which way, and how far along. */
 export interface Segment {

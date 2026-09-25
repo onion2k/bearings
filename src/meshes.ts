@@ -299,3 +299,137 @@ export function mound(radius: number, height: number, rings = 8, sides = 20): Me
     }
   return b.build();
 }
+
+/**
+ * A box put straight into `b`, centred on `c` with its own three axes, each of
+ * unit length and square to the others, and half as long along each as
+ * `hx`, `hy` and `hz`: the one shape most of a works is made of, a plate, a
+ * beam, a stripe or a flange, merged with the rest of its colour into one
+ * mesh a run, so a run's dressing is a few draws and not one a bolt.
+ */
+export function block(b: MeshBuilder, c: V3, ax: V3, ay: V3, az: V3, hx: number, hy: number, hz: number, ends = true) {
+  const p = (sx: number, sy: number, sz: number): V3 => [
+    c[0] + ax[0] * hx * sx + ay[0] * hy * sy + az[0] * hz * sz,
+    c[1] + ax[1] * hx * sx + ay[1] * hy * sy + az[1] * hz * sz,
+    c[2] + ax[2] * hx * sx + ay[2] * hy * sy + az[2] * hz * sz,
+  ];
+  face(b, p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1));
+  face(b, p(-1, 1, -1), p(1, 1, -1), p(1, -1, -1), p(-1, -1, -1));
+  face(b, p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1));
+  face(b, p(1, 1, -1), p(-1, 1, -1), p(-1, 1, 1), p(1, 1, 1));
+  if (!ends) return;
+  face(b, p(1, -1, -1), p(1, 1, -1), p(1, 1, 1), p(1, -1, 1));
+  face(b, p(-1, 1, -1), p(-1, -1, -1), p(-1, -1, 1), p(-1, 1, 1));
+}
+
+/**
+ * A beam from `a` to `c`, `half` from its middle to its sides, put into `b`: a strut, an arm or a brace, whichever
+ * way it goes. Its ends are left open, since a beam's end meets another beam or a post and is never seen.
+ */
+export function beam(b: MeshBuilder, a: V3, c: V3, half: number) {
+  const d: V3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const l = Math.hypot(d[0], d[1], d[2]) || 1;
+  const ax: V3 = [d[0] / l, d[1] / l, d[2] / l];
+  // any direction not along the beam, made square to it, and the third square to both
+  const ref: V3 = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  let ay: V3 = [ax[1] * ref[2] - ax[2] * ref[1], ax[2] * ref[0] - ax[0] * ref[2], ax[0] * ref[1] - ax[1] * ref[0]];
+  const m = Math.hypot(ay[0], ay[1], ay[2]);
+  ay = [ay[0] / m, ay[1] / m, ay[2] / m];
+  const az: V3 = [ax[1] * ay[2] - ax[2] * ay[1], ax[2] * ay[0] - ax[0] * ay[2], ax[0] * ay[1] - ax[1] * ay[0]];
+  block(b, [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2], ax, ay, az, l / 2, half, half, false);
+}
+
+/** An upright round column from `z0` to `z1` at `x`, `y`, narrowing from `r0` to `r1`, capped at its top, put into `b`. */
+export function column(b: MeshBuilder, x: number, y: number, z0: number, z1: number, r0: number, r1 = r0, sides = 14) {
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    const c0 = Math.cos(a0),
+      s0 = Math.sin(a0),
+      c1 = Math.cos(a1),
+      s1 = Math.sin(a1);
+    face(
+      b,
+      [x + c0 * r0, y + s0 * r0, z0],
+      [x + c1 * r0, y + s1 * r0, z0],
+      [x + c1 * r1, y + s1 * r1, z1],
+      [x + c0 * r1, y + s0 * r1, z1],
+    );
+    // the cap a fan to the middle, begun from the rim, since a quad begun at the middle has no edge to take a normal from
+    face(b, [x + c0 * r1, y + s0 * r1, z1], [x + c1 * r1, y + s1 * r1, z1], [x, y, z1], [x, y, z1]);
+  }
+}
+
+/** A ball at `c`, `r` round, put into `b`: few faces, since it is a lamp's bulb seen from afar. */
+export function ball(b: MeshBuilder, c: V3, r: number, rings = 6, sides = 10) {
+  const p = (i: number, j: number): V3 => {
+    const phi = (i / rings) * Math.PI,
+      th = (j / sides) * Math.PI * 2;
+    return [c[0] + Math.sin(phi) * Math.cos(th) * r, c[1] + Math.sin(phi) * Math.sin(th) * r, c[2] + Math.cos(phi) * r];
+  };
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) face(b, p(i + 1, j), p(i + 1, j + 1), p(i, j + 1), p(i, j));
+}
+
+/**
+ * A girder's leg: a lattice column from `z0` up to `z1` at `x`, `y`, four
+ * angles at its corners `half` from its middle, and in each bay a rung and a
+ * brace across two opposite faces, turning a quarter each bay. Coarse on
+ * purpose: from where the camera stands it reads as ironwork, and a leg
+ * reaching down the whole height of a tall run had a million triangles
+ * between its fifty in bays a third the size.
+ */
+export function lattice(b: MeshBuilder, x: number, y: number, z0: number, z1: number, half: number) {
+  const bar = 0.04;
+  const corners: [number, number][] = [
+    [-half, -half],
+    [half, -half],
+    [half, half],
+    [-half, half],
+  ];
+  for (const [cx, cy] of corners) beam(b, [x + cx, y + cy, z0], [x + cx, y + cy, z1], bar);
+  const bays = Math.max(1, Math.round((z1 - z0) / (half * 5)));
+  const bay = (z1 - z0) / bays;
+  for (let k = 0; k < bays; k++) {
+    const z = z0 + k * bay;
+    for (const c of [k % 2, (k % 2) + 2]) {
+      const [ax, ay] = corners[c],
+        [bx, by] = corners[(c + 1) % 4];
+      beam(b, [x + ax, y + ay, z + bay], [x + bx, y + by, z + bay], bar);
+      beam(b, [x + ax, y + ay, z], [x + bx, y + by, z + bay], bar * 0.8);
+    }
+  }
+}
+
+/** A cog, its axle along y and its teeth round it in x and z, 1 round to its teeth's tips, for scaling to any size. */
+export function cog(teeth = 12, thick = 0.2): Mesh {
+  const b = new MeshBuilder();
+  const inner = 0.78,
+    hub = 0.22,
+    y = thick / 2;
+  const steps = teeth * 4;
+  const r = (k: number) => (k % 4 === 1 || k % 4 === 2 ? 1 : inner);
+  const pt = (k: number, rr: number, side: number): V3 => {
+    const a = (k / steps) * Math.PI * 2;
+    return [Math.cos(a) * rr, side, Math.sin(a) * rr];
+  };
+  for (let k = 0; k < steps; k++) {
+    const n = k + 1;
+    // the rim, its teeth, and the faces of both
+    const rn = r(n === steps ? 0 : n);
+    face(b, pt(k, r(k), -y), pt(k, r(k), y), pt(n, rn, y), pt(n, rn, -y));
+    face(b, pt(n, hub, y), pt(n, rn, y), pt(k, r(k), y), pt(k, hub, y));
+    face(b, pt(k, hub, -y), pt(k, r(k), -y), pt(n, rn, -y), pt(n, hub, -y));
+  }
+  // a boss round the axle, standing proud of both faces
+  const boss = y + 0.06;
+  for (let k = 0; k < 12; k++) {
+    const a0 = (k / 12) * Math.PI * 2,
+      a1 = ((k + 1) / 12) * Math.PI * 2;
+    const p = (a: number, side: number): V3 => [Math.cos(a) * hub, side, Math.sin(a) * hub];
+    face(b, p(a0, -boss), p(a0, boss), p(a1, boss), p(a1, -boss));
+    face(b, p(a1, boss), p(a0, boss), [0, boss, 0], [0, boss, 0]);
+    face(b, p(a0, -boss), p(a1, -boss), [0, -boss, 0], [0, -boss, 0]);
+  }
+  return b.build();
+}

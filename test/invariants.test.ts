@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { type DecorKind, MOST } from '../src/decor';
 import { MAX_DESIGNS } from '../src/designer';
 import { checkInvariants } from '../src/invariants';
 import { FINISHED, RACING } from '../src/race';
@@ -163,5 +164,40 @@ describe('what must always hold of a run being built', () => {
     Object.defineProperty(game.designer, 'open', { value: game.designer!.ends[0], configurable: true });
     Object.defineProperty(game.designer, 'lane', { value: 'left', configurable: true });
     expect(checkInvariants(game).join('\n')).toMatch(/a lane is chosen with 1 ends open/);
+  });
+});
+
+describe('what must always hold of what a run is dressed with', () => {
+  it('reports a plain run dressed, too many of a kind, a kind there is not, and a thing left over from another run', () => {
+    const { game } = newGame();
+    expect(game.decor.length).toBeGreaterThan(0);
+    expect(checkInvariants(game)).toEqual([]);
+    const dressing = game.decor;
+    const lamp = dressing.find((d) => d.kind === 'lamp')!;
+
+    game.decor = Array.from({ length: MOST.lamp + 1 }, () => ({ ...lamp }));
+    expect(checkInvariants(game).join('\n')).toMatch(/has 13 lamps, past the 12/);
+
+    game.decor = [{ ...lamp, kind: 'fountain' as DecorKind }];
+    expect(checkInvariants(game).join('\n')).toMatch(/dressed with a fountain/);
+
+    game.decor = [{ ...lamp, segment: game.track.segments.length + 3 }];
+    expect(checkInvariants(game).join('\n')).toMatch(/has not got/);
+
+    // another run's dressing, whose segments and pieces are all in range here, but not the same ones
+    game.pick(1);
+    const other = game.decor;
+    game.pick(0);
+    expect(other.every((d) => d.segment < game.track.segments.length && d.piece < game.current.pieces.length)).toBe(
+      true,
+    );
+    game.decor = other;
+    expect(checkInvariants(game).join('\n')).toMatch(/stands [\d.]+ from it/);
+
+    game.decor = dressing;
+    game.browse('pieces');
+    expect(checkInvariants(game)).toEqual([]);
+    game.decor = dressing;
+    expect(checkInvariants(game).join('\n')).toMatch(/is plain, and dressed with/);
   });
 });

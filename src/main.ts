@@ -21,10 +21,14 @@ import { Input } from './input';
 import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
-import { HALF_WIDTH, type Kind } from './track';
+import { HALF_WIDTH, type Kind, type Theme } from './track';
+import { bulbOf } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
+/** How far a lamp's light carries, and how bright it is, in the renderer's own terms. */
+const LAMP_REACH = 8,
+  LAMP_BRIGHT = 25;
 const LIGHT_CAPACITY = 16,
   EFFECT_CAPACITY = 16,
   PARTICLE_CAPACITY = 1024;
@@ -62,6 +66,8 @@ const undoPiece = document.getElementById('undo') as HTMLButtonElement;
 const gridPiece = document.getElementById('grid') as HTMLButtonElement;
 const laneTools = document.getElementById('lanes')!;
 const laneLeft = document.getElementById('laneLeft') as HTMLButtonElement;
+const themeTools = document.getElementById('themes') as HTMLDivElement;
+const themeButtons = Array.from(themeTools.querySelectorAll('button'));
 const laneRight = document.getElementById('laneRight') as HTMLButtonElement;
 const keepDesign = document.getElementById('keep') as HTMLButtonElement;
 const leaveDesign = document.getElementById('leave')!;
@@ -173,7 +179,7 @@ async function main() {
   /** The middle of the run that is on. */
   const home: [number, number, number] = [0, 0, 0];
   const rebuild = () => {
-    renderer.setStatic(scene.static(game.track));
+    renderer.setStatic(scene.static(game.track, game.decor));
     const box = boxOf(game.track);
     renderer.setSunShadow(box);
     const mid: [number, number, number] = [
@@ -186,9 +192,20 @@ async function main() {
     home[2] = mid[2];
     lights.clear();
     lights.add({ position: [mid[0], mid[1], box.max[2] + 20], radius: 160, colour: [1, 0.9, 0.75], intensity: 60 });
+    // each lamp a light of its own, warm, hung just under its shade: as many as the dressing has, which its ceiling
+    // keeps inside the pool with the light over the whole run
+    for (const d of game.decor)
+      if (d.kind === 'lamp')
+        lights.add({
+          position: bulbOf(game.track, d, bulb),
+          radius: LAMP_REACH,
+          colour: [1, 0.78, 0.45],
+          intensity: LAMP_BRIGHT,
+        });
     renderer.setLights(lights);
   };
   const lights = new LightPool(LIGHT_CAPACITY);
+  const bulb: [number, number, number] = [0, 0, 0];
   renderer.setDynamic(scene.dynamic());
   rebuild();
 
@@ -395,6 +412,11 @@ async function main() {
     renderer.move(3, scene.wheels, wheels);
     // where the next piece of a run being built goes, and nothing over a run being raced
     renderer.move(4, scene.marker, scene.mark(game.track, game.designer?.open ?? null));
+    // the cogs, the pistons' rods and the smoke, where the game's own clock has them, so a paused game stands still
+    const [cogs, rods, puffs] = scene.animate(game.decor, game.t);
+    renderer.move(5, scene.cogs, cogs);
+    renderer.move(6, scene.rods, rods);
+    renderer.move(7, scene.puffs, puffs);
   }
 
   /**
@@ -537,6 +559,9 @@ async function main() {
     laneTools.hidden = designer.lane === null;
     laneLeft.setAttribute('aria-pressed', String(designer.lane === 'left'));
     laneRight.setAttribute('aria-pressed', String(designer.lane === 'right'));
+    // the theme the run is dressed as, pressed
+    for (const b of themeButtons)
+      b.setAttribute('aria-pressed', String(b.dataset.theme === (designer.run.theme ?? 'plain')));
     // a grid over the last piece laid, pressed while it has one; said why not, where it cannot have one
     const refusedLid = designer.refusesLid();
     const last = designer.run.pieces[designer.run.pieces.length - 1];
@@ -658,6 +683,10 @@ async function main() {
   });
   laneLeft.addEventListener('click', () => {
     if (game.lane('left')) again();
+  });
+  themeTools.addEventListener('click', (e) => {
+    const theme = (e.target as HTMLElement).closest('button')?.dataset.theme;
+    if (theme && game.dress(theme as Theme | 'plain')) again();
   });
   laneRight.addEventListener('click', () => {
     if (game.lane('right')) again();

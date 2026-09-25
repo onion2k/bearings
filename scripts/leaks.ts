@@ -20,6 +20,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Autopilot } from '../src/autopilot';
 import { Game } from '../src/game';
 import { MAX_SLOTS } from '../src/cameras';
+import { DECOR_KINDS, MOST } from '../src/decor';
 import { MAX_DESIGNS } from '../src/designer';
 import { Physics } from '../src/physics';
 import { MARBLES } from '../src/race';
@@ -54,8 +55,11 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   'designs kept': { ceiling: MAX_DESIGNS },
   // the run being built is its own undo, so it can never hold more than a run may
   'pieces being built': { ceiling: MAX_PIECES },
-  // what the save was before designs, and every design as long as a run may be, at the most a piece can take to write
-  'save bytes': { ceiling: 2_000 + MAX_DESIGNS * (100 + MAX_PIECES * 64) },
+  // what the run on is dressed with, worked out again for every run put on and never added to
+  'things dressed': { ceiling: DECOR_KINDS.reduce((n, k) => n + MOST[k], 0) },
+  // what the save was before designs, and every design as long as a run may be, at the most a piece can take to
+  // write, and its theme
+  'save bytes': { ceiling: 2_000 + MAX_DESIGNS * (124 + MAX_PIECES * 64) },
   // the catch-all for what is leaking and has no name here; noisy, so it is given a lot of room
   'heap MB': { ceiling: 300, steady: true },
 };
@@ -73,6 +77,7 @@ export function sizes(game: Game): Record<string, number> {
     'bests kept': Object.keys(progress.save.bests).length,
     'designs kept': progress.save.designs.length,
     'pieces being built': game.designer?.run.pieces.length ?? 0,
+    'things dressed': game.decor.length,
     'save bytes': JSON.stringify(progress.save).length,
     'heap MB': Math.round(process.memoryUsage().heapUsed / 1e5) / 10,
   };

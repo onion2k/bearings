@@ -34,6 +34,8 @@ const KEPT: Record<string, Record<string, unknown>> = {
   // written once a design could split into two lanes and join them again: two kept, the lanes of the one put on last
   // of different lengths
   '06-lanes.json': { races: 64, run: 'design-2', bests: { 'first-drop-3': 2.74, 'design-1': 3.1, 'design-2': 3.4 } },
+  // written when a design could be dressed: one dressed as a works, one left plain, and a best on each run
+  '07-themes.json': { races: 12, run: 'design-1', bests: { 'first-drop-3': 2.74, 'design-1': 3.2 } },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -84,6 +86,16 @@ describe('saves from every shape the game has written', () => {
     game.release();
     for (let f = 0; f < 60 * 60 && !game.over; f++) game.step(1 / 60);
     expect(game.marbles.finishers).toBe(game.marbles.count);
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('brings back one design dressed as a works and one plain, and puts the dressed one on dressed', () => {
+    const game = new Game(RAPIER, new Progress(memoryStore(read('07-themes.json'))), {}, { random: seeded(7) });
+    const [dressed, plain] = game.progress.save.designs;
+    expect(dressed.theme).toBe('industrial');
+    expect('theme' in plain).toBe(false);
+    expect(game.current.id).toBe('design-1');
+    expect(game.decor.length).toBeGreaterThan(0);
     expect(checkInvariants(game)).toEqual([]);
   });
 

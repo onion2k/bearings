@@ -530,6 +530,55 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('switchback dressed as a works: lamps, pipes, cogs, chimneys, girders, tanks, pistons and stripes', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const kinds = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(4);
+      g.step(60);
+      return g.decor().kinds;
+    });
+    for (const [kind, n] of Object.entries(kinds)) expect(n, `switchback has a ${kind}`).toBeGreaterThan(0);
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('works.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a lamp over the channel, lighting it, close to', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(4);
+      g.follow(false);
+      const [x, y, z] = g.decor().lamps[1];
+      g.look(x, y, z - 3, { azimuth: 2.2, polar: 1.05, radius: 11 });
+      g.step(90);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('works-lamp.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the builder, a run dressed as a works as it is built', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['ramp', 'straight', 'sweeper', 'curveLeft', 'drop', 'straight', 'straight'] as const) g.lay(k);
+      g.dress('industrial');
+      g.step(2);
+    });
+    await expect(page.locator('#themes [data-theme="industrial"]')).toHaveAttribute('aria-pressed', 'true');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('designer-works.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a design kept, on its shelf, the field part way down it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

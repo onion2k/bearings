@@ -12,18 +12,26 @@
  * players. The save only ever grew, and keeps no more designs than it may,
  * no two under one id. Nothing is let go down a run still being built, and
  * the next piece of one goes on one of its open ends, of which there are at
- * most two.
+ * most two. What the run on is dressed with is nothing where it is plain,
+ * only the kinds there are, no more of each than a run may have, and all of
+ * it by the run that is on.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import type { Game } from './game';
+import { DECOR_KINDS, MOST } from './decor';
 import { MAX_DESIGNS } from './designer';
 import { FINISHED, WAITING } from './race';
-import { checkTrack } from './track';
+import { at, checkTrack, spot } from './track';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
 const EACH = 3;
+
+/** How far past a channel's edge anything it is dressed with may stand: a chimney beside a chute, and its own width. */
+const REACH = 5;
+/** A spot to read the track into, so checking makes nothing. */
+const here = spot();
 
 export function checkInvariants(game: Game): string[] {
   const out: string[] = [];
@@ -101,6 +109,36 @@ export function checkInvariants(game: Game): string[] {
   else if (track.name !== list[game.run].name) out.push(`run ${game.run} is on, and the track is ${track.name}`);
   else if (game.shelf !== 'pieces' && progress.save.run !== '' && progress.save.run !== list[game.run].id)
     out.push(`the save says ${progress.save.run} is on, and ${list[game.run].id} is`);
+
+  // what the run on is dressed with: nothing where it is plain, only what there is to dress with and no more of each
+  // than a run may have, and every thing by a piece and a segment of the run that is on, not one left over from the
+  // run before
+  // (a run on that is not one of the runs is said above, and there is nothing of it to dress)
+  const on = game.designer?.run ?? (game.run >= 0 && game.run < list.length ? list[game.run] : null);
+  if (on) {
+    const { decor } = game;
+    if (!on.theme && decor.length > 0) out.push(`${on.name} is plain, and dressed with ${decor.length} things`);
+    for (const kind of DECOR_KINDS) {
+      const n = decor.filter((d) => d.kind === kind).length;
+      if (n > MOST[kind]) out.push(`${on.name} has ${n} ${kind}s, past the ${MOST[kind]} a run may`);
+    }
+    for (const d of decor) {
+      if (!DECOR_KINDS.includes(d.kind)) out.push(`${on.name} is dressed with a ${d.kind}, which is nothing a run has`);
+      else if (
+        d.segment >= track.segments.length ||
+        d.piece >= on.pieces.length ||
+        track.segments[d.segment].piece !== d.piece
+      )
+        out.push(`a ${d.kind} stands by piece ${d.piece}, segment ${d.segment}, which ${on.name} has not got`);
+      else {
+        // nothing is dressed further from the segment it stands by than a chimney beside a chute: a dressing worked out
+        // for another run whose numbers happen to fit this one stands wherever that run was
+        const h = at(track, d.segment, Math.min(d.along, track.segments[d.segment].length), here);
+        const off = Math.hypot(d.x - h.x, d.y - h.y);
+        if (off > h.w + REACH) out.push(`a ${d.kind} by segment ${d.segment} stands ${off.toFixed(1)} from it`);
+      }
+    }
+  }
 
   // the designs are as many as a save keeps at most, each under an id of its own
   const { designs } = progress.save;

@@ -117,6 +117,9 @@ change meant to move it, and the commit says why. Look at every picture.
   its boot, and Node in a test or a script.
 - `src/cameras.ts` is the split screen's cameras, one to every picked
   marble, without the screen.
+- `src/decor.ts` is what a run is dressed with when it names a theme — lamps,
+  pipes, cogs, chimneys and the rest of a works — worked out from the run's
+  own track, where each thing stands and nothing about how it is drawn.
 - `src/designer.ts` is a run the player builds, a piece at a time, and the
   designs they keep: what may go on the end, what is refused outright, and
   what a design read back from a save has to be before it is put on.
@@ -233,8 +236,8 @@ What to copy the shape of, when building something new:
   while split so it covers neither a view nor its caption. A way of looking
   and nothing the race feels: not saved, no marble touched, the same seed
   the same race whatever is picked, which a test holds it to. Costs a scene
-  draw a view: about 1 ms at eight views, against 0.5 whole, in the perf
-  spec.
+  draw a view, the dressing and its lamps with it: about 1.7 ms at eight
+  views on First Drop, against 0.6 whole, in the perf spec.
 - **The designer:** `Designer` in `src/designer.ts`, driven by `Game`'s
   `build`, `lay`, `undo`, `keep`, `leave` and `forget`, on a third shelf,
   `'designs'`, whose runs are `progress.save.designs`. A piece goes on where
@@ -281,7 +284,53 @@ What to copy the shape of, when building something new:
   one row that scrolls sideways, so the builder stands no taller than the
   board over a race. Every click checks the whole run again and compiles it
   once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
-  click and never a frame.
+  click and never a frame. A row of themes, Plain and Industrial, dresses
+  the run being built (`Designer.dress`, `Game.dress`); see the dressing.
+- **The dressing:** a run that names a theme (`Run.theme`, only
+  `'industrial'` so far, and plain written as nothing at all) is dressed as
+  a works by `dress` in `src/decor.ts`, from its own track and nothing else:
+  lamps on poles with an arm over the channel, copper pipes along a wall,
+  meshing cogs on one, pistons pumping beside one, hazard stripes low on the
+  walls where the field is let go, something moves and the race is won,
+  girders under the pieces, and brick chimneys and painted tanks standing
+  on a ground two units under the run's lowest point. There is no floor: a
+  girder's leg stands on the wall or grid of whatever is below it, reaches
+  the ground where nothing is, and is left out where it would come down
+  into an open channel or a bowl. Every thing is tried against every channel
+  before it stands (`inTheWay`), what is fixed to a wall keeping outside the
+  wall's own skin and what stands on its own keeping 0.7 off any, 3 back
+  from any bowl, since a chimney beside one stood between the camera and the
+  field, and inside the run's box (`boxOf`, moved to `track.ts` so the
+  dresser need not reach into the scene), so framing and the sun's shadow
+  are as they were; a chimney has room for its smoke all the way up
+  (`smokeAt`). Where a thing will not fit it is left out, so a run that
+  folds tight is dressed less and never dressed through itself. `MOST` caps
+  each kind — twelve lamps, which are lights, and the renderer has sixteen,
+  one of them the light over the whole run. Nothing is met by a marble: the
+  race is compiled and raced from the pieces alone, and a test races a
+  design dressed and plain to the same result, marble for marble. The
+  shipped runs name the theme and keep their ids; the catalog's pieces are
+  plain. `Game.decor` is the run on's dressing, worked out whenever a run is
+  put on. `Scene.decor` draws what stands still merged into a few meshes a
+  colour, `animate` places the cogs, the pistons' rods and the puffs of
+  smoke where the game's clock has them (`game.t`, so a paused game stands
+  still and a picture is the same every run), and `main.ts` hangs a warm
+  light under each lamp's shade. Smoke is solid puffs, since the renderer
+  draws meshes opaque, and it moves by the clock rather than as the
+  renderer's particles, which move only when a frame is drawn. Girders were
+  a million triangles on the Stress Test in fine bays and are coarse on
+  purpose. Held by `test/decor.test.ts` — above all that no point over any
+  drawn surface, standing or moving, is where a marble can be, sampled
+  across every triangle and judged by the sample each channel is squarest
+  to, since high on a tall wall round a tight bend a sample's frame reaches
+  past its neighbour's; the stripes are a band low on the wall for the same
+  fold — and `test/decor-designs.test.ts`, the invariants (nothing on a plain
+  run, no more of a kind than `MOST`, every thing by a segment of the run on
+  and within reach of it), the fuzzer's `dress`, `'things dressed'` in
+  `scripts/leaks.ts`, `test/saves/07-themes.json`, a stage in
+  `smoke/progress.spec.ts`, and the `works`, `works-lamp` and
+  `designer-works` pictures, besides every picture of a shipped run. About
+  6 kB of download, 8 ms of boot, and 0.1 ms a view of the split screen.
 - **The race:** `Physics` in `src/physics.ts`, a `Race`, with nothing
   acting on a ball after the gate opens but gravity, the air and what it
   touches: the air's drag, `DRAG`, is a share of the speed squared on every
@@ -480,7 +529,8 @@ green. Open: **determinism across machines** is not verified — Rapier is the
 same to the bit on this machine, and has not been run on a second.
 
 After that, each through `/feature`: patterns on the marbles, which want a
-change to artshape-render since it has no textures. A designer that places
+change to artshape-render since it has no textures; and themes beyond the
+works, each a `Theme` and a way of dressing a run in `src/decor.ts`. A designer that places
 a piece anywhere on the lattice was weighed and turned down: building on the
 end is simple, and lanes were all it lacked. And what holds of the race as
 it stands:
@@ -584,6 +634,10 @@ For anything new in the run, check what it does:
   by which crossed first
 - **the catalog:** the piece on its own between a start and the end, sound,
   raced home on every seed its test tries, and drawn within budget
+- **the dressing:** nothing drawn where a marble can be, standing or
+  moving, on the piece and on any piece passing over or under it; a new
+  kind of piece dressed in a run and in the catalog's own test; a run
+  dressed, made plain and dressed again, kept, and read back from a save
 - **the players:** a pick before the off, one tried once they are away and
   refused, one let go and its number taken by the next to pick; picks kept
   through a reset and another run; the winner named, or nobody where no

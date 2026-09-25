@@ -265,9 +265,11 @@
     background: var(--gold);
     color: #19150a;
   }
-  /* pressed while the last piece has a grid over it, or while the next piece goes on that lane of a split */
+  /* pressed while the last piece has a grid over it, while the next piece goes on that lane of a split, and on the
+     theme the run is dressed as */
   #grid[aria-pressed='true'],
-  #lanes button[aria-pressed='true'] {
+  #lanes button[aria-pressed='true'],
+  #themes button[aria-pressed='true'] {
     outline: 1px solid var(--gold);
     color: var(--gold);
   }
@@ -418,6 +420,10 @@
     <div id="lanes" class="tools" hidden>
       <button id="laneLeft" type="button" aria-pressed="false">Left lane</button>
       <button id="laneRight" type="button" aria-pressed="false">Right lane</button>
+    </div>
+    <div id="themes" class="tools">
+      <button type="button" data-theme="plain" aria-pressed="true">Plain</button>
+      <button type="button" data-theme="industrial" aria-pressed="false">Industrial</button>
     </div>
     <div class="tools">
       <button id="undo" type="button">Undo</button>

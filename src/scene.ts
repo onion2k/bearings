@@ -13,7 +13,38 @@ import { FIELD } from './field';
 import { MARBLES, RADIUS } from './race';
 import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
-import { bar, bowl as bowlMesh, cone, mound, sphere, sweep, wheel } from './meshes';
+import {
+  bar,
+  ball,
+  post,
+  beam,
+  block,
+  bowl as bowlMesh,
+  cog,
+  column,
+  cone,
+  lattice,
+  mound,
+  sphere,
+  sweep,
+  wheel,
+} from './meshes';
+import {
+  CHIMNEY,
+  COG,
+  type Decoration,
+  GIRDER,
+  LAMP,
+  MOST,
+  PIPES,
+  PISTON,
+  PUFFS,
+  STRIPE,
+  TANK,
+  cogTurn,
+  puffOf,
+  rodOut,
+} from './decor';
 import {
   CELL,
   HALF_WIDTH,
@@ -31,6 +62,7 @@ import {
   WHEEL,
   type Obstacle,
   type Pose,
+  type Spot,
   type Track,
   at,
   bowlHeight,
@@ -121,6 +153,13 @@ interface Part {
 
 export { boxOf } from './track';
 
+type V3 = [number, number, number];
+
+/** Across the channel to the right of the way it goes, at a spot: square to the way and to up. */
+function right(h: Spot): V3 {
+  return [h.ty * h.uz - h.tz * h.uy, h.tz * h.ux - h.tx * h.uz, h.tx * h.uy - h.ty * h.ux];
+}
+
 export class Scene {
   /** Where every marble is this frame, one placement each. */
   readonly marbles = new Float32Array(MARBLES * 16);
@@ -128,6 +167,13 @@ export class Scene {
   readonly looks = new Float32Array(MARBLES * 4);
   /** Where the next piece of a run being built goes, marked over it: none while nothing is being built. */
   readonly marker = new Float32Array(16);
+  /** What of a run's dressing moves: each cog, each piston's rod and each puff of smoke, the pools sized once by the most a run may have. */
+  readonly cogs = new Float32Array(MOST.cog * 2 * 16);
+  readonly rods = new Float32Array(MOST.piston * 16);
+  readonly puffs = new Float32Array(MOST.chimney * PUFFS * 16);
+  /** Where each pair of cogs turns, worked out once a run: its middle, the way along, and the axle, nine numbers a cog. */
+  private cogFrames = new Float32Array(MOST.cog * 2 * 9);
+  private readonly puff: [number, number, number, number] = [0, 0, 0, 0];
 
   /** Where each moving part is this frame: the sweepers' paddles, the gates' bars and the wheels. */
   readonly sweepers = new Float32Array(MOVING_MOST * 16);
@@ -155,7 +201,7 @@ export class Scene {
    * each frame. A funnel's own centre line is only for ordering the field,
    * and is not drawn: its bowl is.
    */
-  static(track: Track): GameGroup[] {
+  static(track: Track, dressing: readonly Decoration[] = []): GameGroup[] {
     const channel = new MeshBuilder();
     const bowls = new MeshBuilder();
     const grid = new MeshBuilder();
@@ -314,7 +360,270 @@ export class Scene {
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)
       groups.push({ mesh: bowls.build(), matrices: one, albedo: [0.42, 0.44, 0.5], roughness: 0.6 });
+    groups.push(...this.decor(track, dressing));
     return groups;
+  }
+
+  /**
+   * What a run is dressed with that stands still, a mesh a colour: ironwork,
+   * copper pipe, brick, painted tanks, the lamps' bulbs and the stripes'
+   * yellow and black; and where each cog turns, noted for `animate`. Nothing
+   * where nothing is dressed, so a plain run draws as it always has.
+   */
+  decor(track: Track, dressing: readonly Decoration[]): GameGroup[] {
+    const iron = new MeshBuilder(),
+      copper = new MeshBuilder(),
+      brick = new MeshBuilder(),
+      paint = new MeshBuilder(),
+      bulbs = new MeshBuilder(),
+      yellow = new MeshBuilder(),
+      black = new MeshBuilder();
+    const h = this.here;
+    let cogs = 0;
+    for (const d of dressing) {
+      at(track, d.segment, d.along, h);
+      const [bx, by, bz] = right(h);
+      // along, to the left and up make a right hand, which a box's faces are wound by
+      const t: V3 = [h.tx, h.ty, h.tz],
+        l: V3 = [-bx, -by, -bz],
+        u: V3 = [h.ux, h.uy, h.uz];
+      const off = (across: number, up: number): V3 => [
+        h.x + bx * across + h.ux * up,
+        h.y + by * across + h.uy * up,
+        h.z + bz * across + h.uz * up,
+      ];
+      if (d.kind === 'lamp') {
+        // a pole up from beside the wall, an arm in over the middle, a shade and its bulb under it
+        const top = d.z + LAMP.height;
+        column(iron, d.x, d.y, d.z - 0.3, top + 0.1, LAMP.pole, LAMP.pole, 8);
+        const over = off(0, LAMP.height);
+        beam(iron, [d.x, d.y, top], over, 0.06);
+        const c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        block(iron, [over[0], over[1], over[2] - 0.12], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.28, 0.28, 0.12);
+        ball(bulbs, [over[0], over[1], over[2] - 0.34], 0.17);
+      } else if (d.kind === 'pipes') {
+        // two pipes swept along the samples beside the wall, and a flange round each every few units
+        const seg = track.segments[d.segment];
+        for (const p of PIPES) {
+          const across = d.side * (HALF_WIDTH + p.out);
+          const ring: [number, number][] = [];
+          for (let k = 0; k <= 10; k++) {
+            const a = (k / 10) * Math.PI * 2;
+            ring.push([across + Math.cos(a) * p.radius, p.up + Math.sin(a) * p.radius]);
+          }
+          sweep(seg.points, seg.tangents, seg.ups, seg.arc.length, ring, copper);
+          for (let a = 0.3; a < d.length; a += 3.2) {
+            at(track, d.segment, a, h);
+            const [fx, fy, fz] = right(h);
+            const c: V3 = [
+              h.x + fx * across + h.ux * p.up,
+              h.y + fy * across + h.uy * p.up,
+              h.z + fz * across + h.uz * p.up,
+            ];
+            block(
+              iron,
+              c,
+              [h.tx, h.ty, h.tz],
+              [-fx, -fy, -fz],
+              [h.ux, h.uy, h.uz],
+              0.06,
+              p.radius + 0.05,
+              p.radius + 0.05,
+            );
+          }
+        }
+      } else if (d.kind === 'stripes') {
+        // yellow and black plates in turn on the outside of the wall, each swept along the samples it covers at the
+        // wall's own width there, so that where a board flares the plate flares with it and never cuts inside
+        const seg = track.segments[d.segment];
+        const o = d.side * (HALF_WIDTH + STRIPE.out);
+        const thick = d.side * 0.03;
+        // a band low on the wall, as tape is: high on a tall wall round a tight bend the wall's own sections cross over
+        // each other, and a band up there would fold with them
+        const top = Math.min(seg.wall - 0.1, STRIPE.top);
+        const plate: [number, number][] = [
+          [o, 0.15],
+          [o + thick, 0.15],
+          [o + thick, top],
+          [o, top],
+          [o, 0.15],
+        ];
+        let from = 0,
+          k = 0;
+        while (from < seg.arc.length - 1) {
+          let to = from + 1;
+          while (to < seg.arc.length - 1 && seg.arc[to] - seg.arc[from] < STRIPE.block) to++;
+          sweep(
+            seg.points.subarray(from * 3),
+            seg.tangents.subarray(from * 3),
+            seg.ups.subarray(from * 3),
+            to - from + 1,
+            plate,
+            k++ % 2 ? black : yellow,
+            seg.width.subarray(from),
+            HALF_WIDTH,
+          );
+          from = to;
+        }
+      } else if (d.kind === 'cog') {
+        // noted where each of the pair turns: the big one here, the small one along from it, both on the axle across
+        for (const [a, r] of [
+          [d.along, COG.big],
+          [d.along + COG.apart, COG.small],
+        ] as const) {
+          at(track, d.segment, a, h);
+          const [cx, cy, cz] = right(h);
+          const across = d.side * (h.w + COG.out);
+          const o = cogs * 9;
+          this.cogFrames[o] = h.x + cx * across + h.ux * COG.up;
+          this.cogFrames[o + 1] = h.y + cy * across + h.uy * COG.up;
+          this.cogFrames[o + 2] = h.z + cz * across + h.uz * COG.up;
+          this.cogFrames[o + 3] = h.tx;
+          this.cogFrames[o + 4] = h.ty;
+          this.cogFrames[o + 5] = h.tz;
+          this.cogFrames[o + 6] = r;
+          this.cogFrames[o + 7] = d.side;
+          this.cogFrames[o + 8] = 0;
+          cogs++;
+        }
+        // an iron plate the pair is bolted to, behind them against the wall
+        const back = off(d.side * (h.w + COG.out - 0.12), COG.up);
+        block(iron, back, t, l, u, 0.2, 0.03, 0.2);
+      } else if (d.kind === 'piston') {
+        // the cylinder, iron, with a collar at its mouth; its rod moves
+        column(iron, d.x, d.y, d.z, d.z + d.height, PISTON.radius, PISTON.radius, 12);
+        column(iron, d.x, d.y, d.z + d.height - 0.12, d.z + d.height, PISTON.radius + 0.07, PISTON.radius + 0.07, 12);
+      } else if (d.kind === 'chimney') {
+        // brick up from the ground, narrowing, with an iron band round its top
+        column(brick, d.x, d.y, d.z, d.z + d.height, CHIMNEY.radius, CHIMNEY.radius * 0.8, 14);
+        column(
+          iron,
+          d.x,
+          d.y,
+          d.z + d.height - 0.5,
+          d.z + d.height - 0.2,
+          CHIMNEY.radius * 0.84,
+          CHIMNEY.radius * 0.84,
+          14,
+        );
+      } else if (d.kind === 'tank') {
+        // a painted tank on the ground, an iron roof, a gauge and a ladder up its side
+        column(paint, d.x, d.y, d.z, d.z + d.height, TANK.radius, TANK.radius, 18);
+        column(iron, d.x, d.y, d.z + d.height, d.z + d.height + 0.5, TANK.radius + 0.05, 0.15, 18);
+        const face: V3 = [
+          Math.cos(d.heading + (Math.PI / 2) * d.side),
+          Math.sin(d.heading + (Math.PI / 2) * d.side),
+          0,
+        ];
+        // `face` is toward the track: the gauge is on that side, to be read, and the ladder round the back
+        const g: V3 = [
+          d.x + face[0] * (TANK.radius + 0.03),
+          d.y + face[1] * (TANK.radius + 0.03),
+          d.z + d.height * 0.6,
+        ];
+        block(bulbs, g, [face[1], -face[0], 0], face, [0, 0, 1], 0.18, 0.03, 0.18);
+        for (const s of [-1, 1]) {
+          const rail: V3 = [
+            d.x - face[0] * (TANK.radius + 0.12) + face[1] * s * 0.22,
+            d.y - face[1] * (TANK.radius + 0.12) - face[0] * s * 0.22,
+            0,
+          ];
+          beam(iron, [rail[0], rail[1], d.z], [rail[0], rail[1], d.z + d.height + 0.3], 0.03);
+        }
+      } else {
+        // a girder's leg, and a plate it stands on
+        lattice(iron, d.x, d.y, d.z, d.z + d.height, GIRDER.half);
+        block(
+          iron,
+          [d.x, d.y, d.z + 0.04],
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+          GIRDER.half + 0.15,
+          GIRDER.half + 0.15,
+          0.04,
+        );
+      }
+    }
+    this.cogCount = cogs;
+    const one = new Float32Array(16);
+    spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
+    const groups: GameGroup[] = [];
+    const add = (mesh: MeshBuilder, albedo: [number, number, number], roughness: number) => {
+      if (mesh.vertexCount > 0) groups.push({ mesh: mesh.build(), matrices: one, albedo, roughness });
+    };
+    add(iron, [0.16, 0.16, 0.18], 0.5);
+    add(copper, [0.72, 0.4, 0.22], 0.35);
+    add(brick, [0.5, 0.2, 0.15], 0.85);
+    add(paint, [0.25, 0.42, 0.36], 0.55);
+    add(bulbs, [1, 0.93, 0.72], 0.25);
+    add(yellow, [0.95, 0.72, 0.1], 0.5);
+    add(black, [0.06, 0.06, 0.07], 0.6);
+    return groups;
+  }
+  private cogCount = 0;
+
+  /**
+   * What of a run's dressing moves, where the clock has it at `t` seconds:
+   * the cogs turning, a big one each way and its small one back the faster,
+   * the pistons' rods out and in, and the smoke rising from every chimney.
+   * How many of each: the cogs, the rods and the puffs. Written in place and
+   * making nothing, since it is every frame.
+   */
+  animate(dressing: readonly Decoration[], t: number): [number, number, number] {
+    const turn = cogTurn(t);
+    for (let k = 0; k < this.cogCount; k++) {
+      const o = k * 9;
+      const r = this.cogFrames[o + 6];
+      // the big one turns one way; the small one, meshed with it, the other and faster by as much as it is smaller
+      const angle = k % 2 === 0 ? turn : -turn * (COG.big / COG.small) + Math.PI / 12;
+      const tx = this.cogFrames[o + 3],
+        ty = this.cogFrames[o + 4];
+      // the axle is across the way, level: its own y; the cog's x and z turn about it in the upright plane along the way
+      const flat = Math.hypot(tx, ty) || 1;
+      const ax = ty / flat,
+        ay = -tx / flat;
+      const c = Math.cos(angle),
+        s = Math.sin(angle);
+      const ex = (tx / flat) * c,
+        ey = (ty / flat) * c,
+        ez = s;
+      const fx = -(tx / flat) * s,
+        fy = -(ty / flat) * s,
+        fz = c;
+      // x, y and z make a right hand: x along the way turned, y the axle to the left, z up turned
+      basis(
+        this.cogs,
+        k,
+        this.cogFrames[o],
+        this.cogFrames[o + 1],
+        this.cogFrames[o + 2],
+        ex,
+        ey,
+        ez,
+        -ax,
+        -ay,
+        0,
+        fx,
+        fy,
+        fz,
+        r,
+      );
+    }
+    let rods = 0,
+      puffs = 0;
+    for (const d of dressing) {
+      if (d.kind === 'piston' && rods < MOST.piston) {
+        spin(this.rods, rods++, d.x, d.y, d.z + d.height - 1 + rodOut(d, t), 0, 0, 1, 0);
+      } else if (d.kind === 'chimney' && puffs < MOST.chimney * PUFFS) {
+        for (let j = 0; j < PUFFS; j++) {
+          const p = puffOf(d, j, t, this.puff);
+          spin(this.puffs, puffs++, p[0], p[1], p[2], 0, 0, 1, 0, p[3]);
+        }
+      }
+    }
+    return [this.cogCount, rods, puffs];
   }
 
   /** What moves: the marbles, then the sweepers, the gates and the wheels, each pool sized once. */
@@ -344,6 +653,10 @@ export class Scene {
         albedo: [0.95, 0.72, 0.2],
         roughness: 0.4,
       },
+      // brass cogs, a steel rod in each piston, and grey smoke
+      { mesh: cog(12, COG.thick), matrices: this.cogs, count: 0, albedo: [0.72, 0.56, 0.26], roughness: 0.35 },
+      { mesh: post(0.1, 1.2), matrices: this.rods, count: 0, albedo: [0.72, 0.74, 0.78], roughness: 0.25 },
+      { mesh: sphere(1, 8, 10), matrices: this.puffs, count: 0, albedo: [0.5, 0.5, 0.53], roughness: 0.95 },
     ];
   }
 

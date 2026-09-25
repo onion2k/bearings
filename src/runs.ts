@@ -22,6 +22,7 @@ import type { Run } from './track';
 export const FIRST: Run = {
   id: 'first-drop-3',
   name: 'First Drop',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
@@ -40,6 +41,7 @@ export const FIRST: Run = {
 export const SHORT: Run = {
   id: 'the-chute-3',
   name: 'The Chute',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
@@ -65,6 +67,7 @@ export const SHORT: Run = {
 export const TOWER: Run = {
   id: 'the-tower-6',
   name: 'The Tower',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
@@ -89,6 +92,7 @@ export const TOWER: Run = {
 export const LEAP: Run = {
   id: 'the-leap-5',
   name: 'The Leap',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
@@ -113,6 +117,7 @@ export const LEAP: Run = {
 export const SWITCHBACK: Run = {
   id: 'switchback-4',
   name: 'Switchback',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
@@ -149,6 +154,7 @@ export const SWITCHBACK: Run = {
 export const FORK: Run = {
   id: 'the-fork-2',
   name: 'The Fork',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },
@@ -173,6 +179,7 @@ export const FORK: Run = {
 export const CROSSING: Run = {
   id: 'the-crossing-2',
   name: 'The Crossing',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
@@ -211,6 +218,7 @@ export const CROSSING: Run = {
 export const STRESS: Run = {
   id: 'stress-test-3',
   name: 'Stress Test',
+  theme: 'industrial',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'bumps', x: 1, y: 0, z: -1, facing: 0 },

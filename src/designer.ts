@@ -26,10 +26,12 @@ import {
   type Kind,
   type Placed,
   type Run,
+  type Theme,
   KINDS,
   MAX_PIECES,
   MAX_SAMPLES,
   MOVING_MOST,
+  THEMES,
   check,
   compile,
   exitOf,
@@ -203,6 +205,19 @@ export class Designer {
     return true;
   }
 
+  /**
+   * The run dressed as `theme`, or made plain: for the eye alone, so it may be
+   * changed at any time and nothing about the run's pieces changes with it.
+   * Plain is written as nothing at all, the shape every design before themes
+   * was kept in. Whether it was a theme the game has.
+   */
+  dress(theme: Theme | 'plain'): boolean {
+    if (theme === 'plain') delete this.run.theme;
+    else if (THEMES.includes(theme)) this.run.theme = theme;
+    else return false;
+    return true;
+  }
+
   /** The last piece taken away, and the lane it was laid on chosen; whether there was one to take, since the start stays. */
   undo(): boolean {
     if (this.run.pieces.length <= 1) return false;
@@ -237,13 +252,18 @@ export function tidy(name: string): string {
  * an id one past the highest in `designs`, so it is never one a design had
  * before — a best set on one is never taken for another's.
  */
-export function kept(designs: readonly Run[], name: string, pieces: readonly Placed[]): Run {
+export function kept(designs: readonly Run[], name: string, pieces: readonly Placed[], theme?: Theme): Run {
   let n = 1;
   for (const d of designs) {
     const m = DESIGN_ID.exec(d.id);
     if (m) n = Math.max(n, Number(m[1]) + 1);
   }
-  return { id: `design-${n}`, name: tidy(name) || `My run ${n}`, pieces: pieces.map((p) => ({ ...p })) };
+  return {
+    id: `design-${n}`,
+    name: tidy(name) || `My run ${n}`,
+    pieces: pieces.map((p) => ({ ...p })),
+    ...(theme ? { theme } : {}),
+  };
 }
 
 /**
@@ -260,10 +280,12 @@ export function readDesigns(raw: unknown): Run[] {
   for (const item of raw) {
     if (out.length >= MAX_DESIGNS) break;
     if (typeof item !== 'object' || item === null) continue;
-    const { id, name, pieces } = item as Record<string, unknown>;
+    const { id, name, pieces, theme } = item as Record<string, unknown>;
     if (typeof id !== 'string' || !DESIGN_ID.test(id) || ids.has(id)) continue;
     if (typeof name !== 'string' || !tidy(name)) continue;
     if (!Array.isArray(pieces) || pieces.length < 2 || pieces.length > MAX_PIECES) continue;
+    // a theme is one the game has, or not there at all, which is plain
+    if (theme !== undefined && !THEMES.includes(theme as Theme)) continue;
     const placed: Placed[] = [];
     for (const p of pieces as unknown[]) {
       if (typeof p !== 'object' || p === null) break;
@@ -282,7 +304,7 @@ export function readDesigns(raw: unknown): Run[] {
       });
     }
     if (placed.length !== pieces.length) continue;
-    const run: Run = { id, name: tidy(name), pieces: placed };
+    const run: Run = { id, name: tidy(name), pieces: placed, ...(theme ? { theme: theme as Theme } : {}) };
     if (check(run).length > 0 || compile(run).samples > MAX_SAMPLES) continue;
     ids.add(id);
     out.push(run);

@@ -21,6 +21,7 @@
  * timed and put back on after a reload like any run that ships.
  */
 import { Cameras, MAX_SLOTS } from './cameras';
+import { type Decoration, dress } from './decor';
 import { Designer, type Lane, MAX_DESIGNS, kept } from './designer';
 import { Physics, type Rapier } from './physics';
 import { LOST, MARBLES, type Race, STALLED, WAITING } from './race';
@@ -28,7 +29,7 @@ import { Progress } from './progress';
 import type { Random } from './random';
 import { PIECES } from './catalog';
 import { RUNS } from './runs';
-import { type Kind, type Run, type Track, compile } from './track';
+import { type Kind, type Run, type Theme, type Track, compile } from './track';
 
 /** What happens, for whoever shows it. Every one may be left out. */
 export interface GameEvents {
@@ -74,6 +75,8 @@ export class Game {
   designer: Designer | null = null;
   private cameFrom: { shelf: Shelf; run: number } = { shelf: 'runs', run: 0 };
   track!: Track;
+  /** What the run on is dressed with, worked out when it is put on or dressed again: for the page to draw, and nothing the race meets. */
+  decor: Decoration[] = [];
   marbles!: Race;
   /** Whether the race that is on has been counted into the save yet. */
   private counted = true;
@@ -201,6 +204,14 @@ export class Game {
     return true;
   }
 
+  /** The run being built dressed as `theme`, or made plain; whether anything was being built to dress. */
+  dress(theme: Theme | 'plain'): boolean {
+    if (!this.designer?.dress(theme)) return false;
+    // put on again, as a grid is, so that the page draws it dressed: a run being built is never raced
+    this.mount(this.designer.run);
+    return true;
+  }
+
   /** The last piece of the run being built taken off again; whether there was one. */
   undo(): boolean {
     if (!this.designer?.undo()) return false;
@@ -221,7 +232,7 @@ export class Game {
       return [`${MAX_DESIGNS} designs are kept already: throw one away to keep another`];
     const problems = designer.problems();
     if (problems.length) return problems;
-    designs.push(kept(designs, name, designer.run.pieces));
+    designs.push(kept(designs, name, designer.run.pieces, designer.run.theme));
     this.designer = null;
     this.shelf = 'designs';
     this.pick(designs.length - 1);
@@ -278,6 +289,7 @@ export class Game {
     // the race before this one let go of: a physics world is memory of Rapier's own
     (this.marbles as Race | undefined)?.dispose?.();
     this.track = compile(run);
+    this.decor = dress(run, this.track);
     this.marbles = new Physics(this.rapier, this.track, events, { random });
     this.counted = false;
     this.follow();

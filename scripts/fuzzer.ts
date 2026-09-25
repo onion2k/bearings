@@ -123,6 +123,10 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           // a grid over the last piece, or taken off it, as the builder's own button does
           game.lid();
           did('lid');
+        } else if (r < 0.69) {
+          // the run dressed as a works, or made plain again, at any point in building it
+          game.dress(game.designer?.run.theme ? 'plain' : 'industrial');
+          did('dress');
         } else if (r < 0.8) {
           game.undo();
           did('undo');

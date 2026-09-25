@@ -18,7 +18,8 @@ import { FINISHED, LOST, RACING, RADIUS, type Race, STALLED, WAITING } from './r
 import { seeded } from './random';
 import { PIECES } from './catalog';
 import { type Lane, PALETTE } from './designer';
-import { type Kind, at, spot } from './track';
+import { type Kind, type Theme, at, spot } from './track';
+import { DECOR_KINDS, type DecorKind, bulbOf } from './decor';
 import { RUNS } from './runs';
 
 declare global {
@@ -96,6 +97,16 @@ export interface Content {
   bowls: { segment: number; x: number; y: number; z: number }[];
 }
 
+/** What the run on is dressed with, as a test sees it. */
+export interface Dressing {
+  /** The run's theme: plain where it names none. */
+  theme: Theme | 'plain';
+  /** How many of each kind stand by it, every kind named, none or not. */
+  kinds: Record<DecorKind, number>;
+  /** Where each lamp's light hangs, for a picture to look at. */
+  lamps: [number, number, number][];
+}
+
 /** The builder, as a test sees it. */
 export interface Designing {
   building: boolean;
@@ -103,6 +114,8 @@ export interface Designing {
   pieces: Kind[];
   /** Which of those pieces have a grid over them, by their place in the run. */
   lids: number[];
+  /** What it is dressed as. */
+  theme: Theme | 'plain';
   /** Where it can go on: one end, a split's two, the right lane's first, or none once it has ended. */
   ends: { x: number; y: number; z: number; facing: number }[];
   /** Which lane the next piece goes on while a split is open; null while there is one end or none. */
@@ -150,6 +163,10 @@ export interface GameApi {
   lid(): boolean;
   /** The next piece on `lane` of the split being built; whether there was one. */
   lane(lane: Lane): boolean;
+  /** The run being built dressed as `theme`, or made plain; whether anything was being built. */
+  dress(theme: Theme | 'plain'): boolean;
+  /** What the run on is dressed with. */
+  decor(): Dressing;
   /** The run being built kept and put on; what is wrong with it instead, and nothing kept, where anything is. */
   keep(name?: string): string[];
   /** The run being built thrown away, and the run it was begun from put back on. */
@@ -349,6 +366,20 @@ export function createApi(host: DebugHost): GameApi {
       host.rebuild();
       return went;
     },
+    dress(theme) {
+      const went = game.dress(theme);
+      host.rebuild();
+      return went;
+    },
+    decor() {
+      const on = game.designer?.run ?? game.current;
+      const kinds = Object.fromEntries(DECOR_KINDS.map((k) => [k, game.decor.filter((d) => d.kind === k).length]));
+      return {
+        theme: on.theme ?? 'plain',
+        kinds: kinds as Record<DecorKind, number>,
+        lamps: game.decor.filter((d) => d.kind === 'lamp').map((d) => bulbOf(game.track, d, [0, 0, 0])),
+      };
+    },
     keep(name = '') {
       const refused = game.keep(name);
       host.rebuild();
@@ -368,6 +399,7 @@ export function createApi(host: DebugHost): GameApi {
         building: designer !== null,
         pieces: designer ? designer.run.pieces.map((p) => p.kind) : [],
         lids: designer ? designer.run.pieces.flatMap((p, i) => (p.lid ? [i] : [])) : [],
+        theme: designer ? (designer.run.theme ?? 'plain') : 'plain',
         ends: designer ? designer.ends.map((e) => ({ ...e })) : [],
         lane: designer ? designer.lane : null,
         problems: designer ? designer.problems() : [],

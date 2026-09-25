@@ -619,3 +619,59 @@ test('a run built on the board a piece at a time, kept, raced, and put back on a
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });
+
+test('a run dressed as a works while it is built, made plain and dressed again, kept, raced, and dressed after a reload', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  await start(page, { seed: 5, paused: true });
+  const decor = () => page.evaluate(() => window.game!.decor());
+  const piece = (name: string) => page.locator('#palette').getByRole('button', { name, exact: true });
+  const plain = page.locator('#themes [data-theme="plain"]'),
+    works = page.locator('#themes [data-theme="industrial"]');
+
+  // the runs that come with the game are dressed, and the catalog's pieces are not
+  expect((await decor()).theme).toBe('industrial');
+  expect((await decor()).kinds.lamp).toBeGreaterThan(0);
+  await page.locator('#toDesigns').click();
+  await expect(plain, 'a run begun plain').toHaveAttribute('aria-pressed', 'true');
+  for (const name of ['Ramp', 'Straight', 'Sweeper', 'Straight', 'Drop', 'Straight']) await piece(name).click();
+  expect(Object.values((await decor()).kinds).every((n) => n === 0)).toBe(true);
+
+  // dressed at a press, made plain again, and dressed once more, the pieces untouched by any of it
+  await works.click();
+  await expect(works).toHaveAttribute('aria-pressed', 'true');
+  await expect(plain).toHaveAttribute('aria-pressed', 'false');
+  const dressed = await decor();
+  expect(dressed.theme).toBe('industrial');
+  expect(dressed.kinds.stripes, 'stripes by the sweeper').toBeGreaterThan(0);
+  await plain.click();
+  expect(Object.values((await decor()).kinds).every((n) => n === 0)).toBe(true);
+  await works.click();
+  expect(await decor()).toEqual(dressed);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+
+  // a piece laid after keeps it dressed; kept, raced home, and put back on dressed after a reload
+  await piece('The end').click();
+  expect((await decor()).theme).toBe('industrial');
+  await page.locator('#designName').fill('The works');
+  await page.locator('#keep').click();
+  const raced = await page.evaluate(() => {
+    const g = window.game!;
+    g.release();
+    g.settle(60);
+    g.save();
+    return [g.state(), g.invariants(), g.decor()] as const;
+  });
+  expect(raced[1]).toEqual([]);
+  expect(raced[0].finished).toBe(8);
+  expect(raced[2].theme).toBe('industrial');
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.game?.ready ?? false), { timeout: 60_000 }).toBe(true);
+  await expect(page.locator('#title')).toHaveText('The works');
+  const back = await decor();
+  expect(back.theme).toBe('industrial');
+  expect(back.kinds).toEqual(raced[2].kinds);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
