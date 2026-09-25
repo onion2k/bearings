@@ -33,6 +33,7 @@ import {
 import {
   CHIMNEY,
   COG,
+  type DecorKind,
   type Decoration,
   GIRDER,
   LAMP,
@@ -389,19 +390,14 @@ export class Scene {
       black = new MeshBuilder();
     const h = this.here;
     let cogs = 0;
-    for (const d of dressing) {
-      at(track, d.segment, d.along, h);
-      const [bx, by, bz] = right(h);
-      // along, to the left and up make a right hand, which a box's faces are wound by
-      const t: V3 = [h.tx, h.ty, h.tz],
-        l: V3 = [-bx, -by, -bz],
-        u: V3 = [h.ux, h.uy, h.uz];
-      const off = (across: number, up: number): V3 => [
-        h.x + bx * across + h.ux * up,
-        h.y + by * across + h.uy * up,
-        h.z + bz * across + h.uz * up,
-      ];
-      if (d.kind === 'lamp') {
+    // the frame at the spot a thing stands by, worked out afresh for each before it is drawn
+    let t: V3 = [0, 0, 0],
+      l: V3 = [0, 0, 0],
+      u: V3 = [0, 0, 0];
+    let off = (across: number, up: number): V3 => [across, 0, up];
+    // how each kind is drawn: one for every kind there is, which the compiler holds it to
+    const draw: Record<DecorKind, (d: Decoration) => void> = {
+      lamp: (d) => {
         // a pole up from beside the wall, an arm in over the middle, a shade and its bulb under it
         const top = d.z + LAMP.height;
         column(iron, d.x, d.y, d.z - 0.3, top + 0.1, LAMP.pole, LAMP.pole, 8);
@@ -411,7 +407,8 @@ export class Scene {
           sn = Math.sin(d.heading);
         block(iron, [over[0], over[1], over[2] - 0.12], [c, sn, 0], [-sn, c, 0], [0, 0, 1], 0.28, 0.28, 0.12);
         ball(bulbs, [over[0], over[1], over[2] - 0.34], 0.17);
-      } else if (d.kind === 'pipes') {
+      },
+      pipes: (d) => {
         // two pipes swept along the samples beside the wall, and a flange round each every few units
         const seg = track.segments[d.segment];
         for (const p of PIPES) {
@@ -442,7 +439,8 @@ export class Scene {
             );
           }
         }
-      } else if (d.kind === 'stripes') {
+      },
+      stripes: (d) => {
         // yellow and black plates in turn on the outside of the wall, each swept along the samples it covers at the
         // wall's own width there, so that where a board flares the plate flares with it and never cuts inside
         const seg = track.segments[d.segment];
@@ -475,7 +473,8 @@ export class Scene {
           );
           from = to;
         }
-      } else if (d.kind === 'cog') {
+      },
+      cog: (d) => {
         // noted where each of the pair turns: the big one here, the small one along from it, both on the axle across
         for (const [a, r] of [
           [d.along, COG.big],
@@ -499,11 +498,13 @@ export class Scene {
         // an iron plate the pair is bolted to, behind them against the wall
         const back = off(d.side * (h.w + COG.out - 0.12), COG.up);
         block(iron, back, t, l, u, 0.2, 0.03, 0.2);
-      } else if (d.kind === 'piston') {
+      },
+      piston: (d) => {
         // the cylinder, iron, with a collar at its mouth; its rod moves
         column(iron, d.x, d.y, d.z, d.z + d.height, PISTON.radius, PISTON.radius, 12);
         column(iron, d.x, d.y, d.z + d.height - 0.12, d.z + d.height, PISTON.radius + 0.07, PISTON.radius + 0.07, 12);
-      } else if (d.kind === 'chimney') {
+      },
+      chimney: (d) => {
         // brick up from the ground, narrowing, with an iron band round its top
         column(brick, d.x, d.y, d.z, d.z + d.height, CHIMNEY.radius, CHIMNEY.radius * 0.8, 14);
         column(
@@ -516,7 +517,8 @@ export class Scene {
           CHIMNEY.radius * 0.84,
           14,
         );
-      } else if (d.kind === 'tank') {
+      },
+      tank: (d) => {
         // a painted tank on the ground, an iron roof, a gauge and a ladder up its side
         column(paint, d.x, d.y, d.z, d.z + d.height, TANK.radius, TANK.radius, 18);
         column(iron, d.x, d.y, d.z + d.height, d.z + d.height + 0.5, TANK.radius + 0.05, 0.15, 18);
@@ -540,7 +542,8 @@ export class Scene {
           ];
           beam(iron, [rail[0], rail[1], d.z], [rail[0], rail[1], d.z + d.height + 0.3], 0.03);
         }
-      } else {
+      },
+      girder: (d) => {
         // a girder's leg, and a plate it stands on
         lattice(iron, d.x, d.y, d.z, d.z + d.height, GIRDER.half);
         block(
@@ -553,7 +556,22 @@ export class Scene {
           GIRDER.half + 0.15,
           0.04,
         );
-      }
+      },
+    };
+    for (const d of dressing) {
+      at(track, d.segment, d.along, h);
+      const [bx, by, bz] = right(h);
+      // along, to the left and up make a right hand, which a box's faces are wound by
+      t = [h.tx, h.ty, h.tz];
+      l = [-bx, -by, -bz];
+      u = [h.ux, h.uy, h.uz];
+      // read at the spot as it stands when called, as it always was: what turns moves the spot along before it is done
+      off = (across: number, up: number): V3 => [
+        h.x + bx * across + h.ux * up,
+        h.y + by * across + h.uy * up,
+        h.z + bz * across + h.uz * up,
+      ];
+      draw[d.kind](d);
     }
     this.cogCount = cogs;
     const one = new Float32Array(16);
