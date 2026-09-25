@@ -1,6 +1,5 @@
 /**
- * The wheel under physics, seen to yield; the slides are `physics-yield.test.ts`,
- * a file each so that they run beside each other. The parts that move: a sweeper's paddle and a gate's bar on
+ * The parts that move, under physics, seen to yield: a sweeper's paddle and a gate's bar on
  * a slide, and a wheel on its axle, each a body driven by a motor of capped
  * strength toward where its clockwork would have it. Each raced alone on 24
  * seeds with every marble home and no rule broken through the whole race.
@@ -9,14 +8,14 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import type { Physics } from '../src/physics';
-import { type Kind, type Obstacle, pose, pose0 } from '../src/track';
-import { chain, fieldOn } from './physics-helpers';
+import type { Physics } from '../../src/physics';
+import { type Kind, type Obstacle, pose, pose0 } from '../../src/track';
+import { chain, fieldOn } from '../physics-helpers';
 
 await RAPIER.init();
 
 const DT = 1 / 60;
-const KINDS: Kind[] = ['wheel'];
+const KINDS: Kind[] = ['sweeper', 'gate'];
 
 const posed = pose0();
 

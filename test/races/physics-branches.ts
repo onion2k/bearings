@@ -6,11 +6,11 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { MARBLES } from '../src/race';
-import { Physics } from '../src/physics';
-import { seeded } from '../src/random';
-import { check, compile } from '../src/track';
-import { ON_A_BRANCH, branched, breathe } from './physics-helpers';
+import { MARBLES } from '../../src/race';
+import { Physics } from '../../src/physics';
+import { seeded } from '../../src/random';
+import { check, compile } from '../../src/track';
+import { ON_A_BRANCH, branched, breathe } from '../physics-helpers';
 
 const DT = 1 / 60;
 

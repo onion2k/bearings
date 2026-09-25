@@ -8,9 +8,9 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { MARBLES } from '../src/race';
-import { type Kind } from '../src/track';
-import { chain, fieldOn } from './physics-helpers';
+import { MARBLES } from '../../src/race';
+import { type Kind } from '../../src/track';
+import { chain, fieldOn } from '../physics-helpers';
 
 await RAPIER.init();
 

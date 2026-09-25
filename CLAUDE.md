@@ -67,9 +67,9 @@ race costs about 0.35 ms, the Stress Test's 0.41.
 ## Commands
 
     npm run dev            the game at http://localhost:5198
-    npm run check:quick    formatting, types, lint, unit tests but the judged runs and the pairs (the pre-commit hook; ~95 s)
-    npm run test:runs      every run judged over 60 races, and every pair of kinds raced (test/physics-judged-N, -pairs-N; ~4.5 min)
-    npm run check          all of it: check:quick, test:runs, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~8.5 min)
+    npm run check:quick    formatting, types, lint, unit tests but test/races/ (the pre-commit hook; ~25 s)
+    npm run test:runs      test/races/: every kind raced over 24 seeds, every pair of kinds, and every run judged over 60 races (~4 min)
+    npm run check          all of it: check:quick, test:runs, fuzz, determinism, leaks, pace, bench, smoke with perf and look (~6.5 min)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked; -- --seed N plays one failure again
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
@@ -170,7 +170,7 @@ What to copy the shape of, when building something new:
   `wall`. No channel is narrower than a chute, and every one is a chute's
   width wherever one piece meets another. A new kind needs an entry in
   `CATALOG` too, which the compiler insists on; the catalog's test then
-  races it by itself, and `test/physics-pairs.ts` races it after and before
+  races it by itself, and `test/races/physics-pairs.ts` races it after and before
   every other kind there is, fed from the gate and off two drops. `check`
   refuses a run whose parts pass through each other. Copy that shape for
   anything the game has several of.
@@ -195,7 +195,7 @@ What to copy the shape of, when building something new:
   an `Entry` field that lays a shelf piece out by hand instead of chaining
   `among`, since neither piece means anything alone). A kind at a chute's
   width that keeps its facing can stand on a branch — proven by placing the
-  same kind on both, `test/physics-branches.ts` — but a kind wider than the
+  same kind on both, `test/races/physics-branches.ts` — but a kind wider than the
   cell a splitter opens between its lanes cannot, which `check` refuses
   rather than racing them through each other; nor can a kind that turns,
   since the joiner's own facing then no longer lines up with both lanes.
@@ -305,12 +305,13 @@ What to copy the shape of, when building something new:
   up to 0.128 over 48 seeds each, with nothing else wrong. Rapier is
   deterministic on this machine, to the bit, held by `npm run determinism`
   and a test; across machines it is not verified. Each kind is raced alone
-  on 24 seeds (`test/physics-slopes.test.ts`, `-boards`, `-obstacles`,
+  on 24 seeds (`test/races/physics-slopes.test.ts`, `-boards`, `-obstacles`,
   `-moving`, `-funnel`, the rules checked every five frames), again fed by
   two drops, the fastest any one piece hands a field on at
-  (`test/physics-fed-first.test.ts` and `-second`), held to what each is for
+  (`test/races/physics-fed-first.test.ts` and `-second`), held to what each is for
   in `test/physics-pieces.test.ts`, and every pair of kinds raced both ways
-  in the full check (`test/physics-pairs.ts`); `test/physics-helpers.ts`
+  (`test/races/physics-pairs.ts`); the racing is in `test/races/`, run by
+  `npm run test:runs` in the full check and not by the hook; `test/physics-helpers.ts`
   sets a field on a run of a test's own, and `mixed()` there is how far a
   field's order after a piece follows its order before it. The tests are
   split across many files so that they race on the machine's cores, a long
@@ -336,7 +337,7 @@ What to copy the shape of, when building something new:
   pace, pushing in proportion to how far behind it is (`WHEEL_GRIP`). So a
   ball caught between a part and a wall holds the part back rather than
   being crushed, and the part catches up once the ball is out:
-  `test/physics-yield.test.ts` and `-yield-wheel` hold each to that. A part
+  `test/races/physics-yield.test.ts` and `-yield-wheel` hold each to that. A part
   meets balls and nothing else (Rapier's collision groups, `TRACK`, `BALL`
   and `PART`), since a gate slides aside into its wall and a sweeper's ends
   swing through theirs. `Race.where` is where a part really is, and the
@@ -411,12 +412,13 @@ What to copy the shape of, when building something new:
   board by `main.ts`, and pictured in `board.png` and `won.png`.
 - **A run:** a list of placements with an id, in `src/runs.ts`. Every run is
   held by `test/runs.test.ts` — sound, and worked out the same way twice —
-  and judged in the full check over 60 races (`test/physics-judged.ts`, a
+  and judged in the full check over 60 races (`test/races/physics-judged.ts`, a
   file a run): every marble home in every one, none lost, none stopped, no
   rule broken; a race, not a procession, the grid telling little of who
   wins (Kendall's tau of grid against finish within ±0.4) and the back half
   of the grid winning between a fifth and four fifths; and nothing in its
-  way that the field goes by unchanged (kept at most 0.85). Paced on its own
+  way — pegs, mounds, moving parts or a funnel — that the field goes by
+  unchanged (kept at most 0.85). Paced on its own
   by `pace:check`. A new run is a new entry and a judged file, and then the
   gates hold it. A run rebuilt enough to change its races gets a new id, so
   a best set on the old one is not held against the new; the game drops
@@ -424,10 +426,15 @@ What to copy the shape of, when building something new:
   the race became physics. The Stress Test's hundred pieces (every kind,
   `MAX_PIECES`'s own ceiling) are folded into a box with turns — a
   lawnmower's own rows, stepping a level further down each turn — so that
-  it frames like any other run. And a piece with something in the way keeps
-  the field's order about as well as the field it meets is already spread
-  out: a field strung out over seconds passes a peg board one ball at a
-  time, and no board reorders balls that never meet each other on it.
+  it frames like any other run. And a piece with something in the way only
+  reorders a field that meets it bunched and spread across it: a field
+  strung out over seconds passes a board one ball at a time, and one in
+  single file along a bend's outside wall strikes the cones alike, identical
+  balls in one line coming off in the same order. Switchback's second peg
+  board kept the order it was handed at 0.93 for the second reason and is a
+  sweeper now; the Stress Test's late peg and bumps boards kept it at 0.93 to
+  1.00 for the first and are plain wide shallows, its bumps and pegs moved to
+  the head of the run, where the field is still bunched off the gate.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`), the pace gate
   (`scripts/pace.ts`, its games played on worker threads by
   `pace-check.ts`) and the race bench (`scripts/bench.ts`, its arithmetic in
@@ -447,23 +454,9 @@ What to copy the shape of, when building something new:
 ## What comes next
 
 Eight runs race, up to eight players pick a marble each, and a player can
-build and keep runs of their own, and the race is physics. Open:
-
-- **Two peg boards the field goes by unchanged.** Every run is a race and
-  not a procession under physics, but on Switchback (piece 15) and the
-  Stress Test (piece 3) a peg board keeps the order it is handed at 0.93 and
-  0.86, over the judged runs' 0.85: the field reaches each strung out over
-  seconds, and passes it one ball at a time. The judged runs are red until
-  either the runs are laid out so that those boards meet a bunched field, or
-  the rule is changed to measure only what a piece could have reordered;
-  under physics a plain fall reorders a bunched field to about 0.78 on its
-  own, so the rule as it stands no longer tells a piece that does something
-  from one that does not. The user's to decide.
-- **The hook is slow:** about 95 s, most of it physics racing each kind
-  over 24 seeds. The judged runs and the pairs are in the full check only;
-  the per-kind tests could follow them there.
-- **Determinism across machines** is not verified: Rapier is the same to
-  the bit on this machine, and has not been run on a second.
+build and keep runs of their own, and the race is physics, every gate
+green. Open: **determinism across machines** is not verified — Rapier is the
+same to the bit on this machine, and has not been run on a second.
 
 After that, each through `/feature`: patterns on the marbles, which want a
 change to artshape-render since it has no textures; and a designer that
@@ -549,7 +542,7 @@ For anything new in the run, check what it does:
   lost, told of, given no place, and the race still ends
 - **building:** placed, moved, turned and taken away; placed overlapping
   what is already there, and placed with nothing underneath it; any piece
-  after any other, which `test/physics-pairs.ts` races for every pair, and two
+  after any other, which `test/races/physics-pairs.ts` races for every pair, and two
   parts that pass through each other, which `check` refuses. In the
   designer: laid on the end and taken off again, laid after the end, laid
   past a ceiling, a run kept, refused, left unkept, thrown away once kept,

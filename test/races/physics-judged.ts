@@ -9,12 +9,12 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Physics } from '../src/physics';
-import { FINISHED } from '../src/race';
-import { seeded } from '../src/random';
-import { RUNS } from '../src/runs';
-import { compile } from '../src/track';
-import { breathe, tau } from './physics-helpers';
+import { Physics } from '../../src/physics';
+import { FINISHED } from '../../src/race';
+import { seeded } from '../../src/random';
+import { RUNS } from '../../src/runs';
+import { compile } from '../../src/track';
+import { breathe, tau } from '../physics-helpers';
 
 const DT = 1 / 60;
 /** How many races a run is judged over: enough that one odd race moves a figure by little. */

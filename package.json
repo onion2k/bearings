@@ -24,8 +24,8 @@
     "look:update": "playwright test smoke/look.spec.ts --update-snapshots",
     "perf": "playwright test smoke/perf.spec.ts",
     "perf:update": "PERF_UPDATE=1 playwright test smoke/perf.spec.ts",
-    "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot --exclude 'test/physics-judged-*.test.ts' --exclude 'test/physics-pairs-*.test.ts'",
-    "test:runs": "vitest run --reporter dot test/physics-judged- test/physics-pairs-",
+    "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot --exclude 'test/races/**'",
+    "test:runs": "vitest run --reporter dot test/races/",
     "check": "npm run --silent check:quick && npm run --silent test:runs && npm run --silent fuzz && npm run --silent determinism && npm run --silent leaks:check && npm run --silent pace:check && npm run --silent bench && npm run --silent smoke",
     "prepare": "git config core.hooksPath .githooks"
   },

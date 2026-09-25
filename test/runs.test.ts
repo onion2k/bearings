@@ -20,7 +20,7 @@ describe('the runs that come with the game', () => {
   });
 
   it('are each judged, a file to a run, so that none is left out of the full check', () => {
-    const files = readdirSync('test').filter((f) => /^physics-judged-\d+\.test\.ts$/.test(f));
+    const files = readdirSync('test/races').filter((f) => /^physics-judged-\d+\.test\.ts$/.test(f));
     expect(files.length, 'a new run needs a physics-judged-N.test.ts of its own').toBe(RUNS.length);
   });
 

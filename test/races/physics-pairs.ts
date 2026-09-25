@@ -11,11 +11,11 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
-import { MARBLES } from '../src/race';
-import { Physics } from '../src/physics';
-import { seeded } from '../src/random';
-import { breathe } from './physics-helpers';
-import { type Facing, type Kind, type Placed, type Run, KINDS, check, compile, exitOf } from '../src/track';
+import { MARBLES } from '../../src/race';
+import { Physics } from '../../src/physics';
+import { seeded } from '../../src/random';
+import { breathe } from '../physics-helpers';
+import { type Facing, type Kind, type Placed, type Run, KINDS, check, compile, exitOf } from '../../src/track';
 
 const DT = 1 / 60;
 const SEEDS = 3;
