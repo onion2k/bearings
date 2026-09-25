@@ -15,8 +15,11 @@ import type { Race, Roll } from './race';
 import { basis, spin } from './matrix';
 import { bar, bowl as bowlMesh, cone, mound, sphere, sweep, wheel } from './meshes';
 import {
+  CELL,
   HALF_WIDTH,
   LANE_STOP,
+  LEAN,
+  LEVEL,
   MOUND,
   MOVING_MOST,
   GATE_HEIGHT,
@@ -64,6 +67,9 @@ const profile = (wall: number): readonly (readonly [number, number])[] => [
   [-HALF_WIDTH - SKIN, wall],
   [-HALF_WIDTH, wall],
 ];
+
+/** The marker over where the next piece goes: how wide, how tall, and how far over the end its base stands. */
+const MARK = { radius: 0.6, height: 1.8, over: 1.8 };
 
 /**
  * Which edges of `profile` are a wall, its inside face, its top and its
@@ -118,6 +124,9 @@ export class Scene {
   readonly marbles = new Float32Array(MARBLES * 16);
   /** What each marble is made of: colour and roughness, four numbers each. */
   readonly looks = new Float32Array(MARBLES * 4);
+  /** Where the next piece of a run being built goes, marked over it: none while nothing is being built. */
+  readonly marker = new Float32Array(16);
+
   /** Where each moving part is this frame: the sweepers' paddles, the gates' bars and the wheels. */
   readonly sweepers = new Float32Array(MOVING_MOST * 16);
   readonly gates = new Float32Array(MOVING_MOST * 16);
@@ -325,7 +334,47 @@ export class Scene {
         albedo: [0.68, 0.5, 0.16],
         roughness: 0.3,
       },
+      // the gold of the board's own highlights, so it reads as the builder's and not as part of the run
+      {
+        mesh: cone(MARK.radius, MARK.height),
+        matrices: this.marker,
+        count: 0,
+        albedo: [0.95, 0.72, 0.2],
+        roughness: 0.4,
+      },
     ];
+  }
+
+  /**
+   * The marker over `end`, where the next piece of a run being built goes:
+   * a cone point up, standing clear over the walls and any grid, over the
+   * end of whichever segment of `track` ends there. How many to draw: one,
+   * or none where nothing is being built or nothing ends there.
+   */
+  mark(track: Track, end: { x: number; y: number; z: number } | null): number {
+    if (!end) return 0;
+    // a segment ends where a piece hands on, its cell and level times the lattice's, lowered by the lean for however
+    // far along the run it is; of the segments ending over that cell, the one lowered by as much as that says
+    const x = end.x * CELL,
+      y = end.y * CELL,
+      z = end.z * LEVEL;
+    let best = Infinity,
+      found = -1;
+    for (let k = 0; k < track.segments.length; k++) {
+      const seg = track.segments[k];
+      const o = seg.points.length - 3;
+      if (Math.abs(seg.points[o] - x) > 1e-3 || Math.abs(seg.points[o + 1] - y) > 1e-3) continue;
+      const off = Math.abs(seg.points[o + 2] - (z - LEAN * (seg.start + seg.length)));
+      if (off < best) {
+        best = off;
+        found = k;
+      }
+    }
+    if (found < 0) return 0;
+    const { points } = track.segments[found];
+    const o = points.length - 3;
+    spin(this.marker, 0, points[o], points[o + 1], points[o + 2] + MARK.over, 0, 0, 1, 0);
+    return 1;
   }
 
   /**

@@ -513,6 +513,23 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the builder with a split, the left lane chosen and marked, the right lane longer', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['ramp', 'splitter', 'drop', 'straight'] as const) g.lay(k);
+      g.lane('left');
+      g.lay('ramp');
+      g.step(2);
+    });
+    await expect(page.locator('#laneLeft')).toHaveAttribute('aria-pressed', 'true');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('designer-lanes.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a design kept, on its shelf, the field part way down it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });
@@ -588,6 +605,22 @@ test.describe('what it looks like', () => {
       });
       await hideStats(page);
       await expect(page).toHaveScreenshot('designer-phone.png', TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+
+    test('the builder with a split, at the width of a phone', async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true });
+      await page.evaluate(() => {
+        const g = window.game!;
+        g.browse('designs');
+        for (const k of ['ramp', 'splitter', 'drop', 'straight'] as const) g.lay(k);
+        g.lane('left');
+        g.lay('ramp');
+        g.step(2);
+      });
+      await hideStats(page);
+      await expect(page).toHaveScreenshot('designer-lanes-phone.png', TOLERANCE);
       expect(problems).toEqual([]);
     });
   });

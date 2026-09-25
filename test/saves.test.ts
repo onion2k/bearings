@@ -31,6 +31,9 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '04-designs.json': { races: 41, run: 'design-1', bests: { 'first-drop': 5.02, 'design-1': 4.4 } },
   // written once a design could ask for a grid over a piece: two kept, the one put on last with grids over two
   '05-lids.json': { races: 57, run: 'design-2', bests: { 'first-drop-2': 5.02, 'design-1': 4.4, 'design-2': 6.1 } },
+  // written once a design could split into two lanes and join them again: two kept, the lanes of the one put on last
+  // of different lengths
+  '06-lanes.json': { races: 64, run: 'design-2', bests: { 'first-drop-3': 2.74, 'design-1': 3.1, 'design-2': 3.4 } },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -71,6 +74,17 @@ describe('saves from every shape the game has written', () => {
     const save = new Progress(memoryStore(read('05-lids.json'))).save;
     expect(save.designs[1].pieces.flatMap((p, i) => (p.lid ? [i] : []))).toEqual([1, 2]);
     expect(save.designs[0].pieces.some((p) => p.lid)).toBe(false);
+  });
+
+  it('brings back a design that splits and joins again, its lanes of different lengths, and races it home', () => {
+    const game = new Game(RAPIER, new Progress(memoryStore(read('06-lanes.json'))), {}, { random: seeded(7) });
+    expect(game.current.id).toBe('design-2');
+    expect(game.current.pieces.map((p) => p.kind)).toContain('splitter');
+    expect(game.current.pieces.map((p) => p.kind)).toContain('joiner');
+    game.release();
+    for (let f = 0; f < 60 * 60 && !game.over; f++) game.step(1 / 60);
+    expect(game.marbles.finishers).toBe(game.marbles.count);
+    expect(checkInvariants(game)).toEqual([]);
   });
 
   it('takes defaults for what an old save lacks, and shrugs at what it cannot read', () => {

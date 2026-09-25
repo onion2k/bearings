@@ -60,6 +60,9 @@ const designName = document.getElementById('designName') as HTMLInputElement;
 const palette = document.getElementById('palette')!;
 const undoPiece = document.getElementById('undo') as HTMLButtonElement;
 const gridPiece = document.getElementById('grid') as HTMLButtonElement;
+const laneTools = document.getElementById('lanes')!;
+const laneLeft = document.getElementById('laneLeft') as HTMLButtonElement;
+const laneRight = document.getElementById('laneRight') as HTMLButtonElement;
 const keepDesign = document.getElementById('keep') as HTMLButtonElement;
 const leaveDesign = document.getElementById('leave')!;
 const problemList = document.getElementById('problems')!;
@@ -390,6 +393,8 @@ async function main() {
     renderer.move(1, scene.sweepers, sweepers);
     renderer.move(2, scene.gates, gates);
     renderer.move(3, scene.wheels, wheels);
+    // where the next piece of a run being built goes, and nothing over a run being raced
+    renderer.move(4, scene.marker, scene.mark(game.track, game.designer?.open ?? null));
   }
 
   /**
@@ -528,6 +533,10 @@ async function main() {
       b.title = refused || CATALOG[kind].about;
     }
     undoPiece.disabled = designer.run.pieces.length <= 1;
+    // which lane of a split the next piece goes on, pressed, and only while a split is open
+    laneTools.hidden = designer.lane === null;
+    laneLeft.setAttribute('aria-pressed', String(designer.lane === 'left'));
+    laneRight.setAttribute('aria-pressed', String(designer.lane === 'right'));
     // a grid over the last piece laid, pressed while it has one; said why not, where it cannot have one
     const refusedLid = designer.refusesLid();
     const last = designer.run.pieces[designer.run.pieces.length - 1];
@@ -646,6 +655,12 @@ async function main() {
   });
   gridPiece.addEventListener('click', () => {
     if (game.lid()) again();
+  });
+  laneLeft.addEventListener('click', () => {
+    if (game.lane('left')) again();
+  });
+  laneRight.addEventListener('click', () => {
+    if (game.lane('right')) again();
   });
   // a run that cannot be kept is not: the board already says why, and keeps saying it
   keepDesign.addEventListener('click', () => {

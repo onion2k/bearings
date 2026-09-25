@@ -257,12 +257,17 @@
     flex: 1;
     font-weight: 600;
   }
+  /* a row of tools the page hides and shows, which a class's own display would otherwise keep in view */
+  .tools[hidden] {
+    display: none;
+  }
   #keep:not(:disabled) {
     background: var(--gold);
     color: #19150a;
   }
-  /* pressed while the last piece has a grid over it, so a player can see it is on */
-  #grid[aria-pressed='true'] {
+  /* pressed while the last piece has a grid over it, or while the next piece goes on that lane of a split */
+  #grid[aria-pressed='true'],
+  #lanes button[aria-pressed='true'] {
     outline: 1px solid var(--gold);
     color: var(--gold);
   }
@@ -410,6 +415,10 @@
   <div id="build" hidden>
     <input id="designName" type="text" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Its name" />
     <div id="palette"></div>
+    <div id="lanes" class="tools" hidden>
+      <button id="laneLeft" type="button" aria-pressed="false">Left lane</button>
+      <button id="laneRight" type="button" aria-pressed="false">Right lane</button>
+    </div>
     <div class="tools">
       <button id="undo" type="button">Undo</button>
       <button id="grid" type="button" aria-pressed="false">Grid</button>

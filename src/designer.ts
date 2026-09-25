@@ -11,8 +11,13 @@
  * only kept once it has nothing wrong with it, so a design on the shelf is
  * always one that races.
  *
- * The splitter and the joiner are not offered: each opens or closes a second
- * end to build from, and a builder with one open end cannot say which.
+ * A splitter opens a second end, a lane a cell to the left of the one going
+ * straight on, and the player chooses which of the two the next piece goes
+ * on; a joiner closes the two into one again, once they end side by side,
+ * whatever way each took to get there and however long it is. One split at a
+ * time, so there are never more than two ends to choose between, and the end
+ * of the run only once the lanes are joined. Taking a piece away still takes
+ * the last one laid, and chooses the lane it came off.
  *
  * Nothing here knows about the page or the renderer.
  */
@@ -28,11 +33,24 @@ import {
   check,
   compile,
   exitOf,
+  leftOf,
   lidRefused,
 } from './track';
 
-/** The kinds a player can build with: every one but the start, which a design begins with, and the two that branch. */
-export const PALETTE: readonly Kind[] = KINDS.filter((k) => k !== 'start' && k !== 'splitter' && k !== 'joiner');
+/** The kinds a player can build with: every one but the start, which a design begins with. */
+export const PALETTE: readonly Kind[] = KINDS.filter((k) => k !== 'start');
+
+/** Where a piece can go on: a cell, a level, and the way the field is going there. */
+export type End = NonNullable<ReturnType<typeof exitOf>>;
+
+/** Which of a split's two lanes: the one going straight on, or the one a cell to its left. */
+export type Lane = 'left' | 'right';
+
+/** Where a run being built can go on: one end, or a split's two lanes and which of them is chosen; none once it has ended. */
+interface Open {
+  ends: { right: End; left: End } | End | null;
+  lane: Lane;
+}
 
 /**
  * The most designs a save keeps. A design of a hundred pieces is about six
@@ -52,14 +70,39 @@ const MOVING: readonly Kind[] = ['sweeper', 'gate', 'wheel'];
 
 export class Designer {
   readonly run: Run;
+  /** Where the run can go on now, and where it could before each piece after the start was laid: the undo's own. */
+  private now: Open;
+  private readonly before: Open[] = [];
 
   constructor(name: string) {
     this.run = { id: '', name, pieces: [{ kind: 'start', x: 0, y: 0, z: 0, facing: 0 }] };
+    this.now = { ends: exitOf(this.run.pieces[0]), lane: 'right' };
   }
 
-  /** Where the next piece goes: where the last one hands a marble on, or nowhere once the run has ended. */
-  get open(): ReturnType<typeof exitOf> {
-    return exitOf(this.run.pieces[this.run.pieces.length - 1]);
+  /** Every end the run can go on from: one, a split's two, the right lane's first, or none once it has ended. */
+  get ends(): End[] {
+    const { ends } = this.now;
+    if (!ends) return [];
+    return 'right' in ends ? [ends.right, ends.left] : [ends];
+  }
+
+  /** Which lane the next piece goes on while a split is open, and nothing while there is one end or none. */
+  get lane(): Lane | null {
+    return this.now.ends && 'right' in this.now.ends ? this.now.lane : null;
+  }
+
+  /** Where the next piece goes: the one end, the chosen lane's, or nowhere once the run has ended. */
+  get open(): End | null {
+    const { ends, lane } = this.now;
+    if (!ends) return null;
+    return 'right' in ends ? ends[lane] : ends;
+  }
+
+  /** The next piece on `lane`; whether there was a split to choose a lane of. */
+  choose(lane: Lane): boolean {
+    if (this.lane === null) return false;
+    this.now = { ...this.now, lane };
+    return true;
   }
 
   /**
@@ -73,19 +116,69 @@ export class Designer {
     if (!PALETTE.includes(kind)) return `a ${kind} is not one a design can use`;
     const at = this.open;
     if (!at) return 'the run has ended: take the end away to build on';
+    const split = this.lane !== null;
+    if (kind === 'splitter' && split) return 'one split at a time: join the lanes first';
+    if (kind === 'finish' && split) return 'join the lanes before the run ends';
+    if (kind === 'joiner') {
+      const apart = this.apart();
+      if (apart) return apart;
+    }
     const { pieces } = this.run;
     if (pieces.length >= MAX_PIECES) return `a run may have ${MAX_PIECES} pieces`;
     if (MOVING.includes(kind) && pieces.filter((p) => p.kind === kind).length >= MOVING_MOST)
       return `a run may have ${MOVING_MOST} ${kind}s`;
-    if (compile({ ...this.run, pieces: [...pieces, { kind, ...at }] }).samples > MAX_SAMPLES)
+    if (compile({ ...this.run, pieces: [...pieces, { kind, ...this.where(kind) }] }).samples > MAX_SAMPLES)
       return 'the run is as long as a run may be';
     return '';
+  }
+
+  /**
+   * Why a joiner cannot close the lanes, or nothing where it can: they have
+   * to end side by side, one a cell to the left of the other, level with it
+   * and going the same way, since that is where a joiner's two entries are.
+   * Said in the player's terms, from the right lane's end.
+   */
+  private apart(): string {
+    const { ends } = this.now;
+    if (!ends || !('right' in ends)) return 'there are no lanes to join: lay a splitter first';
+    const { right, left } = ends;
+    if (same(left, leftOf(right)) || same(right, leftOf(left))) return '';
+    if (left.facing !== right.facing) return 'the lanes end going different ways';
+    if (left.z !== right.z) {
+      const levels = Math.abs(left.z - right.z);
+      return `the lanes end ${levels === 1 ? 'a level' : `${levels} levels`} apart`;
+    }
+    // how far the left lane's end is from the right's, along the way they go and across it
+    const along = [0, 0];
+    const [dx, dy] = [left.x - right.x, left.y - right.y];
+    const f = right.facing;
+    along[0] = f === 0 ? dx : f === 1 ? dy : f === 2 ? -dx : -dy;
+    along[1] = f === 0 ? dy : f === 1 ? -dx : f === 2 ? -dy : dx;
+    if (along[0] !== 0)
+      return `the ${along[0] > 0 ? 'left' : 'right'} lane ends ${Math.abs(along[0]) === 1 ? 'a cell' : `${Math.abs(along[0])} cells`} further along`;
+    return `the lanes end ${Math.abs(along[1])} cells apart, and a joiner closes two a cell apart`;
+  }
+
+  /** Where a piece of `kind` goes on: a joiner on whichever lane has the other on its left, anything else on the chosen end. */
+  private where(kind: Kind): End {
+    const { ends } = this.now;
+    if (kind === 'joiner' && ends && 'right' in ends && same(ends.left, leftOf(ends.right))) return ends.right;
+    if (kind === 'joiner' && ends && 'right' in ends) return ends.left;
+    return this.open!;
   }
 
   /** A piece of `kind` on where the run is open; whether it went on. */
   place(kind: Kind): boolean {
     if (this.refuses(kind)) return false;
-    this.run.pieces.push({ kind, ...this.open! });
+    const at = this.where(kind);
+    const piece: Placed = { kind, ...at };
+    this.run.pieces.push(piece);
+    this.before.push(this.now);
+    const out = exitOf(piece);
+    const { ends, lane } = this.now;
+    if (kind === 'splitter' && out) this.now = { ends: { right: out, left: leftOf(out) }, lane: 'right' };
+    else if (kind === 'joiner' || !ends || !('right' in ends)) this.now = { ends: out, lane: 'right' };
+    else this.now = { ends: { ...ends, [lane]: out }, lane };
     return true;
   }
 
@@ -110,10 +203,11 @@ export class Designer {
     return true;
   }
 
-  /** The last piece taken away; whether there was one to take, since the start stays. */
+  /** The last piece taken away, and the lane it was laid on chosen; whether there was one to take, since the start stays. */
   undo(): boolean {
     if (this.run.pieces.length <= 1) return false;
     this.run.pieces.pop();
+    this.now = this.before.pop()!;
     return true;
   }
 
@@ -126,6 +220,11 @@ export class Designer {
   get sound(): boolean {
     return this.problems().length === 0;
   }
+}
+
+/** Whether two ends are the same place, going the same way. */
+function same(a: End, b: End): boolean {
+  return a.x === b.x && a.y === b.y && a.z === b.z && a.facing === b.facing;
 }
 
 /** A name as a player typed it, with the spaces tidied and cut to what the board has room for. */

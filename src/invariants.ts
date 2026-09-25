@@ -10,7 +10,9 @@
  * places given out are 1, 2, 3 and so on with none repeated, and only to
  * marbles that got there. No player has two marbles, nor any marble two
  * players. The save only ever grew, and keeps no more designs than it may,
- * no two under one id. Nothing is let go down a run still being built.
+ * no two under one id. Nothing is let go down a run still being built, and
+ * the next piece of one goes on one of its open ends, of which there are at
+ * most two.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
@@ -84,6 +86,11 @@ export function checkInvariants(game: Game): string[] {
   if (game.designer) {
     if (track.name !== game.designer.run.name)
       out.push(`${game.designer.run.name} is being built, and ${track.name} is on`);
+    // the next piece goes on one of the ends the run is open at, and there are never more than a split's two
+    const { ends, open, lane } = game.designer;
+    if (ends.length > 2) out.push(`the run being built is open at ${ends.length} ends`);
+    if (open && !ends.includes(open)) out.push('the next piece would go on where the run is not open');
+    if ((lane !== null) !== (ends.length === 2)) out.push(`a lane is chosen with ${ends.length} ends open`);
     for (let i = 0; i < marbles.count; i++)
       if (marbles.state[i] !== WAITING) {
         out.push(`marble ${i} was let go down a run still being built`);

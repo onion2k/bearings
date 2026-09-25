@@ -51,13 +51,13 @@ describe('the designer', () => {
     expect(d.place('ramp')).toBe(true);
   });
 
-  it('offers every kind but the start and the two that branch, the end among them', () => {
+  it('offers every kind but the start, the end and the two that branch among them', () => {
     expect(PALETTE).toContain('finish');
     expect(PALETTE).toContain('funnel');
-    for (const k of ['start', 'splitter', 'joiner'] as const) {
-      expect(PALETTE).not.toContain(k);
-      expect(new Designer('Mine').place(k)).toBe(false);
-    }
+    expect(PALETTE).toContain('splitter');
+    expect(PALETTE).toContain('joiner');
+    expect(PALETTE).not.toContain('start');
+    expect(new Designer('Mine').place('start')).toBe(false);
   });
 
   it(`lays no more than ${MAX_PIECES} pieces`, () => {

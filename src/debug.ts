@@ -17,7 +17,7 @@ import { checkInvariants } from './invariants';
 import { FINISHED, LOST, RACING, RADIUS, type Race, STALLED, WAITING } from './race';
 import { seeded } from './random';
 import { PIECES } from './catalog';
-import { PALETTE } from './designer';
+import { type Lane, PALETTE } from './designer';
 import { type Kind, at, spot } from './track';
 import { RUNS } from './runs';
 
@@ -103,6 +103,10 @@ export interface Designing {
   pieces: Kind[];
   /** Which of those pieces have a grid over them, by their place in the run. */
   lids: number[];
+  /** Where it can go on: one end, a split's two, the right lane's first, or none once it has ended. */
+  ends: { x: number; y: number; z: number; facing: number }[];
+  /** Which lane the next piece goes on while a split is open; null while there is one end or none. */
+  lane: Lane | null;
   /** What is wrong with it, in the player's terms; empty once it could be kept. */
   problems: string[];
   /** The kinds it can be built with. */
@@ -144,6 +148,8 @@ export interface GameApi {
   undo(): boolean;
   /** A grid over the last piece of the run being built, or taken off it; whether either happened. */
   lid(): boolean;
+  /** The next piece on `lane` of the split being built; whether there was one. */
+  lane(lane: Lane): boolean;
   /** The run being built kept and put on; what is wrong with it instead, and nothing kept, where anything is. */
   keep(name?: string): string[];
   /** The run being built thrown away, and the run it was begun from put back on. */
@@ -338,6 +344,11 @@ export function createApi(host: DebugHost): GameApi {
       host.rebuild();
       return went;
     },
+    lane(lane) {
+      const went = game.lane(lane);
+      host.rebuild();
+      return went;
+    },
     keep(name = '') {
       const refused = game.keep(name);
       host.rebuild();
@@ -357,6 +368,8 @@ export function createApi(host: DebugHost): GameApi {
         building: designer !== null,
         pieces: designer ? designer.run.pieces.map((p) => p.kind) : [],
         lids: designer ? designer.run.pieces.flatMap((p, i) => (p.lid ? [i] : [])) : [],
+        ends: designer ? designer.ends.map((e) => ({ ...e })) : [],
+        lane: designer ? designer.lane : null,
         problems: designer ? designer.problems() : [],
         palette: [...PALETTE],
         designs: game.progress.save.designs.map((d) => ({ id: d.id, name: d.name, pieces: d.pieces.length })),

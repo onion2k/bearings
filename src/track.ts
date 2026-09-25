@@ -1185,6 +1185,22 @@ export function exitOf(piece: Placed): { x: number; y: number; z: number; facing
   };
 }
 
+/**
+ * The cell beside an end, on its left as the field goes: where a splitter's
+ * second lane begins beside its first, and where a joiner's second entry
+ * stands beside its first.
+ */
+export function leftOf(end: { x: number; y: number; z: number; facing: Facing }): {
+  x: number;
+  y: number;
+  z: number;
+  facing: Facing;
+} {
+  const turned: number[] = [0, 0];
+  turnBy(end.facing, 0, 1, turned);
+  return { x: end.x + turned[0], y: end.y + turned[1], z: end.z, facing: end.facing };
+}
+
 /** Which portal a piece is at, as one string, so a run can be walked by looking its joins up. */
 function portalKey(x: number, y: number, z: number, facing: Facing): string {
   return `${x},${y},${z},${facing}`;
@@ -1441,15 +1457,23 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
     const segs = geometryOf(match.piece);
     const target = segs[match.part];
     const forks = !!SHAPES[run.pieces[match.piece].kind].fork;
+    // a piece is reached a second time only through a joiner's own second entry: anything else is the run coming
+    // back round on itself, or one lane of a split running into what the other has already walked, and `before`
+    // is left a dead end, since wiring it on into what is walked already left a gap and two ideas of how far
+    // along the run the piece is
+    const reachedBefore = onwardDone.has(match.piece);
+    if (reachedBefore && (!SHAPES[run.pieces[match.piece].kind].joins || committed.has(target))) {
+      problems?.push('the run never ends: it comes back round on itself');
+      return;
+    }
     // the gap, if any, is added before the target is committed, so its own start already stands beyond it
     if (before?.flies || before?.funnel) {
       const last = before.points.length - 3;
       before.gap = Math.hypot(target.points[0] - before.points[last], target.points[1] - before.points[last + 1]);
       if (!committed.has(target)) track.length += before.gap;
     }
-    // a piece is reached a second time only through a joiner's own second entry: geometry is committed per
-    // entry, since each is its own segment, but the piece as a whole is only walked on from once
-    const reachedBefore = onwardDone.has(match.piece);
+    // geometry is committed per entry, since each is its own segment, but the piece as a whole is only walked on
+    // from once
     commit(match.piece, segs, match.part, branch);
     target.prev = before ? (segmentIndex.get(before) ?? -1) : -1;
     if (forks) segs[1].prev = target.prev; // the fork's other branch shares the very same predecessor
@@ -1459,26 +1483,10 @@ export function compile(run: Run, options: Compiled & { problems?: string[] } = 
       else before.next = segmentIndex.get(target)!;
     }
     if (reachedBefore) {
-      // reached before with nowhere else to have come from but a joiner's own second entry is the run coming
-      // back round on itself instead: the same piece, the same one entry, asked for all over again
-      if (!SHAPES[run.pieces[match.piece].kind].joins) {
-        problems?.push('the run never ends: it comes back round on itself');
-        return;
-      }
-      // the two branches that meet at a joiner ought to have brought the field about the same distance: each
-      // entry's own start, not the track's current length, which by now may have gone all the way to the
-      // finish and back through whatever the first entry found. A lane that moved a cell across is inherently
-      // longer than a plain straight of the same span — about half again, over just one cell — so an exact
-      // match is not asked for, only that the gap between the two stays a small share of the whole, which any
-      // branch of a few pieces or more comes to on its own
-      const other = segs[1 - match.part];
-      const longer = Math.max(target.start, other.start);
-      if (Math.abs(target.start - other.start) > Math.max(1, longer * 0.15) && problems)
-        problems.push(
-          `piece ${match.piece}, a joiner, is reached ${other.start.toFixed(2)} along one branch and ${target.start.toFixed(2)} along the other`,
-        );
+      // the two lanes need not have brought the field the same distance: a ball arrives when it arrives, and each
+      // lane leans at its own rate so that both reach the joiner at one height (`branchLean`)
       // the field arriving this way goes on exactly where the field that arrived first already does
-      target.next = other.next;
+      target.next = segs[1 - match.part].next;
       return;
     }
     onwardDone.add(match.piece);

@@ -142,3 +142,26 @@ describe('the cameras', () => {
     expect(checkInvariants(game).join('\n')).toMatch(/camera/);
   });
 });
+
+describe('what must always hold of a run being built', () => {
+  it('reports a run being built whose next piece would go where it is not open, or a lane with no split', () => {
+    const { game } = newGame();
+    game.browse('designs');
+    game.lay('ramp');
+    game.lay('splitter');
+    expect(checkInvariants(game)).toEqual([]);
+    const { ends } = game.designer!;
+    Object.defineProperty(game.designer, 'ends', {
+      value: [...ends, { x: 99, y: 99, z: 0, facing: 0 }],
+      configurable: true,
+    });
+    expect(checkInvariants(game).join('\n')).toMatch(/open at 3 ends/);
+    delete (game.designer as unknown as { ends?: unknown }).ends;
+    Object.defineProperty(game.designer, 'open', { value: { x: 99, y: 99, z: 0, facing: 0 }, configurable: true });
+    expect(checkInvariants(game).join('\n')).toMatch(/where the run is not open/);
+    game.undo();
+    Object.defineProperty(game.designer, 'open', { value: game.designer!.ends[0], configurable: true });
+    Object.defineProperty(game.designer, 'lane', { value: 'left', configurable: true });
+    expect(checkInvariants(game).join('\n')).toMatch(/a lane is chosen with 1 ends open/);
+  });
+});

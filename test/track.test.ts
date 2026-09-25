@@ -553,6 +553,40 @@ describe('the track', () => {
     });
   });
 
+  it('leaves a lane that runs into the other a dead end, and says so, rather than wiring it into the other', () => {
+    // found by the fuzzer: a split's left lane laid until its gate stood where the right lane's funnel begins, and
+    // the left was wired on into the funnel the right had already worked out, a gap and all
+    const run: Run = {
+      id: 'x',
+      name: 'x',
+      pieces: [
+        { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
+        { kind: 'shallow', x: 1, y: 0, z: -1, facing: 0 },
+        { kind: 'straight', x: 3, y: 0, z: -2, facing: 0 },
+        { kind: 'wheel', x: 4, y: 0, z: -2, facing: 0 },
+        { kind: 'straight', x: 5, y: 0, z: -3, facing: 0 },
+        { kind: 'spiralLeft', x: 6, y: 0, z: -3, facing: 0 },
+        { kind: 'spiralLeft', x: 6, y: 0, z: -5, facing: 0 },
+        { kind: 'brake', x: 6, y: 0, z: -7, facing: 0 },
+        { kind: 'gate', x: 8, y: 0, z: -8, facing: 0 },
+        { kind: 'splitter', x: 9, y: 0, z: -9, facing: 0 },
+        { kind: 'curveLeft', x: 10, y: 0, z: -9, facing: 0 },
+        { kind: 'narrow', x: 11, y: 1, z: -9, facing: 1 },
+        { kind: 'funnel', x: 11, y: 3, z: -10, facing: 1 },
+        { kind: 'shallow', x: 10, y: 5, z: -13, facing: 1 },
+        { kind: 'funnel', x: 10, y: 7, z: -14, facing: 1 },
+        { kind: 'curveLeft', x: 9, y: 9, z: -17, facing: 1 },
+        { kind: 'wheel', x: 8, y: 10, z: -17, facing: 2 },
+        { kind: 'gate', x: 7, y: 10, z: -18, facing: 2 },
+        { kind: 'curveLeft', x: 10, y: 1, z: -9, facing: 0 },
+        { kind: 'wheel', x: 11, y: 2, z: -9, facing: 1 },
+        { kind: 'gate', x: 11, y: 3, z: -10, facing: 1 },
+      ] as Placed[],
+    };
+    expect(checkTrack(compile(run))).toEqual([]);
+    expect(check(run).join('\n')).toMatch(/comes back round on itself/);
+  });
+
   it('keeps what it makes within its ceiling', () => {
     const track = compile(FIRST);
     expect(track.samples).toBeGreaterThan(0);

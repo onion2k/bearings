@@ -21,7 +21,7 @@
  * timed and put back on after a reload like any run that ships.
  */
 import { Cameras, MAX_SLOTS } from './cameras';
-import { Designer, MAX_DESIGNS, kept } from './designer';
+import { Designer, type Lane, MAX_DESIGNS, kept } from './designer';
 import { Physics, type Rapier } from './physics';
 import { LOST, MARBLES, type Race, STALLED, WAITING } from './race';
 import { Progress } from './progress';
@@ -190,6 +190,11 @@ export class Game {
   }
 
   /** A grid over the last piece of the run being built, or taken off it; whether either happened. */
+  /** The next piece on `lane` of the split being built; whether there was one. Nothing is remade: no piece moved. */
+  lane(lane: Lane): boolean {
+    return this.designer?.choose(lane) ?? false;
+  }
+
   lid(): boolean {
     if (!this.designer?.lid()) return false;
     this.mount(this.designer.run);

@@ -436,6 +436,83 @@ test('the split turned on with fewer than two picked chases the leader as if it 
   expect(problems).toEqual([]);
 });
 
+test('a run built with a split, a lane at a time, joined, kept, raced, and put back on after a reload', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  await start(page, { seed: 5, paused: true });
+  const designer = () => page.evaluate(() => window.game!.designer());
+  const piece = (name: string) => page.locator('#palette').getByRole('button', { name, exact: true });
+  const left = page.locator('#laneLeft'),
+    right = page.locator('#laneRight');
+
+  await page.locator('#toDesigns').click();
+  await expect(page.locator('#lanes'), 'no lanes to choose with one end open').toBeHidden();
+  for (const name of ['Ramp', 'Splitter']) await piece(name).click();
+  // two ends open: the lanes shown, the right one chosen, and a second split and the end refused
+  await expect(page.locator('#lanes')).toBeVisible();
+  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  await expect(left).toHaveAttribute('aria-pressed', 'false');
+  await expect(piece('Splitter')).toBeDisabled();
+  await expect(piece('The end')).toBeDisabled();
+  await expect(piece('Joiner'), 'side by side as they part, so the split can close again at once').toBeEnabled();
+  expect((await designer()).ends).toHaveLength(2);
+
+  // the right lane a drop and a straight, the left two ramps: side by side, by routes of different length
+  await piece('Drop').click();
+  await expect(piece('Joiner'), 'the lanes a level apart').toBeDisabled();
+  await piece('Straight').click();
+  await left.click();
+  await expect(left).toHaveAttribute('aria-pressed', 'true');
+  for (const name of ['Ramp', 'Ramp']) await piece(name).click();
+  expect((await designer()).lane).toBe('left');
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  await expect(piece('Joiner')).toBeEnabled();
+  await piece('Joiner').click();
+  await expect(page.locator('#lanes'), 'one end again').toBeHidden();
+  for (const name of ['Straight', 'The end']) await piece(name).click();
+  expect((await designer()).pieces).toEqual([
+    'start',
+    'ramp',
+    'splitter',
+    'drop',
+    'straight',
+    'ramp',
+    'ramp',
+    'joiner',
+    'straight',
+    'finish',
+  ]);
+  await expect(page.locator('#problems')).toHaveText('sound, and ready to keep');
+
+  // undo takes the last piece laid, and the joiner reopens the lanes, the left one chosen, which it went on last from
+  for (let n = 0; n < 3; n++) await page.locator('#undo').click();
+  await expect(page.locator('#lanes')).toBeVisible();
+  await expect(left).toHaveAttribute('aria-pressed', 'true');
+  for (const name of ['Joiner', 'Straight', 'The end']) await piece(name).click();
+
+  // kept, raced home, and put back on after a reload
+  await page.locator('#designName').fill('Two ways down');
+  await page.locator('#keep').click();
+  const raced = await page.evaluate(() => {
+    const g = window.game!;
+    g.release();
+    g.settle(60);
+    g.save();
+    return [g.state(), g.invariants()] as const;
+  });
+  expect(raced[1]).toEqual([]);
+  expect(raced[0].over).toBe(true);
+  expect(raced[0].finished).toBe(8);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.game?.ready ?? false), { timeout: 60_000 }).toBe(true);
+  const back = await page.evaluate(() => window.game!.state());
+  expect(back.runId).toBe(raced[0].runId);
+  await expect(page.locator('#title')).toHaveText('Two ways down');
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
 test('a run built on the board a piece at a time, kept, raced, and put back on after a reload', async ({ page }) => {
   const problems = watch(page);
   await start(page, { seed: 5, paused: true });

@@ -182,13 +182,16 @@ What to copy the shape of, when building something new:
   touching just because their `far` — cumulative length along the run —
   happens to overlap while the lanes run in parallel. A joiner's second
   entry is matched to the splitter's own fork lane by position, the same way
-  every other piece's entry is; the two are held to about the same length
-  (`start`, within 15% of the longer or one unit, whichever is more), not
-  exactly, since a lane moved a cell across is about half again longer than
-  a plain straight of the same span, and each lane leans at its own rate
+  every other piece's entry is. The lanes need not be the same length: a
+  ball arrives when it arrives, and each lane leans at its own rate
   (`branchLean`) so that both reach the joiner at one height: at the one
   rate, the longer arrived 0.28 lower, and The Fork's field stopped against
-  the step. Where the two lanes overlap, a wall of one that would stand
+  the step. Lanes of 34 and 56 units raced home 192 in 192, and
+  `test/races/physics-lanes.test.ts` holds three such layouts. A piece is
+  reached a second time only through a joiner's own second entry; a lane that
+  runs into anything the other lane has walked already is left a dead end and
+  said to come back round on itself, since wiring it on left a gap and two
+  ideas of how far along the run the piece was. Where the two lanes overlap, a wall of one that would stand
   inside the other is left open (`Segment.open`, `openWalls`), met and drawn
   so, and they part at the crotch where their inner walls meet, as a real Y
   does. Both are shown together on the catalog's shelf (`CATALOG`'s `laid`,
@@ -197,8 +200,9 @@ What to copy the shape of, when building something new:
   width that keeps its facing can stand on a branch — proven by placing the
   same kind on both, `test/races/physics-branches.ts` — but a kind wider than the
   cell a splitter opens between its lanes cannot, which `check` refuses
-  rather than racing them through each other; nor can a kind that turns,
-  since the joiner's own facing then no longer lines up with both lanes.
+  rather than racing them through each other. A lane may turn, climb down
+  and wind as it likes, so long as it ends beside the other, going the same
+  way, where the joiner's two entries are.
 - **The screen split, a view to every picked marble:** `src/cameras.ts` is
   which marbles are followed and where each camera looks, with no renderer
   in it. `Game.split` is the player's own intent, on or off; `Game.views`
@@ -247,15 +251,32 @@ What to copy the shape of, when building something new:
   is the run on, remade at every piece, and `release` does nothing; it is not
   saved, and leaving or reloading throws it away. `readDesigns` checks every
   design a save brings back as `check` would, since anyone can write a save.
-  The palette leaves out the splitter and the joiner: each opens or closes a
-  second end, and a builder with one open end cannot say which to build
-  from. Held by `test/designer.test.ts`, the invariants (no design id twice,
-  none over the cap, nothing let go down a run being built), the fuzzer's
-  `design` action, which stays at the builder three times in four while it
-  is there, since one that wandered off after every piece never kept a run,
+  **Lanes:** a splitter opens two ends (`ends`: the right lane's, from
+  `exitOf`, and the left's, `leftOf` it), and the player chooses which the
+  next piece goes on (`choose`, `Game.lane`, `lane()` in the test API, the
+  board's Left lane and Right lane, shown only while a split is open). One
+  split at a time, and the end only once the lanes are joined, so there
+  are never more than two ends to choose between. A joiner is offered once
+  one lane ends a cell to the left of the other, level and going the same
+  way, and goes on the right-hand one whichever lane is chosen; until then
+  `apart` says how they differ, in the player's terms. The undo is a stack
+  of what was open and chosen before each piece (`before`), so taking a
+  piece off chooses the lane it came off. A gold cone stands over the end
+  the next piece goes on (`Scene.mark`, `marker`, the renderer's group 4),
+  only while building: it is a few hundred pixels, under what the look gate
+  forgives, so `test/scene-marker.test.ts` holds where it stands. Held by
+  `test/designer.test.ts` and `test/designer-lanes.test.ts`, the invariants
+  (no design id twice, none over the cap, nothing let go down a run being
+  built, never more than two ends, the next piece on one of them, a lane
+  chosen only with two), the fuzzer's `design` action, which stays at the
+  builder three times in four while it is there, since one that wandered
+  off after every piece never kept a run, and its `splitter`, `lane` and
+  `lanes` — the last the same pieces laid on both lanes and joined, since
+  laid at random two lanes all but never end side by side —
   `'designs kept'` and `'pieces being built'` in `scripts/leaks.ts`,
-  `test/saves/04-designs.json`, a stage in `smoke/progress.spec.ts`, the
-  `designer`, `design` and `designer-phone` pictures, and the frame of a
+  `test/saves/04-designs.json` and `06-lanes.json`, two stages in
+  `smoke/progress.spec.ts`, the `designer`, `design`, `designer-phone`,
+  `designer-lanes` and `designer-lanes-phone` pictures, and the frame of a
   design being built and raced in the perf spec. On a phone the palette is
   one row that scrolls sideways, so the builder stands no taller than the
   board over a race. Every click checks the whole run again and compiles it
@@ -459,10 +480,10 @@ green. Open: **determinism across machines** is not verified — Rapier is the
 same to the bit on this machine, and has not been run on a second.
 
 After that, each through `/feature`: patterns on the marbles, which want a
-change to artshape-render since it has no textures; and a designer that
-places a piece anywhere on the lattice, turned any way, splitters and
-joiners with it, where this one only ever builds on the end. And what holds
-of the race as it stands:
+change to artshape-render since it has no textures. A designer that places
+a piece anywhere on the lattice was weighed and turned down: building on the
+end is simple, and lanes were all it lacked. And what holds of the race as
+it stands:
 
 - **The marbles are all the same, and are treated so.** No marble has form
   or any other property of its own: every ball is the same size, the same
@@ -546,7 +567,10 @@ For anything new in the run, check what it does:
   parts that pass through each other, which `check` refuses. In the
   designer: laid on the end and taken off again, laid after the end, laid
   past a ceiling, a run kept, refused, left unkept, thrown away once kept,
-  and a design read back from a save that is not one
+  and a design read back from a save that is not one; laid on either lane of
+  a split, the lanes joined at different lengths, a joiner laid before they
+  end side by side, one lane run into the other, and the joiner taken off
+  again
 - **let go and again:** the run released, stopped part way down, and
   released again from the same seed to the same result, marble for marble
 - **save:** saved, reloaded, and loaded from an old save without the field

@@ -92,7 +92,30 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         }
       } else {
         const r = random();
-        if (r < 0.6) {
+        const split = (game.designer?.lane ?? null) !== null;
+        if (split && r < 0.4) {
+          // the other lane of a split chosen, or, as often, the same pieces laid on both and the two joined: laid
+          // at random, two lanes all but never end side by side, and a split design would never be kept
+          if (random() < 0.5) {
+            game.lane(game.designer!.lane === 'left' ? 'right' : 'left');
+            did('lane');
+          } else {
+            const kinds = Array.from(
+              { length: Math.floor(between(1, 4)) },
+              () => PALETTE[Math.floor(random() * PALETTE.length)],
+            );
+            for (const side of ['right', 'left'] as const) {
+              game.lane(side);
+              for (const kind of kinds) game.lay(kind);
+            }
+            game.lay('joiner');
+            did('lanes');
+          }
+        } else if (!split && r < 0.08) {
+          // a split begun, which a piece laid at random rarely is
+          game.lay('splitter');
+          did('splitter');
+        } else if (r < 0.6) {
           for (let n = Math.floor(between(1, 7)); n > 0; n--)
             game.lay(random() < 0.12 ? 'finish' : PALETTE[Math.floor(random() * PALETTE.length)]);
           did('lay');
