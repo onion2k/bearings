@@ -105,6 +105,8 @@ export interface Dressing {
   kinds: Record<DecorKind, number>;
   /** Where each lamp's light hangs, for a picture to look at. */
   lamps: [number, number, number][];
+  /** Where each chimney's top is, for a picture to look at. */
+  chimneys: [number, number, number][];
 }
 
 /** The builder, as a test sees it. */
@@ -378,6 +380,9 @@ export function createApi(host: DebugHost): GameApi {
         theme: on.theme ?? 'plain',
         kinds: kinds as Record<DecorKind, number>,
         lamps: game.decor.filter((d) => d.kind === 'lamp').map((d) => bulbOf(game.track, d, [0, 0, 0])),
+        chimneys: game.decor
+          .filter((d) => d.kind === 'chimney')
+          .map((d): [number, number, number] => [d.x, d.y, d.z + d.height]),
       };
     },
     keep(name = '') {

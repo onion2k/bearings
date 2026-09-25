@@ -8,7 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { PIECES } from '../src/catalog';
-import { DECOR_KINDS, type Decoration, LAMP, MOST, bulbOf, dress } from '../src/decor';
+import { SPRITE_STRIDE } from 'artshape-render/game/particles';
+import { DECOR_KINDS, type Decoration, LAMP, MOST, PUFFS, SMOKE_THICK, bulbOf, dress } from '../src/decor';
+import { sphere } from '../src/meshes';
 import { Designer, PALETTE } from '../src/designer';
 import { seeded } from '../src/random';
 import { RUNS } from '../src/runs';
@@ -283,13 +285,25 @@ function surface(group: GameGroup, visit: (x: number, y: number, z: number) => b
   return { points, hits, first };
 }
 
-/** What of `items` moves, drawn where the clock has it at `t`: the cogs where the standing dressing last put them. */
+/**
+ * What of `items` moves, drawn where the clock has it at `t`: the cogs where the standing dressing last put them,
+ * and the pistons' rods; and the smoke, each puff a ball as wide as it is thick, since a sprite faces whichever way
+ * the camera is and any of it may be where a marble goes.
+ */
 function moving(scene: Scene, items: Decoration[], t: number): GameGroup[] {
-  const counts = scene.animate(items, t);
-  return scene
-    .dynamic()
-    .slice(5)
-    .map((g, k) => ({ ...g, count: counts[k] }));
+  const [cogs, rods, puffs] = scene.animate(items, t);
+  const [cogGroup, rodGroup] = scene.dynamic().slice(5);
+  const smoke = new Float32Array(Math.max(1, puffs) * 16);
+  for (let k = 0; k < puffs; k++) {
+    const o = k * SPRITE_STRIDE;
+    const r = scene.smoke[o + 3] * SMOKE_THICK;
+    smoke.set([r, 0, 0, 0, 0, r, 0, 0, 0, 0, r, 0, scene.smoke[o], scene.smoke[o + 1], scene.smoke[o + 2], 1], k * 16);
+  }
+  return [
+    { ...cogGroup, count: cogs },
+    { ...rodGroup, count: rods },
+    { mesh: sphere(1, 8, 12), matrices: smoke, count: puffs },
+  ];
 }
 
 describe('what a run is dressed with, drawn', () => {
@@ -361,6 +375,33 @@ describe('what a run is dressed with, drawn', () => {
     ).toBe(true);
   });
 
+  it('draws the smoke as translucent puffs, thinning as each rises and swells', () => {
+    const scene = new Scene();
+    const { track, items } = dressed(RUNS.find((r) => r.id.startsWith('stress'))!);
+    scene.decor(track, items);
+    const chimneys = items.filter((d) => d.kind === 'chimney').length;
+    expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(7);
+    for (const t of [0.4, 2.2, 5.1]) {
+      const [, , puffs] = scene.animate(items, t);
+      expect(puffs).toBe(chimneys * PUFFS);
+      for (let c = 0; c < chimneys; c++) {
+        const own = Array.from({ length: PUFFS }, (_, j) => {
+          const o = (c * PUFFS + j) * SPRITE_STRIDE;
+          return { z: scene.smoke[o + 2], size: scene.smoke[o + 3], alpha: scene.smoke[o + 7] };
+        }).sort((a, b) => a.z - b.z);
+        for (const p of own) {
+          expect(p.alpha, 'see-through').toBeLessThan(0.7);
+          expect(p.alpha).toBeGreaterThanOrEqual(0);
+        }
+        // above the first, which is still thickening as it leaves the chimney, each is thinner and bigger than the last
+        for (let k = 2; k < own.length; k++) {
+          expect(own[k].alpha, `puff ${k} at ${t} s`).toBeLessThan(own[k - 1].alpha);
+          expect(own[k].size).toBeGreaterThan(own[k - 1].size);
+        }
+      }
+    }
+  });
+
   it('moves with the clock and stands still without it', () => {
     const scene = new Scene();
     const { track, items } = dressed(RUNS.find((r) => r.id.startsWith('stress'))!);
@@ -368,10 +409,13 @@ describe('what a run is dressed with, drawn', () => {
     scene.decor(track, items);
     const at = (t: number) => {
       scene.animate(items, t);
-      return scene
-        .dynamic()
-        .slice(5)
-        .map((g) => Array.from(g.matrices));
+      return [
+        ...scene
+          .dynamic()
+          .slice(5)
+          .map((g) => Array.from(g.matrices)),
+        Array.from(scene.smoke),
+      ];
     };
     const first = at(2);
     expect(at(2)).toEqual(first);

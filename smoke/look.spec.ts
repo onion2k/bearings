@@ -547,6 +547,39 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the field on the gate, close to: every marble told apart by its pattern', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(0);
+      g.follow(false);
+      const ms = g.marbles();
+      const [x, y, z] = [0, 1, 2].map((k) => ms.reduce((s, m) => s + [m.x, m.y, m.z][k], 0) / ms.length);
+      g.look(x, y, z, { azimuth: 2.4, polar: 0.3, radius: 6 });
+      g.step(2);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('field.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test("a chimney's smoke, close to: translucent, thinning as it rises", async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(0);
+      g.follow(false);
+      const c = g.decor().chimneys[0];
+      g.look(c[0] + 2, c[1] + 1, c[2] + 5, { azimuth: 2.2, polar: 1.25, radius: 22 });
+      g.step(120);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('smoke.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a lamp over the channel, lighting it, close to', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

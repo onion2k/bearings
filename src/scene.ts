@@ -7,7 +7,8 @@
  * the race says it is, so what is seen is exactly what a marble hits. It is
  * handed what it draws from, and never the renderer.
  */
-import type { GameGroup } from 'artshape-render/game/renderer';
+import { SPRITE_STRIDE } from 'artshape-render/game/particles';
+import { type GameGroup, PATTERN_STRIDE } from 'artshape-render/game/renderer';
 import { MeshBuilder } from 'artshape-render/mesh/types';
 import { FIELD } from './field';
 import { MARBLES, RADIUS } from './race';
@@ -81,6 +82,8 @@ import {
  */
 /** How thick the chute is, so it is a trough and not a sheet of paper. */
 const SKIN = 0.18;
+/** The smoke's grey, pale enough to read against the dark as smoke and not as a hole in it. */
+const SMOKE: [number, number, number] = [0.62, 0.62, 0.65];
 /** How far out a gate's post stands from the wall it is on. */
 const POST = 0.7;
 /**
@@ -170,10 +173,13 @@ export class Scene {
   /** What of a run's dressing moves: each cog, each piston's rod and each puff of smoke, the pools sized once by the most a run may have. */
   readonly cogs = new Float32Array(MOST.cog * 2 * 16);
   readonly rods = new Float32Array(MOST.piston * 16);
-  readonly puffs = new Float32Array(MOST.chimney * PUFFS * 16);
+  /** The smoke, a soft sprite a puff, as the renderer takes them: where, how big, what colour and how thick. */
+  readonly smoke = new Float32Array(MOST.chimney * PUFFS * SPRITE_STRIDE);
+  /** What is drawn over each marble's colour: its pattern, sized to the marble, as the renderer takes it. */
+  readonly patterns = new Float32Array(MARBLES * PATTERN_STRIDE);
   /** Where each pair of cogs turns, worked out once a run: its middle, the way along, and the axle, nine numbers a cog. */
   private cogFrames = new Float32Array(MOST.cog * 2 * 9);
-  private readonly puff: [number, number, number, number] = [0, 0, 0, 0];
+  private readonly puff: [number, number, number, number, number] = [0, 0, 0, 0, 0];
 
   /** Where each moving part is this frame: the sweepers' paddles, the gates' bars and the wheels. */
   readonly sweepers = new Float32Array(MOVING_MOST * 16);
@@ -192,6 +198,9 @@ export class Scene {
       this.looks[i * 4 + 1] = look.colour[1];
       this.looks[i * 4 + 2] = look.colour[2];
       this.looks[i * 4 + 3] = look.roughness;
+      // the pattern repeats once across the marble, whatever size a marble is, and each is turned by its own seed
+      const { kind, second, seed } = look.pattern;
+      this.patterns.set([kind, 1 / RADIUS, seed, 0, second[0], second[1], second[2], 0], i * PATTERN_STRIDE);
     }
   }
 
@@ -619,7 +628,15 @@ export class Scene {
       } else if (d.kind === 'chimney' && puffs < MOST.chimney * PUFFS) {
         for (let j = 0; j < PUFFS; j++) {
           const p = puffOf(d, j, t, this.puff);
-          spin(this.puffs, puffs++, p[0], p[1], p[2], 0, 0, 1, 0, p[3]);
+          const o = puffs++ * SPRITE_STRIDE;
+          this.smoke[o] = p[0];
+          this.smoke[o + 1] = p[1];
+          this.smoke[o + 2] = p[2];
+          this.smoke[o + 3] = p[3];
+          this.smoke[o + 4] = SMOKE[0];
+          this.smoke[o + 5] = SMOKE[1];
+          this.smoke[o + 6] = SMOKE[2];
+          this.smoke[o + 7] = p[4];
         }
       }
     }
@@ -629,7 +646,7 @@ export class Scene {
   /** What moves: the marbles, then the sweepers, the gates and the wheels, each pool sized once. */
   dynamic(): GameGroup[] {
     return [
-      { mesh: sphere(RADIUS), matrices: this.marbles, count: 0, materials: this.looks },
+      { mesh: sphere(RADIUS), matrices: this.marbles, count: 0, materials: this.looks, patterns: this.patterns },
       {
         mesh: bar(2 * 1.3 + 2 * 0.28, 0.56, PADDLE_HEIGHT),
         matrices: this.sweepers,
@@ -653,10 +670,9 @@ export class Scene {
         albedo: [0.95, 0.72, 0.2],
         roughness: 0.4,
       },
-      // brass cogs, a steel rod in each piston, and grey smoke
+      // brass cogs and a steel rod in each piston; the smoke is sprites, which the renderer draws apart from these
       { mesh: cog(12, COG.thick), matrices: this.cogs, count: 0, albedo: [0.72, 0.56, 0.26], roughness: 0.35 },
       { mesh: post(0.1, 1.2), matrices: this.rods, count: 0, albedo: [0.72, 0.74, 0.78], roughness: 0.25 },
-      { mesh: sphere(1, 8, 10), matrices: this.puffs, count: 0, albedo: [0.5, 0.5, 0.53], roughness: 0.95 },
     ];
   }
 

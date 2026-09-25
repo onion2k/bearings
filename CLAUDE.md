@@ -129,7 +129,8 @@ change meant to move it, and the commit says why. Look at every picture.
 - Content is `src/runs.ts`, the runs that come with the game;
   `src/catalog.ts`, every kind of piece named, said what it does and set
   between a start and the end, for the board's second shelf; and
-  `src/field.ts`, what the eight marbles are called and look like. A run's
+  `src/field.ts`, what the eight marbles are called and look like: a colour,
+  a shine, and a pattern in a second colour. A run's
   `id` is what the save knows it by, and never changes once a run has
   shipped; a run the player designs is the same shape, kept in the save
   under an id of its own. The save lives in `progress.ts`: the races run,
@@ -153,7 +154,15 @@ What to copy the shape of, when building something new:
   `Physics.check` and `invariants.ts`, read by `marbles()` in `debug.ts`,
   hashed in `scripts/determinism.ts`, counted in `scripts/leaks.ts`, and
   pictured in `smoke/look.spec.ts`. One kind of thing, eight places, and a
-  new thing on the run goes to all of them.
+  new thing on the run goes to all of them. Each marble's look is a colour,
+  a shine and a pattern (`Look.pattern`): a swirl, bands, marbling or
+  speckle in a second colour, each kind on two marbles, drawn by
+  artshape-render from where on the ball a fragment is, so it turns as the
+  ball rolls. `Scene.patterns` hands them to the renderer sized to the
+  marble (`1 / RADIUS`); only the marbles' group carries patterns, and every
+  other group draws through a build of the shader with no pattern code in
+  it. Held by `test/field.test.ts`, the renderer's own `patterns.gpu.test.ts`,
+  and `field.png`, all eight close up.
 - **A kind of piece:** `src/track.ts`. A kind is one line in `SHAPES` — where
   it hands a marble on, the curve it follows, and what a real ball asks of
   it — and every path over the kinds gets it for nothing, because they are
@@ -315,9 +324,14 @@ What to copy the shape of, when building something new:
   colour, `animate` places the cogs, the pistons' rods and the puffs of
   smoke where the game's clock has them (`game.t`, so a paused game stands
   still and a picture is the same every run), and `main.ts` hangs a warm
-  light under each lamp's shade. Smoke is solid puffs, since the renderer
-  draws meshes opaque, and it moves by the clock rather than as the
-  renderer's particles, which move only when a frame is drawn. Girders were
+  light under each lamp's shade. Smoke is the renderer's sprites
+  (`setSprites`, from artshape-render 0.17): soft translucent puffs placed
+  by `puffOf` from the clock each frame, thickening as they leave the
+  chimney and thinning as they rise and swell, and not its particles, which
+  move only when a frame is drawn, so a test that steps and draws once
+  would never see them move. Given up with the particles on the ladder's
+  rung. A puff is tried for room as a ball `SMOKE_THICK` of its size across
+  (`smoke.png`). Girders were
   a million triangles on the Stress Test in fine bays and are coarse on
   purpose. Held by `test/decor.test.ts` — above all that no point over any
   drawn surface, standing or moving, is where a marble can be, sampled
@@ -528,9 +542,8 @@ build and keep runs of their own, and the race is physics, every gate
 green. Open: **determinism across machines** is not verified — Rapier is the
 same to the bit on this machine, and has not been run on a second.
 
-After that, each through `/feature`: patterns on the marbles, which want a
-change to artshape-render since it has no textures; and themes beyond the
-works, each a `Theme` and a way of dressing a run in `src/decor.ts`. A designer that places
+After that, each through `/feature`: themes beyond the works, each a
+`Theme` and a way of dressing a run in `src/decor.ts`. A designer that places
 a piece anywhere on the lattice was weighed and turned down: building on the
 end is simple, and lanes were all it lacked. And what holds of the race as
 it stands:

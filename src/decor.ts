@@ -46,7 +46,13 @@ export const MOST: Record<DecorKind, number> = {
 };
 
 /** The puffs of smoke over each chimney, rising and swelling in turn. */
-export const PUFFS = 5;
+export const PUFFS = 10;
+/**
+ * How much of a puff's sprite is thick enough to see: it is thickest in its
+ * middle and thins to nothing at its edge, and a test of where smoke may be
+ * takes each puff as a ball this share of its size across.
+ */
+export const SMOKE_THICK = 0.8;
 
 /**
  * A lamp: its pole this far out from the channel's edge, the lamp this high over the floor, its shade this far
@@ -481,16 +487,29 @@ export function smokeAt(
   out[0] = x + age * 5;
   out[1] = y + age * 1.8;
   out[2] = top + 0.3 + age * 15;
-  out[3] = 0.55 + age * 1.25;
+  out[3] = 0.9 + age * 2;
   return out;
 }
 
-/** Where puff `j` over a chimney is at `t` seconds, and how big: each rises and swells from the top, and is born again. */
-export function puffOf(
-  d: Decoration,
-  j: number,
-  t: number,
-  out: [number, number, number, number],
-): [number, number, number, number] {
-  return smokeAt(d.x, d.y, d.z + d.height, (t * 0.16 + j / PUFFS + d.piece * 0.13) % 1, out);
+/** A puff of smoke: where, how big, and how thick, 0 to 1. */
+export type Puff = [number, number, number, number, number];
+
+/** How thick a puff is at its thickest, 0 to 1: enough to read as smoke, and never enough to hide what is behind it. */
+const SMOKE_ALPHA = 0.6;
+
+/**
+ * Where puff `j` over a chimney is at `t` seconds, how big, and how thick:
+ * each rises and swells from the top, thickening as it leaves the chimney and
+ * thinning to nothing as it rises, and is born again.
+ */
+export function puffOf(d: Decoration, j: number, t: number, out: Puff): Puff {
+  const age = (t * 0.16 + j / PUFFS + d.piece * 0.13) % 1;
+  const [x, y, z, size] = smokeAt(d.x, d.y, d.z + d.height, age, place);
+  out[0] = x;
+  out[1] = y;
+  out[2] = z;
+  out[3] = size;
+  out[4] = SMOKE_ALPHA * Math.min(1, age * 8) * (1 - age) ** 1.5;
+  return out;
 }
+const place: [number, number, number, number] = [0, 0, 0, 0];

@@ -416,7 +416,7 @@ async function main() {
     const [cogs, rods, puffs] = scene.animate(game.decor, game.t);
     renderer.move(5, scene.cogs, cogs);
     renderer.move(6, scene.rods, rods);
-    renderer.move(7, scene.puffs, puffs);
+    renderer.setSprites(scene.smoke, puffs);
   }
 
   /**
