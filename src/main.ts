@@ -22,7 +22,7 @@ import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
 import { HALF_WIDTH, type Kind, type Theme } from './track';
-import { bulbOf } from './decor';
+import { LIGHTS, bulbOf } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -192,16 +192,13 @@ async function main() {
     home[2] = mid[2];
     lights.clear();
     lights.add({ position: [mid[0], mid[1], box.max[2] + 20], radius: 160, colour: [1, 0.9, 0.75], intensity: 60 });
-    // each lamp a light of its own, warm, hung just under its shade: as many as the dressing has, which its ceiling
-    // keeps inside the pool with the light over the whole run
-    for (const d of game.decor)
-      if (d.kind === 'lamp')
-        lights.add({
-          position: bulbOf(game.track, d, bulb),
-          radius: LAMP_REACH,
-          colour: [1, 0.78, 0.45],
-          intensity: LAMP_BRIGHT,
-        });
+    // each lamp, or lollipop, a light of its own in its own colour, hung just under it: as many as the dressing has,
+    // which its ceiling keeps inside the pool with the light over the whole run
+    for (const d of game.decor) {
+      const colour = LIGHTS[d.kind];
+      if (colour)
+        lights.add({ position: bulbOf(game.track, d, bulb), radius: LAMP_REACH, colour, intensity: LAMP_BRIGHT });
+    }
     renderer.setLights(lights);
   };
   const lights = new LightPool(LIGHT_CAPACITY);
@@ -413,9 +410,10 @@ async function main() {
     // where the next piece of a run being built goes, and nothing over a run being raced
     renderer.move(4, scene.marker, scene.mark(game.track, game.designer?.open ?? null));
     // the cogs, the pistons' rods and the smoke, where the game's own clock has them, so a paused game stands still
-    const [cogs, rods, puffs] = scene.animate(game.decor, game.t);
+    const [cogs, rods, puffs, whisks] = scene.animate(game.decor, game.t);
     renderer.move(5, scene.cogs, cogs);
     renderer.move(6, scene.rods, rods);
+    renderer.move(7, scene.whisks, whisks);
     renderer.setSprites(scene.smoke, puffs);
   }
 

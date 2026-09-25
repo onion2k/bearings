@@ -20,7 +20,7 @@
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import type { Game } from './game';
-import { DECOR_KINDS, MOST } from './decor';
+import { DECOR_KINDS, MOST, THEME_KINDS } from './decor';
 import { MAX_DESIGNS } from './designer';
 import { FINISHED, WAITING } from './race';
 import { at, checkTrack, spot } from './track';
@@ -124,6 +124,8 @@ export function checkInvariants(game: Game): string[] {
     }
     for (const d of decor) {
       if (!DECOR_KINDS.includes(d.kind)) out.push(`${on.name} is dressed with a ${d.kind}, which is nothing a run has`);
+      else if (on.theme && !THEME_KINDS[on.theme].includes(d.kind))
+        out.push(`${on.name} is dressed as ${on.theme}, and has a ${d.kind}, which is another theme's`);
       else if (
         d.segment >= track.segments.length ||
         d.piece >= on.pieces.length ||

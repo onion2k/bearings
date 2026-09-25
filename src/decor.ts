@@ -28,17 +28,30 @@ import {
 } from './track';
 
 /** Every kind of thing a run can be dressed with. */
-export type DecorKind = 'lamp' | 'pipes' | 'cog' | 'chimney' | 'girder' | 'tank' | 'piston' | 'stripes';
-export const DECOR_KINDS: readonly DecorKind[] = [
-  'lamp',
-  'pipes',
-  'cog',
-  'chimney',
-  'girder',
-  'tank',
-  'piston',
-  'stripes',
-];
+export type DecorKind =
+  | 'lamp'
+  | 'pipes'
+  | 'cog'
+  | 'chimney'
+  | 'girder'
+  | 'tank'
+  | 'piston'
+  | 'stripes'
+  | 'lollipop'
+  | 'candyStripes'
+  | 'gumdrops'
+  | 'whisk'
+  | 'cane'
+  | 'giantLollipop'
+  | 'fudgePot'
+  | 'cupcake';
+
+/** What each theme dresses a run with: every kind in one theme and one only. */
+export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
+  industrial: ['lamp', 'pipes', 'cog', 'chimney', 'girder', 'tank', 'piston', 'stripes'],
+  sweets: ['lollipop', 'candyStripes', 'gumdrops', 'whisk', 'cane', 'giantLollipop', 'fudgePot', 'cupcake'],
+};
+export const DECOR_KINDS: readonly DecorKind[] = [...THEME_KINDS.industrial, ...THEME_KINDS.sweets];
 
 /**
  * How many of each a run may have at most. Lamps are lights, and the renderer
@@ -54,6 +67,20 @@ export const MOST: Record<DecorKind, number> = {
   tank: 3,
   piston: 6,
   stripes: 40,
+  lollipop: 12,
+  candyStripes: 40,
+  gumdrops: 24,
+  whisk: 8,
+  cane: 24,
+  giantLollipop: 3,
+  fudgePot: 3,
+  cupcake: 3,
+};
+
+/** The things that light the run, and the colour of their light: a works' lamps warm, a sweet factory's lollipops pink. */
+export const LIGHTS: Partial<Record<DecorKind, [number, number, number]>> = {
+  lamp: [1, 0.78, 0.45],
+  lollipop: [1, 0.62, 0.82],
 };
 
 /** The puffs of smoke over each chimney, rising and swelling in turn. */
@@ -89,6 +116,21 @@ export const TANK = { out: 2.3, radius: 0.9, height: 3.2 } as const;
 export const GIRDER = { half: 0.24 } as const;
 /** Hazard stripes, a plate on the outside of each wall, in blocks this long, a band up to this high. */
 export const STRIPE = { out: 0.19, block: 0.7, top: 1.05 } as const;
+
+/** A lollipop lamp: a stick up beside the wall and over the channel, the lollipop glowing at its end, as a lamp's shade. */
+export const LOLLIPOP = { out: 0.32, height: 4.2, pole: 0.08, shade: 0.45, hangs: 0.85, disc: 0.35 } as const;
+/** Gumdrops along the outside of a wall: how far out, how high their middles, how round, and how far apart. */
+export const GUMDROPS = { out: 0.5, up: 0.3, radius: 0.26, every: 0.7 } as const;
+/** A whisk turning on a wall: how far its wires reach, how far out and high its middle, how thick. */
+export const WHISK = { reach: 0.7, out: 0.45, up: 0.55, thick: 0.2 } as const;
+/** A candy cane's post, this far from its middle to its side. */
+export const CANE = { half: 0.22 } as const;
+/** A giant lollipop: its stick, its sweet's reach, how far out from the channel's edge, and no taller than `tallest`. */
+export const GIANT = { out: 2.6, radius: 1.3, stick: 0.16, tallest: 15 } as const;
+/** A pot of fudge on the ground, bubbling steam. */
+export const POT = { out: 2.4, radius: 0.95, height: 1.5 } as const;
+/** A cupcake on the ground: its paper case's reach and height, then its frosting and a cherry. */
+export const CUPCAKE = { out: 2.4, radius: 0.85, height: 2 } as const;
 
 /** How far below the run's lowest point the ground is that chimneys, tanks and the lowest girders stand on. */
 const GROUND = 2;
@@ -347,11 +389,11 @@ class Site {
     }
   }
 
-  /** What runs along the outside of a wall, every fourth piece of a chute's width, as the rings of `bands` are. */
-  alongWall(kind: DecorKind, bands: readonly Band[]) {
+  /** What runs along the outside of a wall, every `every`th piece of a chute's width, as the rings of `bands` are. */
+  alongWall(kind: DecorKind, bands: readonly Band[], every = 4) {
     const { segments } = this.track;
     for (const k of this.pieces) {
-      if (k % 4 !== 2 || this.count(kind) >= MOST[kind]) continue;
+      if (k % every !== 2 % every || this.count(kind) >= MOST[kind]) continue;
       const s = this.by.get(k)!;
       const seg = segments[s];
       if (!this.plainWidth(s) || seg.length < 3) continue;
@@ -526,8 +568,26 @@ function industrial(site: Site) {
   for (const f of [0.65, 0.9, 0.1]) site.stand('tank', f, TANK.radius, TANK.out, TANK.height);
 }
 
+/**
+ * The sweet factory: candy-cane posts, lollipops lighting the run pink, gumdrops along the walls, whisks turning,
+ * candy stripes where it matters, and giant lollipops, cupcakes and pots of fudge steaming on the ground. Each is
+ * placed by the rule its counterpart in the works is, so the room it is given is the room that has been tested.
+ */
+function sweets(site: Site) {
+  site.stripes('candyStripes');
+  site.lamps('lollipop', LOLLIPOP);
+  // small, and many of them: every other piece, where the works' pipes go on every fourth
+  site.alongWall('gumdrops', [GUMDROPS], 2);
+  site.onWall('whisk', [[0, WHISK.reach]], WHISK.out, WHISK.up, WHISK.thick);
+  site.legs('cane', CANE.half);
+  for (const f of [0.3, 0.55, 0.8])
+    site.stand('giantLollipop', f, GIANT.radius, GIANT.out, Math.min(site.high + OVER - site.ground, GIANT.tallest));
+  for (const f of [0.45, 0.7, 0.95]) site.stand('fudgePot', f, POT.radius, POT.out, POT.height, POT_STEAM);
+  for (const f of [0.65, 0.9, 0.1]) site.stand('cupcake', f, CUPCAKE.radius, CUPCAKE.out, CUPCAKE.height);
+}
+
 /** How each theme dresses a run: one for every theme there is, which the compiler holds it to. */
-const DRESSERS: Record<Theme, (site: Site) => void> = { industrial };
+const DRESSERS: Record<Theme, (site: Site) => void> = { industrial, sweets };
 
 /** What `run` is dressed with, on `track`, its own working out: nothing, unless it names a theme. */
 export function dress(run: Run, track: Track): Decoration[] {
@@ -580,7 +640,8 @@ function footOf(track: Track, x: number, y: number, top: number): number | null 
 /** Where a lamp's light hangs: over the channel's middle, a little under the lamp's own height. */
 export function bulbOf(track: Track, d: Decoration, out: [number, number, number]): [number, number, number] {
   const h = at(track, d.segment, d.along);
-  const [x, y, z] = off(h, 0, LAMP.height - 0.45);
+  // a lamp's bulb under its shade; a lollipop's light just under the sweet, since a light inside it lights nothing
+  const [x, y, z] = off(h, 0, d.kind === 'lollipop' ? LOLLIPOP.height - LOLLIPOP.hangs - 0.1 : LAMP.height - 0.45);
   out[0] = x;
   out[1] = y;
   out[2] = z;
@@ -608,6 +669,10 @@ export interface Smoke {
 
 /** A chimney's smoke. Spaced further apart as it rises than it is round, and drifting downwind as it goes. */
 export const CHIMNEY_SMOKE: Smoke = { rise: 15, drift: [5, 1.8], size: 0.9, grows: 2 };
+/** A fudge pot's steam: lower, smaller and gentler than a chimney's smoke, and gone sooner. */
+export const POT_STEAM: Smoke = { rise: 6, drift: [1.4, 0.5], size: 0.45, grows: 1.1 };
+/** What smokes, and how. */
+export const SMOKES: Partial<Record<DecorKind, Smoke>> = { chimney: CHIMNEY_SMOKE, fudgePot: POT_STEAM };
 
 /**
  * Where a puff of smoke is when it is `age` of the way through its life, from
@@ -642,12 +707,13 @@ const SMOKE_ALPHA = 0.6;
  */
 export function puffOf(d: Decoration, j: number, t: number, out: Puff): Puff {
   const age = (t * 0.16 + j / PUFFS + d.piece * 0.13) % 1;
-  const [x, y, z, size] = smokeAt(d.x, d.y, d.z + d.height, age, place);
+  const [x, y, z, size] = smokeAt(d.x, d.y, d.z + d.height, age, place, SMOKES[d.kind]);
   out[0] = x;
   out[1] = y;
   out[2] = z;
   out[3] = size;
-  out[4] = SMOKE_ALPHA * Math.min(1, age * 8) * (1 - age) ** 1.5;
+  // thick before the next is born, so that above the lowest each puff is thinner than the one under it
+  out[4] = SMOKE_ALPHA * Math.min(1, age * PUFFS * 1.25) * (1 - age) ** 1.5;
   return out;
 }
 const place: [number, number, number, number] = [0, 0, 0, 0];

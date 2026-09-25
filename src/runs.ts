@@ -67,7 +67,7 @@ export const SHORT: Run = {
 export const TOWER: Run = {
   id: 'the-tower-6',
   name: 'The Tower',
-  theme: 'industrial',
+  theme: 'sweets',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'ramp', x: 1, y: 0, z: -1, facing: 0 },
@@ -92,7 +92,7 @@ export const TOWER: Run = {
 export const LEAP: Run = {
   id: 'the-leap-5',
   name: 'The Leap',
-  theme: 'industrial',
+  theme: 'sweets',
   pieces: [
     { kind: 'start', x: 0, y: 0, z: 0, facing: 0 },
     { kind: 'sweeper', x: 1, y: 0, z: -1, facing: 0 },

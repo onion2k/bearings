@@ -541,7 +541,8 @@ test.describe('what it looks like', () => {
       g.step(60);
       return g.decor().kinds;
     });
-    for (const [kind, n] of Object.entries(kinds)) expect(n, `switchback has a ${kind}`).toBeGreaterThan(0);
+    for (const kind of ['lamp', 'pipes', 'cog', 'chimney', 'girder', 'tank', 'piston', 'stripes'] as const)
+      expect(kinds[kind], `switchback has a ${kind}`).toBeGreaterThan(0);
     await hideStats(page);
     await expect(page.locator('#view')).toHaveScreenshot('works.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -609,6 +610,69 @@ test.describe('what it looks like', () => {
     await expect(page.locator('#themes [data-theme="industrial"]')).toHaveAttribute('aria-pressed', 'true');
     await hideStats(page);
     await expect(page).toHaveScreenshot('designer-works.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the tower dressed as a sweet factory: candy canes, lollipops, gumdrops, whisks and giant lollipops', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    const theme = await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(2);
+      g.step(60);
+      return g.decor().theme;
+    });
+    expect(theme).toBe('sweets');
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('sweets.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test("a lollipop lamp over the leap's first piece, and a whisk turning on its wall, close to", async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(3);
+      g.follow(false);
+      g.look(12, 0, -5, { azimuth: 2.6, polar: 1.0, radius: 11 });
+      g.step(90);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('sweets-close.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a giant lollipop and a fudge pot steaming at the foot of the leap', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.pick(3);
+      g.follow(false);
+      g.look(64, 1.5, -44, { azimuth: 2.2, polar: 1.25, radius: 26 });
+      g.step(120);
+    });
+    await hideStats(page);
+    await expect(page.locator('#view')).toHaveScreenshot('sweets-ground.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the builder, a run dressed as a sweet factory as it is built', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true });
+    await page.evaluate(() => {
+      const g = window.game!;
+      g.browse('designs');
+      for (const k of ['ramp', 'straight', 'sweeper', 'curveLeft', 'drop', 'straight', 'straight'] as const) g.lay(k);
+      g.dress('sweets');
+      g.step(2);
+    });
+    await expect(page.locator('#themes [data-theme="sweets"]')).toHaveAttribute('aria-pressed', 'true');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('designer-sweets.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

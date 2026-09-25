@@ -295,9 +295,26 @@ What to copy the shape of, when building something new:
   once a kind to know what to refuse: about 10 ms at a hundred pieces, on a
   click and never a frame. A row of themes, Plain and Industrial, dresses
   the run being built (`Designer.dress`, `Game.dress`); see the dressing.
-- **The dressing:** a run that names a theme (`Run.theme`, only
-  `'industrial'` so far, and plain written as nothing at all) is dressed as
-  a works by `dress` in `src/decor.ts`, from its own track and nothing else:
+- **The dressing:** a run that names a theme (`Run.theme`: `'industrial'`,
+  a works, or `'sweets'`, a sweet factory; plain written as nothing at all)
+  is dressed by `dress` in `src/decor.ts`, from its own track and nothing
+  else. A `Site` holds what every theme places by — the room checks, the
+  supports, the ground, the box, the spreading along the run — as rules
+  that take the kind and its shape: `stripes`, `lamps`, `alongWall`,
+  `onWall`, `againstWall`, `legs` and `stand`. A theme is one function
+  calling them, chosen by `DRESSERS: Record<Theme, …>`, and its kinds are
+  `THEME_KINDS[theme]`, every kind in one theme only; the scene draws each
+  kind from a `Record<DecorKind, …>` too, so the compiler refuses a theme
+  or a kind with nothing to place or draw it by. A sweet factory's kinds
+  take the place of a works' and are placed by the same rule, so their room
+  is the room already tested: lollipop lamps (the lamps, lit pink, `LIGHTS`),
+  candy stripes (the stripes), gumdrops (every other piece, where pipes go
+  on every fourth), whisks (the cogs), candy-cane posts (the girders, the
+  stripes wound as helical strips, since cut into fine rows they came to
+  nearly a million triangles on a tall run), giant lollipops (the chimneys,
+  their swirls the renderer's pattern), pots of fudge steaming pink (the
+  chimneys' smoke, lower: `SMOKES`, `POT_STEAM`) and cupcakes (the tanks).
+  The Tower and The Leap are sweet factories, the other six works. A works:
   lamps on poles with an arm over the channel, copper pipes along a wall,
   meshing cogs on one, pistons pumping beside one, hazard stripes low on the
   walls where the field is let go, something moves and the race is won,
@@ -542,8 +559,9 @@ build and keep runs of their own, and the race is physics, every gate
 green. Open: **determinism across machines** is not verified — Rapier is the
 same to the bit on this machine, and has not been run on a second.
 
-After that, each through `/feature`: themes beyond the works, each a
-`Theme` and a way of dressing a run in `src/decor.ts`. A designer that places
+After that, each through `/feature`: more themes, each a `Theme`, its
+kinds in `THEME_KINDS`, a dresser in `DRESSERS` and a drawing a kind in the
+scene. A designer that places
 a piece anywhere on the lattice was weighed and turned down: building on the
 end is simple, and lanes were all it lacked. And what holds of the race as
 it stands:

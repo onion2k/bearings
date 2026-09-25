@@ -7,6 +7,7 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
+import { THEME_KINDS } from '../src/decor';
 import { Designer, readDesigns } from '../src/designer';
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
@@ -57,6 +58,23 @@ describe('a theme in the game', () => {
     expect(checkInvariants(game)).toEqual([]);
   });
 
+  it('dresses the run being built as a sweet factory, and keeps it so', () => {
+    const { game } = newGame(3);
+    game.browse('designs');
+    for (const k of ['ramp', 'straight', 'drop', 'straight', 'sweeper', 'straight'] as const) game.lay(k);
+    expect(game.dress('sweets')).toBe(true);
+    const kinds = new Set(game.decor.map((d) => d.kind));
+    for (const k of kinds) expect(THEME_KINDS.sweets, `a ${k}`).toContain(k);
+    expect(kinds.has('candyStripes'), 'candy stripes by the sweeper').toBe(true);
+    expect(game.dress('industrial')).toBe(true);
+    expect(game.decor.map((d) => d.kind)).not.toContain('candyStripes');
+    game.dress('sweets');
+    game.lay('finish');
+    expect(game.keep('Sugar rush')).toEqual([]);
+    expect(game.progress.save.designs[game.progress.save.designs.length - 1].theme).toBe('sweets');
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
   it('chooses no theme when nothing is being built', () => {
     const { game } = newGame(3);
     expect(game.dress('plain')).toBe(false);
@@ -96,6 +114,12 @@ describe('a theme in a save', () => {
     ]);
     expect(designs.map((d) => d.theme)).toEqual(['industrial', undefined]);
     expect('theme' in designs[1]).toBe(false);
+  });
+
+  it('reads a sweet factory back', () => {
+    expect(readDesigns([{ id: 'design-1', name: 'Sweet', theme: 'sweets', pieces }]).map((d) => d.theme)).toEqual([
+      'sweets',
+    ]);
   });
 
   it('turns away a design whose theme is not one the game has', () => {

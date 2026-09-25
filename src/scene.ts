@@ -21,18 +21,29 @@ import {
   beam,
   block,
   bowl as bowlMesh,
+  candyColumn,
   cog,
   column,
   cone,
+  disc,
+  dome,
   lattice,
   mound,
   sphere,
   sweep,
   wheel,
+  whisk,
 } from './meshes';
 import {
+  CANE,
   CHIMNEY,
   COG,
+  CUPCAKE,
+  GIANT,
+  GUMDROPS,
+  LOLLIPOP,
+  POT,
+  WHISK,
   type DecorKind,
   type Decoration,
   GIRDER,
@@ -159,6 +170,91 @@ export { boxOf } from './track';
 
 type V3 = [number, number, number];
 
+/**
+ * Stripes swept along the outside of a wall in two colours in turn, each
+ * plate over the samples it covers at the wall's own width there, so that
+ * where a board flares the plate flares with it and never cuts inside; and a
+ * band low on the wall, as tape is, since high on a tall wall round a tight
+ * bend the wall's own sections cross over each other, and a band up there
+ * would fold with them.
+ */
+function striped(track: Track, d: Decoration, first: MeshBuilder, second: MeshBuilder) {
+  const seg = track.segments[d.segment];
+  const o = d.side * (HALF_WIDTH + STRIPE.out);
+  const thick = d.side * 0.03;
+  const top = Math.min(seg.wall - 0.1, STRIPE.top);
+  const plate: [number, number][] = [
+    [o, 0.15],
+    [o + thick, 0.15],
+    [o + thick, top],
+    [o, top],
+    [o, 0.15],
+  ];
+  let from = 0,
+    k = 0;
+  while (from < seg.arc.length - 1) {
+    let to = from + 1;
+    while (to < seg.arc.length - 1 && seg.arc[to] - seg.arc[from] < STRIPE.block) to++;
+    sweep(
+      seg.points.subarray(from * 3),
+      seg.tangents.subarray(from * 3),
+      seg.ups.subarray(from * 3),
+      to - from + 1,
+      plate,
+      k++ % 2 ? second : first,
+      seg.width.subarray(from),
+      HALF_WIDTH,
+    );
+    from = to;
+  }
+}
+
+/** A sweet factory's steam, pale and a little pink. */
+const STEAM: [number, number, number] = [0.95, 0.84, 0.9];
+/** The colours gumdrops and lollipops come in, in turn. */
+const GUM: readonly [number, number, number][] = [
+  [0.9, 0.12, 0.3],
+  [0.15, 0.7, 0.25],
+  [0.95, 0.6, 0.08],
+  [0.55, 0.2, 0.8],
+  [0.95, 0.85, 0.1],
+];
+
+/**
+ * A thing turning about an axle across the way, level, as a cog or a whisk
+ * does: placed `angle` round from `frames`' entry `k` (its middle, the way
+ * along, its reach), written into `out` at `k`.
+ */
+function turned(out: Float32Array, k: number, frames: Float32Array, angle: number) {
+  const o = k * 9;
+  const tx = frames[o + 3],
+    ty = frames[o + 4];
+  // the axle is across the way, level: its own y; its x and z turn about it in the upright plane along the way
+  const flat = Math.hypot(tx, ty) || 1;
+  const ax = ty / flat,
+    ay = -tx / flat;
+  const c = Math.cos(angle),
+    s = Math.sin(angle);
+  // x, y and z make a right hand: x along the way turned, y the axle to the left, z up turned
+  basis(
+    out,
+    k,
+    frames[o],
+    frames[o + 1],
+    frames[o + 2],
+    (tx / flat) * c,
+    (ty / flat) * c,
+    s,
+    -ax,
+    -ay,
+    0,
+    -(tx / flat) * s,
+    -(ty / flat) * s,
+    c,
+    frames[o + 6],
+  );
+}
+
 /** Across the channel to the right of the way it goes, at a spot: square to the way and to up. */
 function right(h: Spot): V3 {
   return [h.ty * h.uz - h.tz * h.uy, h.tz * h.ux - h.tx * h.uz, h.tx * h.uy - h.ty * h.ux];
@@ -175,7 +271,12 @@ export class Scene {
   readonly cogs = new Float32Array(MOST.cog * 2 * 16);
   readonly rods = new Float32Array(MOST.piston * 16);
   /** The smoke, a soft sprite a puff, as the renderer takes them: where, how big, what colour and how thick. */
-  readonly smoke = new Float32Array(MOST.chimney * PUFFS * SPRITE_STRIDE);
+  readonly smoke = new Float32Array((MOST.chimney + MOST.fudgePot) * PUFFS * SPRITE_STRIDE);
+  /** The whisks turning on a sweet factory's walls. */
+  readonly whisks = new Float32Array(MOST.whisk * 16);
+  /** Where each whisk turns, worked out once a run, as a cog's is. */
+  private whiskFrames = new Float32Array(MOST.whisk * 9);
+  private whiskCount = 0;
   /** What is drawn over each marble's colour: its pattern, sized to the marble, as the renderer takes it. */
   readonly patterns = new Float32Array(MARBLES * PATTERN_STRIDE);
   /** Where each pair of cogs turns, worked out once a run: its middle, the way along, and the axle, nine numbers a cog. */
@@ -388,8 +489,21 @@ export class Scene {
       bulbs = new MeshBuilder(),
       yellow = new MeshBuilder(),
       black = new MeshBuilder();
+    // and a sweet factory's
+    const candyRed = new MeshBuilder(),
+      candyWhite = new MeshBuilder(),
+      chocolate = new MeshBuilder(),
+      fudge = new MeshBuilder(),
+      paper = new MeshBuilder(),
+      frosting = new MeshBuilder(),
+      cherry = new MeshBuilder();
+    // gumdrops and the lollipops' sweets are placed one each, the gumdrops each their colour and the sweets each
+    // their colour and swirl
+    const gumdrops: number[] = [];
+    const sweets: number[] = [];
     const h = this.here;
-    let cogs = 0;
+    let cogs = 0,
+      whisks = 0;
     // the frame at the spot a thing stands by, worked out afresh for each before it is drawn
     let t: V3 = [0, 0, 0],
       l: V3 = [0, 0, 0],
@@ -441,38 +555,7 @@ export class Scene {
         }
       },
       stripes: (d) => {
-        // yellow and black plates in turn on the outside of the wall, each swept along the samples it covers at the
-        // wall's own width there, so that where a board flares the plate flares with it and never cuts inside
-        const seg = track.segments[d.segment];
-        const o = d.side * (HALF_WIDTH + STRIPE.out);
-        const thick = d.side * 0.03;
-        // a band low on the wall, as tape is: high on a tall wall round a tight bend the wall's own sections cross over
-        // each other, and a band up there would fold with them
-        const top = Math.min(seg.wall - 0.1, STRIPE.top);
-        const plate: [number, number][] = [
-          [o, 0.15],
-          [o + thick, 0.15],
-          [o + thick, top],
-          [o, top],
-          [o, 0.15],
-        ];
-        let from = 0,
-          k = 0;
-        while (from < seg.arc.length - 1) {
-          let to = from + 1;
-          while (to < seg.arc.length - 1 && seg.arc[to] - seg.arc[from] < STRIPE.block) to++;
-          sweep(
-            seg.points.subarray(from * 3),
-            seg.tangents.subarray(from * 3),
-            seg.ups.subarray(from * 3),
-            to - from + 1,
-            plate,
-            k++ % 2 ? black : yellow,
-            seg.width.subarray(from),
-            HALF_WIDTH,
-          );
-          from = to;
-        }
+        striped(track, d, yellow, black);
       },
       cog: (d) => {
         // noted where each of the pair turns: the big one here, the small one along from it, both on the axle across
@@ -557,6 +640,100 @@ export class Scene {
           0.04,
         );
       },
+      lollipop: (d) => {
+        // a white stick up from beside the wall and in over the middle, and the sweet hanging at its end, glowing
+        const top = d.z + LOLLIPOP.height;
+        column(candyWhite, d.x, d.y, d.z - 0.3, top + 0.05, LOLLIPOP.pole, LOLLIPOP.pole, 8);
+        const over = off(0, LOLLIPOP.height);
+        beam(candyWhite, [d.x, d.y, top], over, 0.05);
+        beam(candyWhite, over, [over[0], over[1], over[2] - 0.1], 0.04);
+        // facing down the channel, at the field coming along it
+        sweets.push(over[0], over[1], over[2] - 0.1 - LOLLIPOP.disc, d.heading + Math.PI / 2, LOLLIPOP.disc, 0);
+      },
+      candyStripes: (d) => {
+        // red and white in turn, low on the wall, as the works' hazard stripes are and for the same reasons
+        striped(track, d, candyRed, candyWhite);
+      },
+      gumdrops: (d) => {
+        // a row of them along the outside of the wall, each its own colour
+        const seg = track.segments[d.segment];
+        for (let a = GUMDROPS.every / 2; a < seg.length; a += GUMDROPS.every) {
+          at(track, d.segment, a, h);
+          const [gx, gy, gz] = right(h);
+          const across = d.side * (h.w + GUMDROPS.out);
+          gumdrops.push(
+            h.x + gx * across + h.ux * (GUMDROPS.up - GUMDROPS.radius * 0.6),
+            h.y + gy * across + h.uy * (GUMDROPS.up - GUMDROPS.radius * 0.6),
+            h.z + gz * across + h.uz * (GUMDROPS.up - GUMDROPS.radius * 0.6),
+          );
+        }
+      },
+      whisk: (d) => {
+        // noted where it turns, as a cog is, and a pink plate it is fixed to behind it against the wall
+        const across = d.side * (h.w + WHISK.out);
+        const [cx, cy, cz] = right(h);
+        const o = whisks * 9;
+        this.whiskFrames.set(
+          [
+            h.x + cx * across + h.ux * WHISK.up,
+            h.y + cy * across + h.uy * WHISK.up,
+            h.z + cz * across + h.uz * WHISK.up,
+            h.tx,
+            h.ty,
+            h.tz,
+            WHISK.reach,
+            d.side,
+            0,
+          ],
+          o,
+        );
+        whisks++;
+        block(frosting, off(d.side * (h.w + WHISK.out - 0.15), WHISK.up), t, l, u, 0.16, 0.03, 0.16);
+      },
+      cane: (d) => {
+        // a candy cane's post, striped and wound, on a white foot
+        candyColumn(candyRed, candyWhite, d.x, d.y, d.z, d.z + d.height, CANE.half);
+        column(candyWhite, d.x, d.y, d.z, d.z + 0.08, CANE.half + 0.14, CANE.half + 0.14, 14);
+      },
+      giantLollipop: (d) => {
+        // a tall white stick, and a great swirled sweet on it facing the run
+        const r = GIANT.radius;
+        column(candyWhite, d.x, d.y, d.z, d.z + d.height - r, GIANT.stick, GIANT.stick, 10);
+        const toward = d.heading + (Math.PI / 2) * d.side;
+        sweets.push(d.x, d.y, d.z + d.height - r, toward - Math.PI / 2, r, 0);
+      },
+      fudgePot: (d) => {
+        // a dark pot of fudge, its rim a little proud, and its steam rising from the top
+        column(chocolate, d.x, d.y, d.z, d.z + POT.height - 0.1, POT.radius, POT.radius * 1.05, 18);
+        column(
+          chocolate,
+          d.x,
+          d.y,
+          d.z + POT.height - 0.18,
+          d.z + POT.height,
+          POT.radius * 1.12,
+          POT.radius * 1.12,
+          18,
+        );
+        column(
+          fudge,
+          d.x,
+          d.y,
+          d.z + POT.height - 0.2,
+          d.z + POT.height - 0.05,
+          POT.radius * 0.98,
+          POT.radius * 0.98,
+          18,
+        );
+      },
+      cupcake: (d) => {
+        // a paper case widening to its top, frosting piled on it, and a cherry
+        const c = CUPCAKE.radius;
+        column(paper, d.x, d.y, d.z, d.z + 0.9, c * 0.8, c, 16);
+        column(frosting, d.x, d.y, d.z + 0.9, d.z + 1.45, c * 1.05, c * 0.45, 16);
+        ball(frosting, [d.x, d.y, d.z + 1.45], c * 0.5);
+        ball(cherry, [d.x, d.y, d.z + CUPCAKE.height - 0.2], 0.2);
+      },
     };
     for (const d of dressing) {
       at(track, d.segment, d.along, h);
@@ -574,6 +751,7 @@ export class Scene {
       draw[d.kind](d);
     }
     this.cogCount = cogs;
+    this.whiskCount = whisks;
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
     const groups: GameGroup[] = [];
@@ -587,6 +765,41 @@ export class Scene {
     add(bulbs, [1, 0.93, 0.72], 0.25);
     add(yellow, [0.95, 0.72, 0.1], 0.5);
     add(black, [0.06, 0.06, 0.07], 0.6);
+    add(candyRed, [0.82, 0.05, 0.08], 0.3);
+    add(candyWhite, [0.95, 0.93, 0.9], 0.3);
+    add(chocolate, [0.2, 0.1, 0.05], 0.6);
+    add(fudge, [0.36, 0.19, 0.08], 0.35);
+    add(paper, [0.55, 0.78, 0.92], 0.75);
+    add(frosting, [1, 0.78, 0.87], 0.55);
+    add(cherry, [0.7, 0.02, 0.05], 0.2);
+    // the gumdrops, sugared, each its own colour in turn
+    if (gumdrops.length) {
+      const n = gumdrops.length / 3;
+      const at = new Float32Array(n * 16),
+        looks = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) {
+        spin(at, k, gumdrops[k * 3], gumdrops[k * 3 + 1], gumdrops[k * 3 + 2], 0, 0, 1, 0, GUMDROPS.radius);
+        looks.set([...GUM[k % GUM.length], 0.85], k * 4);
+      }
+      groups.push({ mesh: dome(0.85), matrices: at, count: n, materials: looks });
+    }
+    // the lollipops' sweets, upright and facing the way given, each a swirl of its colour and white
+    if (sweets.length) {
+      const n = sweets.length / 6;
+      const at = new Float32Array(n * 16),
+        looks = new Float32Array(n * 4),
+        swirls = new Float32Array(n * PATTERN_STRIDE);
+      for (let k = 0; k < n; k++) {
+        const [x, y, z, face, r] = sweets.slice(k * 6, k * 6 + 5);
+        // its face across `face`, upright: x along the way it faces across, z up, and its own axis y the way it faces
+        const c = Math.cos(face),
+          sn = Math.sin(face);
+        basis(at, k, x, y, z, c, sn, 0, 0, 0, 1, sn, -c, 0, r);
+        looks.set([...GUM[k % GUM.length], 0.25], k * 4);
+        swirls.set([1, 1.6, (k * 0.37) % 1, 0, 0.97, 0.95, 0.92, 0], k * PATTERN_STRIDE);
+      }
+      groups.push({ mesh: disc(0.3), matrices: at, count: n, materials: looks, patterns: swirls });
+    }
     return groups;
   }
   private cogCount = 0;
@@ -598,52 +811,22 @@ export class Scene {
    * How many of each: the cogs, the rods and the puffs. Written in place and
    * making nothing, since it is every frame.
    */
-  animate(dressing: readonly Decoration[], t: number): [number, number, number] {
+  animate(dressing: readonly Decoration[], t: number): [number, number, number, number] {
     const turn = cogTurn(t);
     for (let k = 0; k < this.cogCount; k++) {
-      const o = k * 9;
-      const r = this.cogFrames[o + 6];
       // the big one turns one way; the small one, meshed with it, the other and faster by as much as it is smaller
       const angle = k % 2 === 0 ? turn : -turn * (COG.big / COG.small) + Math.PI / 12;
-      const tx = this.cogFrames[o + 3],
-        ty = this.cogFrames[o + 4];
-      // the axle is across the way, level: its own y; the cog's x and z turn about it in the upright plane along the way
-      const flat = Math.hypot(tx, ty) || 1;
-      const ax = ty / flat,
-        ay = -tx / flat;
-      const c = Math.cos(angle),
-        s = Math.sin(angle);
-      const ex = (tx / flat) * c,
-        ey = (ty / flat) * c,
-        ez = s;
-      const fx = -(tx / flat) * s,
-        fy = -(ty / flat) * s,
-        fz = c;
-      // x, y and z make a right hand: x along the way turned, y the axle to the left, z up turned
-      basis(
-        this.cogs,
-        k,
-        this.cogFrames[o],
-        this.cogFrames[o + 1],
-        this.cogFrames[o + 2],
-        ex,
-        ey,
-        ez,
-        -ax,
-        -ay,
-        0,
-        fx,
-        fy,
-        fz,
-        r,
-      );
+      turned(this.cogs, k, this.cogFrames, angle);
     }
+    // a whisk turns faster than a cog, and each a little out of step with the next
+    for (let k = 0; k < this.whiskCount; k++) turned(this.whisks, k, this.whiskFrames, turn * 3 + k * 0.7);
     let rods = 0,
       puffs = 0;
     for (const d of dressing) {
       if (d.kind === 'piston' && rods < MOST.piston) {
         spin(this.rods, rods++, d.x, d.y, d.z + d.height - 1 + rodOut(d, t), 0, 0, 1, 0);
-      } else if (d.kind === 'chimney' && puffs < MOST.chimney * PUFFS) {
+      } else if ((d.kind === 'chimney' || d.kind === 'fudgePot') && puffs < (MOST.chimney + MOST.fudgePot) * PUFFS) {
+        const grey = d.kind === 'chimney' ? SMOKE : STEAM;
         for (let j = 0; j < PUFFS; j++) {
           const p = puffOf(d, j, t, this.puff);
           const o = puffs++ * SPRITE_STRIDE;
@@ -651,14 +834,14 @@ export class Scene {
           this.smoke[o + 1] = p[1];
           this.smoke[o + 2] = p[2];
           this.smoke[o + 3] = p[3];
-          this.smoke[o + 4] = SMOKE[0];
-          this.smoke[o + 5] = SMOKE[1];
-          this.smoke[o + 6] = SMOKE[2];
+          this.smoke[o + 4] = grey[0];
+          this.smoke[o + 5] = grey[1];
+          this.smoke[o + 6] = grey[2];
           this.smoke[o + 7] = p[4];
         }
       }
     }
-    return [this.cogCount, rods, puffs];
+    return [this.cogCount, rods, puffs, this.whiskCount];
   }
 
   /** What moves: the marbles, then the sweepers, the gates and the wheels, each pool sized once. */
@@ -691,6 +874,7 @@ export class Scene {
       // brass cogs and a steel rod in each piston; the smoke is sprites, which the renderer draws apart from these
       { mesh: cog(12, COG.thick), matrices: this.cogs, count: 0, albedo: [0.72, 0.56, 0.26], roughness: 0.35 },
       { mesh: post(0.1, 1.2), matrices: this.rods, count: 0, albedo: [0.72, 0.74, 0.78], roughness: 0.25 },
+      { mesh: whisk(), matrices: this.whisks, count: 0, albedo: [0.82, 0.83, 0.86], roughness: 0.2 },
     ];
   }
 

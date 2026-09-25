@@ -17,6 +17,7 @@ import { Game, type GameEvents, type Shelf } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { Progress, memoryStore } from '../src/progress';
 import { seeded } from '../src/random';
+import { THEMES } from '../src/track';
 
 // Rapier, which every race is raced on, loaded once before anything is played
 await RAPIER.init();
@@ -124,8 +125,9 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           game.lid();
           did('lid');
         } else if (r < 0.69) {
-          // the run dressed as a works, or made plain again, at any point in building it
-          game.dress(game.designer?.run.theme ? 'plain' : 'industrial');
+          // the run dressed as any theme, or made plain again, at any point in building it
+          const themes = ['plain', ...THEMES] as const;
+          game.dress(themes[Math.floor(random() * themes.length)]);
           did('dress');
         } else if (r < 0.8) {
           game.undo();

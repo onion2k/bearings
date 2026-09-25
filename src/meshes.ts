@@ -433,3 +433,97 @@ export function cog(teeth = 12, thick = 0.2): Mesh {
   }
   return b.build();
 }
+
+/** A gumdrop: a dome `1` round at its foot on z = 0, rising to `tall` of that, smooth, and flat underneath, for scaling. */
+export function dome(tall = 0.8, rings = 4, sides = 10): Mesh {
+  const b = new MeshBuilder();
+  const p = (i: number, j: number): V3 => {
+    const phi = (i / rings) * (Math.PI / 2),
+      th = (j / sides) * Math.PI * 2;
+    return [Math.cos(phi) * Math.cos(th), Math.cos(phi) * Math.sin(th), Math.sin(phi) * tall];
+  };
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) face(b, p(i, j), p(i, j + 1), p(i + 1, j + 1), p(i + 1, j));
+  for (let j = 0; j < sides; j++) face(b, p(0, j + 1), p(0, j), [0, 0, 0], [0, 0, 0]);
+  return b.build();
+}
+
+/** A round sweet `1` across its face and `thick` through, its face in x and y and its axis along z, for scaling. */
+export function disc(thick = 0.3, sides = 28): Mesh {
+  const b = new MeshBuilder();
+  const z = thick / 2;
+  for (let j = 0; j < sides; j++) {
+    const a0 = (j / sides) * Math.PI * 2,
+      a1 = ((j + 1) / sides) * Math.PI * 2;
+    const p = (a: number, side: number): V3 => [Math.cos(a), Math.sin(a), side];
+    face(b, p(a0, -z), p(a1, -z), p(a1, z), p(a0, z));
+    face(b, p(a0, z), p(a1, z), [0, 0, z], [0, 0, z]);
+    face(b, p(a1, -z), p(a0, -z), [0, 0, -z], [0, 0, -z]);
+  }
+  return b.build();
+}
+
+/**
+ * A whisk: its wires four loops round its axle, along y, each in a plane
+ * through the axle, reaching `1` from it and `wide` either side along it, and
+ * a knob at the middle; for turning about the axle as a cog does.
+ */
+export function whisk(wide = 0.1): Mesh {
+  const b = new MeshBuilder();
+  const steps = 20;
+  for (let k = 0; k < 4; k++) {
+    const th = (k / 4) * Math.PI;
+    const dx = Math.cos(th),
+      dz = Math.sin(th);
+    const at = (s: number): V3 => {
+      const a = (s / steps) * Math.PI * 2;
+      return [dx * Math.cos(a), Math.sin(a) * wide, dz * Math.cos(a)];
+    };
+    for (let s = 0; s < steps; s++) beam(b, at(s), at(s + 1), 0.025);
+  }
+  ball(b, [0, 0, 0], 0.12);
+  return b.build();
+}
+
+/**
+ * A post from `z0` up to `z1` at `x`, `y`, `r` round, striped as a candy cane
+ * is, the stripes wound round it as they climb: the first colour's into `a`
+ * and the second's into `b`, `stripes` of each. Each stripe is a strip that
+ * follows the helix itself, so its edge is a smooth spiral however coarsely
+ * the post is cut along its height: cut into fine rows and coloured a face at
+ * a time, a tall run's posts came to nearly a million triangles.
+ */
+export function candyColumn(
+  a: MeshBuilder,
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z0: number,
+  z1: number,
+  r: number,
+  stripes = 2,
+) {
+  const across = 3;
+  const rows = Math.max(1, Math.ceil((z1 - z0) / 0.5));
+  // a turn every three units, gently enough to read as a cane's stripe and not a screw thread
+  const twist = (Math.PI * 2) / 3;
+  const width = Math.PI / stripes;
+  const p = (angle: number, z: number): V3 => [x + Math.cos(angle) * r, y + Math.sin(angle) * r, z];
+  for (let s = 0; s < stripes * 2; s++) {
+    const into = s % 2 === 0 ? a : b;
+    for (let i = 0; i < rows; i++) {
+      const za = z0 + ((z1 - z0) * i) / rows,
+        zb = z0 + ((z1 - z0) * (i + 1)) / rows;
+      for (let j = 0; j < across; j++) {
+        const t0 = s * width + (width * j) / across,
+          t1 = s * width + (width * (j + 1)) / across;
+        face(into, p(t0 + za * twist, za), p(t1 + za * twist, za), p(t1 + zb * twist, zb), p(t0 + zb * twist, zb));
+      }
+    }
+  }
+  for (let j = 0; j < stripes * 2 * across; j++) {
+    const t0 = (j / (stripes * 2 * across)) * Math.PI * 2 + z1 * twist,
+      t1 = ((j + 1) / (stripes * 2 * across)) * Math.PI * 2 + z1 * twist;
+    face(b, p(t0, z1), p(t1, z1), [x, y, z1], [x, y, z1]);
+  }
+}

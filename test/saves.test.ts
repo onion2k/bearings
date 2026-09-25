@@ -36,6 +36,8 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '06-lanes.json': { races: 64, run: 'design-2', bests: { 'first-drop-3': 2.74, 'design-1': 3.1, 'design-2': 3.4 } },
   // written when a design could be dressed: one dressed as a works, one left plain, and a best on each run
   '07-themes.json': { races: 12, run: 'design-1', bests: { 'first-drop-3': 2.74, 'design-1': 3.2 } },
+  // written when a design could be dressed as a sweet factory as well as a works: one of each, the sweet one on
+  '08-sweets.json': { races: 20, run: 'design-2', bests: { 'first-drop-3': 2.74, 'design-1': 3.2, 'design-2': 3.3 } },
 };
 
 describe('saves from every shape the game has written', () => {
@@ -96,6 +98,14 @@ describe('saves from every shape the game has written', () => {
     expect('theme' in plain).toBe(false);
     expect(game.current.id).toBe('design-1');
     expect(game.decor.length).toBeGreaterThan(0);
+    expect(checkInvariants(game)).toEqual([]);
+  });
+
+  it('brings back a design dressed as a sweet factory beside one dressed as a works, and puts it on dressed so', () => {
+    const game = new Game(RAPIER, new Progress(memoryStore(read('08-sweets.json'))), {}, { random: seeded(7) });
+    expect(game.progress.save.designs.map((d) => d.theme)).toEqual(['industrial', 'sweets']);
+    expect(game.current.id).toBe('design-2');
+    expect(game.decor.map((d) => d.kind)).toContain('lollipop');
     expect(checkInvariants(game)).toEqual([]);
   });
 

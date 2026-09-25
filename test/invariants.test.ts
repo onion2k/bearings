@@ -194,6 +194,13 @@ describe('what must always hold of what a run is dressed with', () => {
     game.decor = other;
     expect(checkInvariants(game).join('\n')).toMatch(/stands [\d.]+ from it/);
 
+    // a sweet factory's thing on a works
+    const lollipop = { ...lamp, kind: 'lollipop' as DecorKind };
+    game.decor = [lollipop];
+    expect(checkInvariants(game).join('\n')).toMatch(
+      /is dressed as industrial, and has a lollipop, which is another theme's/,
+    );
+
     game.decor = dressing;
     game.browse('pieces');
     expect(checkInvariants(game)).toEqual([]);

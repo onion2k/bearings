@@ -647,6 +647,16 @@ test('a run dressed as a works while it is built, made plain and dressed again, 
   expect(dressed.kinds.stripes, 'stripes by the sweeper').toBeGreaterThan(0);
   await plain.click();
   expect(Object.values((await decor()).kinds).every((n) => n === 0)).toBe(true);
+  // the sweet factory in place of the works, with the sweet factory's own things and none of the works'
+  const sweets = page.locator('#themes [data-theme="sweets"]');
+  await sweets.click();
+  await expect(sweets).toHaveAttribute('aria-pressed', 'true');
+  await expect(works).toHaveAttribute('aria-pressed', 'false');
+  const sweet = await decor();
+  expect(sweet.theme).toBe('sweets');
+  expect(sweet.kinds.candyStripes, 'candy stripes by the sweeper').toBeGreaterThan(0);
+  expect(sweet.kinds.stripes).toBe(0);
+  expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);
   await works.click();
   expect(await decor()).toEqual(dressed);
   expect(await page.evaluate(() => window.game!.invariants())).toEqual([]);

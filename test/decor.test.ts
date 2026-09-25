@@ -9,15 +9,35 @@ import { describe, expect, it } from 'vitest';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { PIECES } from '../src/catalog';
 import { SPRITE_STRIDE } from 'artshape-render/game/particles';
-import { DECOR_KINDS, type Decoration, LAMP, MOST, PUFFS, SMOKE_THICK, bulbOf, dress } from '../src/decor';
+import {
+  DECOR_KINDS,
+  type DecorKind,
+  type Decoration,
+  LAMP,
+  MOST,
+  PUFFS,
+  SMOKE_THICK,
+  THEME_KINDS,
+  bulbOf,
+  dress,
+} from '../src/decor';
 import { sphere } from '../src/meshes';
 import { Designer, PALETTE } from '../src/designer';
 import { seeded } from '../src/random';
 import { RUNS } from '../src/runs';
 import { Scene, boxOf } from '../src/scene';
-import { type Run, type Track, bowlHeight, check, compile } from '../src/track';
+import { THEMES, type Run, type Theme, type Track, bowlHeight, check, compile } from '../src/track';
 
-const industrial = (run: Run): Run => ({ ...run, theme: 'industrial' });
+const themed =
+  (theme: Theme) =>
+  (run: Run): Run => ({ ...run, theme });
+/** What stands on its own on the ground beside a run, in every theme. */
+const STANDING: readonly DecorKind[] = ['chimney', 'tank', 'giantLollipop', 'fudgePot', 'cupcake'];
+/** What hangs over the channel from a pole beside it, in every theme. */
+const HANGING: readonly DecorKind[] = ['lamp', 'lollipop'];
+/** Every sort of run the tests dress, in every theme: the catalog's pieces, a folded run and designs laid at random. */
+const everyTheme = (seed: number) =>
+  THEMES.flatMap((theme) => [...PIECES.map(themed(theme)), folded(theme), ...designs(seed, 16, theme)]);
 const plain = (run: Run): Run => {
   const { theme, ...rest } = run;
   void theme;
@@ -29,7 +49,7 @@ const dressed = (run: Run) => {
 };
 
 /** Designs laid at random from `seed` and kept only where sound, each dressed. */
-function designs(seed: number, count: number): Run[] {
+function designs(seed: number, count: number, theme: Theme = 'industrial'): Run[] {
   const random = seeded(seed);
   const out: Run[] = [];
   while (out.length < count) {
@@ -39,7 +59,7 @@ function designs(seed: number, count: number): Run[] {
       d.place(kinds[Math.floor(random() * kinds.length)]);
     }
     d.place('finish');
-    if (check(d.run).length === 0) out.push(industrial({ ...d.run, id: `random-${out.length}` }));
+    if (check(d.run).length === 0) out.push({ ...d.run, id: `random-${theme}-${out.length}`, theme });
   }
   return out;
 }
@@ -50,7 +70,7 @@ function designs(seed: number, count: number): Run[] {
  * until one did with the lamps not tried for room, since no run that comes
  * with the game does.
  */
-function folded(): Run {
+function folded(theme: Theme = 'industrial'): Run {
   const d = new Designer('Folded');
   const kinds = [
     ...(['wheel', 'shallowWide', 'shallowWide', 'curveLeft', 'curveLeft', 'curveLeft', 'curveRight'] as const),
@@ -58,7 +78,7 @@ function folded(): Run {
   ];
   for (const k of kinds) expect(d.place(k), k).toBe(true);
   expect(check(d.run)).toEqual([]);
-  return industrial({ ...d.run, id: 'folded' });
+  return { ...d.run, id: `folded-${theme}`, theme };
 }
 
 describe('dressing a run', () => {
@@ -66,16 +86,35 @@ describe('dressing a run', () => {
     for (const run of RUNS) expect(dressed(plain(run)).items, run.id).toEqual([]);
   });
 
-  it('dresses every run that comes with the game, and between them uses every kind', () => {
-    const seen = new Set<string>();
-    for (const run of RUNS) {
-      expect(run.theme, run.id).toBe('industrial');
-      const { items } = dressed(run);
-      const kinds = new Set(items.map((d) => d.kind));
-      for (const k of ['lamp', 'girder', 'stripes'] as const) expect(kinds.has(k), `${run.id} has a ${k}`).toBe(true);
-      for (const k of kinds) seen.add(k);
+  it('has every kind in one theme and one only', () => {
+    const all = THEMES.flatMap((t) => THEME_KINDS[t]);
+    expect([...all].sort()).toEqual([...DECOR_KINDS].sort());
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('dresses every run that comes with the game, some as each theme, and each theme uses every kind it has', () => {
+    for (const theme of THEMES)
+      expect(
+        RUNS.some((r) => r.theme === theme),
+        `a run dressed as ${theme}`,
+      ).toBe(true);
+    for (const theme of THEMES) {
+      const seen = new Set<string>();
+      for (const run of [...RUNS.filter((r) => r.theme === theme), ...PIECES.map(themed(theme))]) {
+        const kinds = new Set(dressed(run).items.map((d) => d.kind));
+        for (const k of kinds) seen.add(k);
+      }
+      expect([...seen].sort(), theme).toEqual([...THEME_KINDS[theme]].sort());
     }
-    expect([...seen].sort()).toEqual([...DECOR_KINDS].sort());
+    for (const run of RUNS) {
+      const kinds = new Set(dressed(run).items.map((d) => d.kind));
+      expect(kinds.size, `${run.id} is dressed with several kinds`).toBeGreaterThan(3);
+    }
+  });
+
+  it("dresses a run with its own theme's kinds and no other", () => {
+    for (const run of [...RUNS, ...everyTheme(5)])
+      for (const d of dressed(run).items) expect(THEME_KINDS[run.theme!], `${run.id}: a ${d.kind}`).toContain(d.kind);
   });
 
   it('dresses the same run the same way every time', () => {
@@ -83,7 +122,7 @@ describe('dressing a run', () => {
   });
 
   it('keeps each kind within its ceiling, however long the run', () => {
-    for (const run of [...RUNS, ...designs(7, 12)]) {
+    for (const run of [...RUNS, ...designs(7, 12), ...designs(7, 12, 'sweets')]) {
       const { items } = dressed(run);
       for (const kind of DECOR_KINDS)
         expect(items.filter((d) => d.kind === kind).length, `${run.id}: ${kind}s`).toBeLessThanOrEqual(MOST[kind]);
@@ -91,7 +130,7 @@ describe('dressing a run', () => {
   });
 
   it('keeps everything inside the box the run is framed and shadowed by', () => {
-    for (const run of [...RUNS, ...designs(8, 12)]) {
+    for (const run of [...RUNS, ...designs(8, 12), ...designs(8, 12, 'sweets')]) {
       const { track, items } = dressed(run);
       const box = boxOf(track);
       for (const d of items)
@@ -105,15 +144,14 @@ describe('dressing a run', () => {
     }
   });
 
-  it('stands no chimney or tank close by a bowl, where it would come between the camera and the field', () => {
+  it('stands nothing on its own close by a bowl, where it would come between the camera and the field', () => {
     let near = 0;
-    for (const run of [...RUNS, ...designs(10, 16)]) {
+    for (const run of [...RUNS, ...designs(10, 16), ...designs(10, 16, 'sweets')]) {
       const { track, items } = dressed(run);
       for (const seg of track.segments) {
         const b = seg.funnel;
         if (!b) continue;
-        for (const d of items)
-          if ((d.kind === 'chimney' || d.kind === 'tank') && Math.hypot(d.x - b.x, d.y - b.y) < b.rim + 3) near++;
+        for (const d of items) if (STANDING.includes(d.kind) && Math.hypot(d.x - b.x, d.y - b.y) < b.rim + 3) near++;
       }
     }
     expect(near).toBe(0);
@@ -291,8 +329,8 @@ function surface(group: GameGroup, visit: (x: number, y: number, z: number) => b
  * the camera is and any of it may be where a marble goes.
  */
 function moving(scene: Scene, items: Decoration[], t: number): GameGroup[] {
-  const [cogs, rods, puffs] = scene.animate(items, t);
-  const [cogGroup, rodGroup] = scene.dynamic().slice(5);
+  const [cogs, rods, puffs, whisks] = scene.animate(items, t);
+  const [cogGroup, rodGroup, whiskGroup] = scene.dynamic().slice(5);
   const smoke = new Float32Array(Math.max(1, puffs) * 16);
   for (let k = 0; k < puffs; k++) {
     const o = k * SPRITE_STRIDE;
@@ -302,6 +340,7 @@ function moving(scene: Scene, items: Decoration[], t: number): GameGroup[] {
   return [
     { ...cogGroup, count: cogs },
     { ...rodGroup, count: rods },
+    { ...whiskGroup, count: whisks },
     { mesh: sphere(1, 8, 12), matrices: smoke, count: puffs },
   ];
 }
@@ -310,7 +349,7 @@ describe('what a run is dressed with, drawn', () => {
   it('puts nothing where a marble can be, on every run, every piece of the catalog and designs laid at random', () => {
     const scene = new Scene();
     let tried = 0;
-    for (const run of [...RUNS, ...PIECES.map(industrial), folded(), ...designs(9, 16)]) {
+    for (const run of [...RUNS, ...everyTheme(9)]) {
       const { track, items } = dressed(run);
       const inside = where(track);
       const still = scene.decor(track, items);
@@ -334,9 +373,9 @@ describe('what a run is dressed with, drawn', () => {
 
   it("keeps a lamp's arm a hand's width off every channel, its own included, and not only out of where a marble goes", () => {
     let arms = 0;
-    for (const run of [...RUNS, folded(), ...designs(9, 16)]) {
+    for (const run of [...RUNS, ...THEMES.flatMap((t) => [folded(t), ...designs(9, 16, t)])]) {
       const { track, items } = dressed(run);
-      for (const lamp of items.filter((d) => d.kind === 'lamp')) {
+      for (const lamp of items.filter((d) => HANGING.includes(d.kind))) {
         const bulb = bulbOf(track, lamp, [0, 0, 0]);
         arms++;
         // the arm from the pole's top in over the middle, and the shade and bulb hanging under its end
@@ -363,40 +402,45 @@ describe('what a run is dressed with, drawn', () => {
     expect(arms).toBeGreaterThan(20);
   });
 
-  it('draws something for every kind', () => {
-    const scene = new Scene();
-    const { track, items } = dressed(RUNS.find((r) => r.id.startsWith('stress'))!);
-    const still = scene.decor(track, items);
-    const counts = scene.animate(items, 0);
-    expect(still.length).toBeGreaterThan(0);
-    expect(
-      counts.every((n) => n > 0),
-      `cogs, rods and puffs: ${counts.join(', ')}`,
-    ).toBe(true);
+  it('draws something for every kind, in every theme', () => {
+    const stress = RUNS.find((r) => r.id.startsWith('stress'))!;
+    for (const theme of THEMES) {
+      const scene = new Scene();
+      const { track, items } = dressed(themed(theme)(stress));
+      const still = scene.decor(track, items);
+      const [cogs, rods, puffs, whisks] = scene.animate(items, 0);
+      expect(still.length, theme).toBeGreaterThan(0);
+      expect(puffs, `${theme}: smoke`).toBeGreaterThan(0);
+      if (theme === 'industrial') expect(cogs * rods, 'cogs and rods').toBeGreaterThan(0);
+      else expect(whisks, 'whisks').toBeGreaterThan(0);
+    }
   });
 
   it('draws the smoke as translucent puffs, thinning as each rises and swells', () => {
     const scene = new Scene();
-    const { track, items } = dressed(RUNS.find((r) => r.id.startsWith('stress'))!);
-    scene.decor(track, items);
-    const chimneys = items.filter((d) => d.kind === 'chimney').length;
-    expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(7);
-    for (const t of [0.4, 2.2, 5.1]) {
-      const [, , puffs] = scene.animate(items, t);
-      expect(puffs).toBe(chimneys * PUFFS);
-      for (let c = 0; c < chimneys; c++) {
-        const own = Array.from({ length: PUFFS }, (_, j) => {
-          const o = (c * PUFFS + j) * SPRITE_STRIDE;
-          return { z: scene.smoke[o + 2], size: scene.smoke[o + 3], alpha: scene.smoke[o + 7] };
-        }).sort((a, b) => a.z - b.z);
-        for (const p of own) {
-          expect(p.alpha, 'see-through').toBeLessThan(0.7);
-          expect(p.alpha).toBeGreaterThanOrEqual(0);
-        }
-        // above the first, which is still thickening as it leaves the chimney, each is thinner and bigger than the last
-        for (let k = 2; k < own.length; k++) {
-          expect(own[k].alpha, `puff ${k} at ${t} s`).toBeLessThan(own[k - 1].alpha);
-          expect(own[k].size).toBeGreaterThan(own[k - 1].size);
+    for (const theme of THEMES) {
+      const { track, items } = dressed(themed(theme)(RUNS.find((r) => r.id.startsWith('stress'))!));
+      scene.decor(track, items);
+      const chimneys = items.filter((d) => d.kind === 'chimney' || d.kind === 'fudgePot').length;
+      expect(chimneys, `${theme}: something smokes`).toBeGreaterThan(0);
+      expect(scene.dynamic().length, 'no solid puffs among what moves').toBe(8);
+      for (const t of [0.4, 2.2, 5.1]) {
+        const [, , puffs] = scene.animate(items, t);
+        expect(puffs).toBe(chimneys * PUFFS);
+        for (let c = 0; c < chimneys; c++) {
+          const own = Array.from({ length: PUFFS }, (_, j) => {
+            const o = (c * PUFFS + j) * SPRITE_STRIDE;
+            return { z: scene.smoke[o + 2], size: scene.smoke[o + 3], alpha: scene.smoke[o + 7] };
+          }).sort((a, b) => a.z - b.z);
+          for (const p of own) {
+            expect(p.alpha, 'see-through').toBeLessThan(0.7);
+            expect(p.alpha).toBeGreaterThanOrEqual(0);
+          }
+          // above the first, which is still thickening as it leaves the chimney, each is thinner and bigger than the last
+          for (let k = 2; k < own.length; k++) {
+            expect(own[k].alpha, `puff ${k} at ${t} s`).toBeLessThan(own[k - 1].alpha);
+            expect(own[k].size).toBeGreaterThan(own[k - 1].size);
+          }
         }
       }
     }
@@ -404,22 +448,26 @@ describe('what a run is dressed with, drawn', () => {
 
   it('moves with the clock and stands still without it', () => {
     const scene = new Scene();
-    const { track, items } = dressed(RUNS.find((r) => r.id.startsWith('stress'))!);
-    // the cogs turn where the standing dressing last put them
-    scene.decor(track, items);
-    const at = (t: number) => {
-      scene.animate(items, t);
-      return [
-        ...scene
-          .dynamic()
-          .slice(5)
-          .map((g) => Array.from(g.matrices)),
-        Array.from(scene.smoke),
-      ];
-    };
-    const first = at(2);
-    expect(at(2)).toEqual(first);
-    const later = at(2.5);
-    later.forEach((m, k) => expect(m, `group ${k} moved`).not.toEqual(first[k]));
+    for (const theme of THEMES) {
+      const { track, items } = dressed(themed(theme)(RUNS.find((r) => r.id.startsWith('stress'))!));
+      // the cogs turn where the standing dressing last put them
+      scene.decor(track, items);
+      const at = (t: number) => {
+        scene.animate(items, t);
+        return [
+          ...scene
+            .dynamic()
+            .slice(5)
+            .map((g) => Array.from(g.matrices)),
+          Array.from(scene.smoke),
+        ];
+      };
+      const first = at(2);
+      expect(at(2)).toEqual(first);
+      const later = at(2.5);
+      // what the theme has moves: the cogs and rods of the works, the whisks of the sweet factory, and the smoke of both
+      const moves = theme === 'industrial' ? [0, 1, 3] : [2, 3];
+      for (const k of moves) expect(later[k], `${theme}: group ${k} moved`).not.toEqual(first[k]);
+    }
   });
 });
