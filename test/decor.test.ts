@@ -23,6 +23,7 @@ import {
   PUFFS,
   SMOKE_THICK,
   THEME_KINDS,
+  WORLDS,
   bulbOf,
   dress,
 } from '../src/decor';
@@ -89,6 +90,12 @@ function folded(theme: Theme = 'industrial'): Run {
 describe('dressing a run', () => {
   it('leaves a plain run bare', () => {
     for (const run of RUNS) expect(dressed(plain(run)).items, run.id).toEqual([]);
+  });
+
+  it('draws a sweet factory as a cartoon, with its colours straight, and the works and plain as real surfaces', () => {
+    expect(WORLDS.sweets.shading).toBe('toon');
+    expect(WORLDS.industrial.shading).toBe('pbr');
+    expect(WORLDS.plain.shading).toBe('pbr');
   });
 
   it('has every kind in one theme and one only', () => {

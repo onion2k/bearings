@@ -320,9 +320,12 @@ What to copy the shape of, when building something new:
   every third piece where the lamps are not, a chain of tubes whose stripes
   carry on round it: each tube's seed turns the swirl by as far along the
   chain as it begins). A theme has a world too (`WORLDS`): a sweet factory's
-  pale blue sky, a daylight environment for what it reflects, a stronger
-  sun and less of the sky's untinted light, since that washed every candy
-  colour to grey, and no vignette; `main.ts` applies it at every rebuild,
+  pale blue sky, a daylight environment for what it reflects, and toon
+  shading (`shading: 'toon'`, artshape-render 0.18's `look.shading` and
+  `post.tone = 'clamp'`): lit in three flat bands at every candy's own
+  colour and shown straight, where the physically based light took a
+  quarter of each colour, added the sky's light grey over it and ran it
+  through a filmic curve that pulled it all to mauve; and no vignette; `main.ts` applies it at every rebuild,
   and `sky()` in the test API reads it. The works and plain keep the dark.
   A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
   ground and a river under everything, frosted mountains in pastel bands

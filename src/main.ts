@@ -189,7 +189,11 @@ async function main() {
     // the world the run is in: its sky, and the light, as its theme has them
     const world = WORLDS[(game.designer?.run ?? game.current).theme ?? 'plain'];
     // a candy world is bright and clean: no darkened corners, which in a pale sky read as a grey haze
-    renderer.post = { ...renderer.post, vignette: world.env === 'daylight' ? 0 : DEFAULT_POST.vignette };
+    renderer.post = {
+      ...renderer.post,
+      vignette: world.env === 'daylight' ? 0 : DEFAULT_POST.vignette,
+      tone: world.shading === 'toon' ? 'clamp' : 'filmic',
+    };
     if (world.env !== reflecting) {
       reflecting = world.env;
       const env = envs[world.env];
@@ -201,6 +205,7 @@ async function main() {
       sunColour: world.sunColour,
       exposure: world.exposure,
       ambient: world.ambient,
+      shading: world.shading,
     };
     const box = boxOf(game.track);
     renderer.setSunShadow(box);

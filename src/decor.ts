@@ -134,6 +134,8 @@ export const FLAT: readonly DecorKind[] = ['ground', 'river'];
  */
 export interface World {
   sky: [number, number, number];
+  /** How it is shaded: as real surfaces are, or as a cartoon is, flat and bright, with its colours shown straight. */
+  shading: 'pbr' | 'toon';
   /** The sky it reflects: a grey studio for the works' dark, a blue day for a candy world. */
   env: 'studio' | 'daylight';
   sunColour: [number, number, number];
@@ -141,11 +143,32 @@ export interface World {
   ambient: number;
 }
 export const WORLDS: Record<Theme | 'plain', World> = {
-  plain: { sky: [0.04, 0.04, 0.05], env: 'studio', sunColour: [1, 0.96, 0.9], exposure: 1.1, ambient: 0.65 },
-  industrial: { sky: [0.04, 0.04, 0.05], env: 'studio', sunColour: [1, 0.96, 0.9], exposure: 1.1, ambient: 0.65 },
-  // a clear blue sky reflected in everything, and a warm light: less of the sky's own light than the works have, since
-  // what it adds untinted is what washed every candy colour out to grey
-  sweets: { sky: [0.45, 0.72, 0.98], env: 'daylight', sunColour: [2.6, 2.5, 2.35], exposure: 1.0, ambient: 0.3 },
+  plain: {
+    sky: [0.04, 0.04, 0.05],
+    shading: 'pbr',
+    env: 'studio',
+    sunColour: [1, 0.96, 0.9],
+    exposure: 1.1,
+    ambient: 0.65,
+  },
+  industrial: {
+    sky: [0.04, 0.04, 0.05],
+    shading: 'pbr',
+    env: 'studio',
+    sunColour: [1, 0.96, 0.9],
+    exposure: 1.1,
+    ambient: 0.65,
+  },
+  // a clear blue sky reflected in everything, drawn as a cartoon is: in flat bands at every candy's own colour, and
+  // the colours shown straight, where the physically based light and its filmic curve washed them all to grey
+  sweets: {
+    sky: [0.45, 0.72, 0.98],
+    shading: 'toon',
+    env: 'daylight',
+    sunColour: [2.5, 2.45, 2.35],
+    exposure: 1.0,
+    ambient: 1.0,
+  },
 };
 
 /** The things that light the run, and the colour of their light: a works' lamps warm, a sweet factory's lollipops pink. */
