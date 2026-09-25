@@ -8,7 +8,7 @@ import { createContext } from 'artshape-render/gpu/context';
 import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { LightPool } from 'artshape-render/game/lights';
-import { GameRenderer } from 'artshape-render/game/renderer';
+import { DEFAULT_POST, GameRenderer } from 'artshape-render/game/renderer';
 import { createApi } from './debug';
 import { MAX_SLOTS } from './cameras';
 import { captionOf, nameOf, swatchOf } from './field';
@@ -22,7 +22,7 @@ import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
 import { HALF_WIDTH, type Kind, type Theme } from './track';
-import { LIGHTS, bulbOf } from './decor';
+import { LIGHTS, WORLDS, bulbOf } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -111,11 +111,17 @@ async function main() {
     ambient: 0.65,
     background: [0.04, 0.04, 0.05],
   };
-  const env = bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 });
-  renderer.setEnvironment(env.specular, env.brdf, env.mips);
+  // both skies a world can reflect, baked once here and switched between as a run is put on
+  const envs = {
+    studio: bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 }),
+    daylight: bakeEnvironment(ctx, 'daylight', { size: 128, mips: 6 }),
+  };
+  let reflecting: keyof typeof envs = 'studio';
+  renderer.setEnvironment(envs.studio.specular, envs.studio.brdf, envs.studio.mips);
   renderer.camera.fov = 40;
   renderer.camera.near = 1;
-  renderer.camera.far = 600;
+  // far enough to see a sweet factory's mountains from a phone's framing, which stands furthest back
+  renderer.camera.far = 3000;
 
   // ---- the game, and what it says has happened ----
 
@@ -180,6 +186,22 @@ async function main() {
   const home: [number, number, number] = [0, 0, 0];
   const rebuild = () => {
     renderer.setStatic(scene.static(game.track, game.decor));
+    // the world the run is in: its sky, and the light, as its theme has them
+    const world = WORLDS[(game.designer?.run ?? game.current).theme ?? 'plain'];
+    // a candy world is bright and clean: no darkened corners, which in a pale sky read as a grey haze
+    renderer.post = { ...renderer.post, vignette: world.env === 'daylight' ? 0 : DEFAULT_POST.vignette };
+    if (world.env !== reflecting) {
+      reflecting = world.env;
+      const env = envs[world.env];
+      renderer.setEnvironment(env.specular, env.brdf, env.mips);
+    }
+    renderer.look = {
+      ...renderer.look,
+      background: world.sky,
+      sunColour: world.sunColour,
+      exposure: world.exposure,
+      ambient: world.ambient,
+    };
     const box = boxOf(game.track);
     renderer.setSunShadow(box);
     const mid: [number, number, number] = [
@@ -750,6 +772,7 @@ async function main() {
     resplit,
     measureFrame,
     chase: () => [cam.target[0], cam.target[1], cam.target[2]],
+    sky: () => [...renderer.look.background] as [number, number, number],
     events: eventLog,
   });
 

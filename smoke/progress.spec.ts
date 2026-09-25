@@ -630,6 +630,14 @@ test('a run dressed as a works while it is built, made plain and dressed again, 
   const plain = page.locator('#themes [data-theme="plain"]'),
     works = page.locator('#themes [data-theme="industrial"]');
 
+  // the world follows the run: a sweet factory's blue sky, and the works' dark again after it
+  const sky = () => page.evaluate(() => window.game!.sky());
+  await page.evaluate(() => window.game!.pick(2));
+  expect((await decor()).theme).toBe('sweets');
+  expect((await sky())[2], 'a blue sky').toBeGreaterThan(0.9);
+  await page.evaluate(() => window.game!.pick(0));
+  expect((await sky())[2], 'the works in the dark').toBeLessThan(0.1);
+
   // the runs that come with the game are dressed, and the catalog's pieces are not
   expect((await decor()).theme).toBe('industrial');
   expect((await decor()).kinds.lamp).toBeGreaterThan(0);

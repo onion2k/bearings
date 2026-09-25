@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { type DecorKind, MOST } from '../src/decor';
 import { MAX_DESIGNS } from '../src/designer';
 import { checkInvariants } from '../src/invariants';
+import { boxOf } from '../src/track';
 import { FINISHED, RACING } from '../src/race';
 import { newGame, race, settle } from './helpers';
 
@@ -200,6 +201,20 @@ describe('what must always hold of what a run is dressed with', () => {
     expect(checkInvariants(game).join('\n')).toMatch(
       /is dressed as industrial, and has a lollipop, which is another theme's/,
     );
+
+    // a mountain of a sweet factory moved in over the run, where it would stand between the camera and the field
+    game.pick(2);
+    const sweet = game.decor;
+    const mountain = sweet.find((d) => d.kind === 'mountain')!;
+    const box = boxOf(game.track);
+    game.decor = [
+      ...sweet.filter((d) => d !== mountain),
+      { ...mountain, x: (box.min[0] + box.max[0]) / 2, y: box.min[1] },
+    ];
+    expect(checkInvariants(game).join('\n')).toMatch(/a mountain [-\d.]+ past the run's reach/);
+    game.decor = sweet;
+    expect(checkInvariants(game)).toEqual([]);
+    game.pick(0);
 
     game.decor = dressing;
     game.browse('pieces');

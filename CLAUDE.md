@@ -309,12 +309,31 @@ What to copy the shape of, when building something new:
   take the place of a works' and are placed by the same rule, so their room
   is the room already tested: lollipop lamps (the lamps, lit pink, `LIGHTS`),
   candy stripes (the stripes), gumdrops (every other piece, where pipes go
-  on every fourth), whisks (the cogs), candy-cane posts (the girders, the
-  stripes wound as helical strips, since cut into fine rows they came to
-  nearly a million triangles on a tall run), giant lollipops (the chimneys,
-  their swirls the renderer's pattern), pots of fudge steaming pink (the
-  chimneys' smoke, lower: `SMOKES`, `POT_STEAM`) and cupcakes (the tanks).
-  The Tower and The Leap are sweet factories, the other six works. A works:
+  on every fourth), whisks (the cogs), candy-cane posts (the girders: one smooth tube each, which may be
+  stretched along its length since its normals point straight out from its
+  axis, striped by the renderer's swirl scaled by its length so the stripes
+  climb as fast whatever its height; built as geometry they read as a
+  checkerboard and cost nearly a million triangles on a tall run), giant
+  lollipops swirled by the renderer's pattern (the chimneys), pots of fudge
+  steaming pink (the chimneys' smoke, lower: `SMOKES`, `POT_STEAM`),
+  cupcakes (the tanks), and candy-cane arches over the channel (`arches`,
+  every third piece where the lamps are not, a chain of tubes whose stripes
+  carry on round it: each tube's seed turns the swirl by as far along the
+  chain as it begins). A theme has a world too (`WORLDS`): a sweet factory's
+  pale blue sky, a daylight environment for what it reflects, a stronger
+  sun and less of the sky's untinted light, since that washed every candy
+  colour to grey, and no vignette; `main.ts` applies it at every rebuild,
+  and `sky()` in the test API reads it. The works and plain keep the dark.
+  A sweet factory's backdrop (`backdrop`, `SCENERY`, `FLAT`) is a pink
+  ground and a river under everything, frosted mountains in pastel bands
+  (the renderer's bands pattern, and a frosting mesh), castle towers with
+  swirled roofs, chocolate cone trees, clouds, and donuts, pretzels and cakes
+  strewn just past the run in proportion to its reach, all from a chance
+  seeded by the run's own shape. It is held by `sceneryClear` and a rule:
+  nothing nearer the run's middle than its reach and 6, and no top over a
+  line rising 0.6 from the run's lowest point past its reach, under the
+  0.73 the framing camera looks down at, so none of it can stand between
+  the camera and the run however far back it is. The Tower and The Leap are sweet factories, the other six works. A works:
   lamps on poles with an arm over the channel, copper pipes along a wall,
   meshing cogs on one, pistons pumping beside one, hazard stripes low on the
   walls where the field is let go, something moves and the race is won,

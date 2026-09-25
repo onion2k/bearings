@@ -20,7 +20,7 @@
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import type { Game } from './game';
-import { DECOR_KINDS, MOST, THEME_KINDS } from './decor';
+import { DECOR_KINDS, FLAT, MOST, SCENERY, THEME_KINDS, sceneryClear } from './decor';
 import { MAX_DESIGNS } from './designer';
 import { FINISHED, WAITING } from './race';
 import { at, checkTrack, spot } from './track';
@@ -132,7 +132,11 @@ export function checkInvariants(game: Game): string[] {
         track.segments[d.segment].piece !== d.piece
       )
         out.push(`a ${d.kind} stands by piece ${d.piece}, segment ${d.segment}, which ${on.name} has not got`);
-      else {
+      else if (SCENERY.includes(d.kind) || FLAT.includes(d.kind)) {
+        // the backdrop stands far off on purpose, and is held to keeping out of the way instead
+        const wrong = sceneryClear(track, d);
+        if (wrong) out.push(`${on.name}: ${wrong}`);
+      } else {
         // nothing is dressed further from the segment it stands by than a chimney beside a chute: a dressing worked out
         // for another run whose numbers happen to fit this one stands wherever that run was
         const h = at(track, d.segment, Math.min(d.along, track.segments[d.segment].length), here);

@@ -21,7 +21,6 @@ import {
   beam,
   block,
   bowl as bowlMesh,
-  candyColumn,
   cog,
   column,
   cone,
@@ -30,13 +29,22 @@ import {
   lattice,
   mound,
   sphere,
+  frosting,
+  smoothCone,
   sweep,
+  torus,
+  tube,
   wheel,
   whisk,
+  face,
 } from './meshes';
 import {
+  ARCH,
+  CAKE,
   CANE,
   CHIMNEY,
+  DONUT,
+  PRETZEL,
   COG,
   CUPCAKE,
   GIANT,
@@ -207,6 +215,160 @@ function striped(track: Track, d: Decoration, first: MeshBuilder, second: MeshBu
     );
     from = to;
   }
+}
+
+/** Floats a tube in a chain: where it begins, which way it goes, how long, how round, how far along its chain, and its sweet. */
+const TUBE = 10;
+/** The sweets a tube can be: a candy cane's stripes, red wound round white, and baked pretzel brown with no pattern. */
+const CANDY = 0,
+  BAKED = 1;
+
+/** A chain of tubes through `path`, `r` round, each overlapping the next by its roundness so no gap shows at a bend. */
+function chain(tubes: number[], path: readonly V3[], r: number, sweet: number) {
+  let along = 0;
+  for (let k = 0; k + 1 < path.length; k++) {
+    const [ax, ay, az] = path[k],
+      [bx, by, bz] = path[k + 1];
+    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    const dx = (bx - ax) / len,
+      dy = (by - ay) / len,
+      dz = (bz - az) / len;
+    const start = k === 0 ? 0 : r * 0.5;
+    tubes.push(ax - dx * start, ay - dy * start, az - dz * start, dx, dy, dz, len + start, r, along - start, sweet);
+    along += len;
+  }
+}
+
+/**
+ * Every tube, one placement each, stretched to its length along its axis,
+ * which only a tube may be: a candy one striped by the renderer's swirl round
+ * its axis, the stripes climbing as fast in the world whatever the tube's
+ * length, and turned on by as far along its chain as it begins, so they carry
+ * on from one tube into the next.
+ */
+function tubeGroup(tubes: number[]): GameGroup {
+  const n = tubes.length / TUBE;
+  const at = new Float32Array(n * 16),
+    looks = new Float32Array(n * 4),
+    swirls = new Float32Array(n * PATTERN_STRIDE);
+  // how far round the swirl turns for a unit along a tube
+  const climb = (4 * CANE.twist) / CANE.half;
+  for (let k = 0; k < n; k++) {
+    const [x, y, z, dx, dy, dz, len, r, along, sweet] = tubes.slice(k * TUBE, k * TUBE + TUBE);
+    // two directions square to the axis and to each other, which with the axis make a right hand
+    const ref: V3 = Math.abs(dz) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+    let ux = dy * ref[2] - dz * ref[1],
+      uy = dz * ref[0] - dx * ref[2],
+      uz = dx * ref[1] - dy * ref[0];
+    const m = Math.hypot(ux, uy, uz);
+    ux /= m;
+    uy /= m;
+    uz /= m;
+    const vx = dy * uz - dz * uy,
+      vy = dz * ux - dx * uz,
+      vz = dx * uy - dy * ux;
+    at.set([ux * r, uy * r, uz * r, 0, vx * r, vy * r, vz * r, 0, dx * len, dy * len, dz * len, 0, x, y, z, 1], k * 16);
+    if (sweet === CANDY) {
+      looks.set([0.82, 0.05, 0.08, 0.3], k * 4);
+      const seed = ((((climb * along) / (Math.PI * 2)) % 1) + 1) % 1;
+      swirls.set([1, (climb * len) / 4, seed, 0, 0.96, 0.94, 0.9, 0], k * PATTERN_STRIDE);
+    } else looks.set([0.55, 0.3, 0.12, 0.6], k * 4);
+  }
+  return { mesh: tube(), matrices: at, count: n, materials: looks, patterns: swirls };
+}
+
+/** Donuts lying flat, dough under and icing over, the icing each its own colour in turn. */
+function donutGroups(donuts: number[]): GameGroup[] {
+  const n = donuts.length / 4;
+  const at = new Float32Array(n * 16),
+    icing = new Float32Array(n * 4);
+  const icings: [number, number, number][] = [
+    [1, 0.35, 0.65],
+    [0.3, 0.15, 0.07],
+    [0.98, 0.96, 0.93],
+    [0.3, 0.7, 1],
+    [0.7, 0.4, 1],
+  ];
+  for (let k = 0; k < n; k++) {
+    spin(at, k, donuts[k * 4], donuts[k * 4 + 1], donuts[k * 4 + 2], 0, 0, 1, 0, DONUT.radius * donuts[k * 4 + 3]);
+    icing.set([...icings[k % icings.length], 0.4], k * 4);
+  }
+  const t = DONUT.tube / DONUT.radius;
+  return [
+    { mesh: torus(t), matrices: at, count: n, albedo: [0.88, 0.6, 0.32], roughness: 0.7 },
+    { mesh: torus(t, true), matrices: at, count: n, materials: icing },
+  ];
+}
+
+/** Mountains in pastel bands, each its own colour, and the frosting on their tops. */
+function mountainGroups(mountains: number[]): GameGroup[] {
+  const n = mountains.length / 4;
+  const at = new Float32Array(n * 16),
+    looks = new Float32Array(n * 4),
+    bands = new Float32Array(n * PATTERN_STRIDE),
+    tops = new Float32Array(n * 4);
+  const colours: [number, number, number][] = [
+    [0.1, 0.62, 0.98],
+    [0.98, 0.3, 0.65],
+    [0.98, 0.8, 0.15],
+    [0.55, 0.3, 0.98],
+    [0.15, 0.85, 0.6],
+  ];
+  const caps: [number, number, number][] = [
+    [0.99, 0.98, 0.97],
+    [1, 0.66, 0.6],
+    [0.95, 0.55, 0.85],
+  ];
+  for (let k = 0; k < n; k++) {
+    const [x, y, z, height] = mountains.slice(k * 4, k * 4 + 4);
+    spin(at, k, x, y, z, 0, 0, 1, (k * 1.7) % (Math.PI * 2), height);
+    looks.set([...colours[k % colours.length], 0.85], k * 4);
+    // bands round it, four or so up its height, in white
+    bands.set([2, 3.6, (k * 0.29) % 1, 0, 0.99, 0.98, 0.97, 0], k * PATTERN_STRIDE);
+    tops.set([...caps[k % caps.length], 0.6], k * 4);
+  }
+  return [
+    { mesh: smoothCone(0.75), matrices: at, count: n, materials: looks, patterns: bands },
+    { mesh: frosting(0.75), matrices: at, count: n, materials: tops },
+  ];
+}
+
+/** Castle towers' roofs: cones swirled red and white. */
+function roofGroup(roofs: number[]): GameGroup {
+  const n = roofs.length / 4;
+  const at = new Float32Array(n * 16),
+    swirls = new Float32Array(n * PATTERN_STRIDE);
+  for (let k = 0; k < n; k++) {
+    const [x, y, z, r] = roofs.slice(k * 4, k * 4 + 4);
+    spin(at, k, x, y, z, 0, 0, 1, 0, r / 0.75);
+    swirls.set([1, 1.2, (k * 0.31) % 1, 0, 0.97, 0.95, 0.92, 0], k * PATTERN_STRIDE);
+  }
+  return {
+    mesh: smoothCone(0.75),
+    matrices: at,
+    count: n,
+    albedo: [0.85, 0.08, 0.12],
+    roughness: 0.35,
+    patterns: swirls,
+  };
+}
+
+/** Chocolate cone trees. */
+function treeGroup(trees: number[]): GameGroup {
+  const n = trees.length / 4;
+  const at = new Float32Array(n * 16);
+  for (let k = 0; k < n; k++)
+    spin(at, k, trees[k * 4], trees[k * 4 + 1], trees[k * 4 + 2], 0, 0, 1, 0, trees[k * 4 + 3]);
+  return { mesh: smoothCone(0.4, 16), matrices: at, count: n, albedo: [0.33, 0.18, 0.09], roughness: 0.55 };
+}
+
+/** Clouds, soft white balls. */
+function cloudGroup(clouds: number[]): GameGroup {
+  const n = clouds.length / 4;
+  const at = new Float32Array(n * 16);
+  for (let k = 0; k < n; k++)
+    spin(at, k, clouds[k * 4], clouds[k * 4 + 1], clouds[k * 4 + 2], 0, 0, 1, 0, clouds[k * 4 + 3]);
+  return { mesh: sphere(1, 12, 18), matrices: at, count: n, albedo: [1, 1, 1], roughness: 1 };
 }
 
 /** A sweet factory's steam, pale and a little pink. */
@@ -500,6 +662,19 @@ export class Scene {
     // gumdrops and the lollipops' sweets are placed one each, the gumdrops each their colour and the sweets each
     // their colour and swirl
     const gumdrops: number[] = [];
+    // the tubes, one after another: where each begins, which way it goes, how long and round, how far along its
+    // chain it begins, and which sweet it is; and the donuts, mountains, roofs, trees and clouds, one each
+    const tubes: number[] = [];
+    const donuts: number[] = [];
+    const mountains: number[] = [];
+    const roofs: number[] = [];
+    const trees: number[] = [];
+    const clouds: number[] = [];
+    const cakeSponge = new MeshBuilder(),
+      sponge = new MeshBuilder(),
+      earth = new MeshBuilder(),
+      water = new MeshBuilder(),
+      foam = new MeshBuilder();
     const sweets: number[] = [];
     const h = this.here;
     let cogs = 0,
@@ -691,9 +866,117 @@ export class Scene {
         block(frosting, off(d.side * (h.w + WHISK.out - 0.15), WHISK.up), t, l, u, 0.16, 0.03, 0.16);
       },
       cane: (d) => {
-        // a candy cane's post, striped and wound, on a white foot
-        candyColumn(candyRed, candyWhite, d.x, d.y, d.z, d.z + d.height, CANE.half);
+        // a candy cane's post, one smooth tube its whole height on a white foot
+        tubes.push(d.x, d.y, d.z, 0, 0, 1, d.height, CANE.half, 0, CANDY);
         column(candyWhite, d.x, d.y, d.z, d.z + 0.08, CANE.half + 0.14, CANE.half + 0.14, 14);
+      },
+      arch: () => {
+        // up one post, over the channel in a half round, and down the other: a chain of tubes, the stripes carried on
+        // round it by how far along the chain each tube begins
+        const span = h.w + ARCH.out;
+        const path: V3[] = [off(-span, -0.3), off(-span, ARCH.rise)];
+        for (let k = 1; k < 16; k++) {
+          const t = Math.PI - (k / 16) * Math.PI;
+          path.push(off(Math.cos(t) * span, ARCH.rise + Math.sin(t) * span));
+        }
+        path.push(off(span, ARCH.rise), off(span, -0.3));
+        chain(tubes, path, ARCH.thick, CANDY);
+      },
+      donut: (d) => {
+        // lying on the ground, dough under and icing over, each its own icing, as big as the dressing made it
+        const big = d.height / (DONUT.tube * 2);
+        donuts.push(d.x, d.y, d.z + DONUT.tube * big, big);
+      },
+      pretzel: (d) => {
+        // a baked knot lying on the ground: a loop either side and a twist across the middle
+        const big = d.height / (PRETZEL.tube * 2);
+        const r = (PRETZEL.radius - PRETZEL.tube) * big;
+        const c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const path: V3[] = [];
+        for (let k = 0; k <= 40; k++) {
+          const t = (k / 40) * Math.PI * 2;
+          const px = r * Math.sin(2 * t) * 0.95,
+            py = r * (0.55 * Math.cos(t) + 0.45 * Math.cos(3 * t));
+          path.push([d.x + px * c - py * sn, d.y + px * sn + py * c, d.z + PRETZEL.tube * big]);
+        }
+        chain(tubes, path, PRETZEL.tube * big, BAKED);
+      },
+      cake: (d) => {
+        // sponge and chocolate in layers, pink icing over the top, and a cherry
+        const big = d.height / CAKE.height;
+        const r = CAKE.radius * big,
+          layer = 0.35 * big;
+        for (let k = 0; k < 4; k++)
+          column(k % 2 ? chocolate : cakeSponge, d.x, d.y, d.z + k * layer, d.z + (k + 1) * layer, r, r, 22);
+        column(frosting, d.x, d.y, d.z + 4 * layer, d.z + 4 * layer + 0.15 * big, r * 1.03, r * 1.03, 22);
+        ball(cherry, [d.x, d.y, d.z + d.height - 0.2 * big], 0.2 * big);
+      },
+      ground: (d) => {
+        // the pink ground under everything, as far out as the backdrop goes
+        const e = d.length;
+        const z = d.z;
+        block(earth, [d.x, d.y, z - 0.05], [1, 0, 0], [0, 1, 0], [0, 0, 1], e, e, 0.05);
+      },
+      river: (d) => {
+        // a winding river across the ground, lying a hair over it, with white water at its banks
+        const c = Math.cos(d.heading),
+          sn = Math.sin(d.heading);
+        const at = (t: number, across: number): V3 => {
+          const along = t * d.length;
+          const wide = across + Math.sin(t * 9) * 6;
+          return [d.x + along * c - wide * sn, d.y + along * sn + wide * c, d.z + 0.03];
+        };
+        for (let k = -40; k < 40; k++) {
+          const t0 = k / 40,
+            t1 = (k + 1) / 40;
+          face(water, at(t0, -3), at(t1, -3), at(t1, 3), at(t0, 3));
+          face(foam, at(t0, 3), at(t1, 3), at(t1, 3.6), at(t0, 3.6));
+          face(foam, at(t0, -3.6), at(t1, -3.6), at(t1, -3), at(t0, -3));
+        }
+      },
+      mountain: (d) => {
+        mountains.push(d.x, d.y, d.z, d.height);
+      },
+      tower: (d) => {
+        // a round tower with battlements, and a swirled cone for a roof
+        const r = d.height * 0.16,
+          body = d.height * 0.72;
+        column(sponge, d.x, d.y, d.z, d.z + body, r, r, 20);
+        column(sponge, d.x, d.y, d.z + body - 0.9, d.z + body, r * 1.15, r * 1.15, 20);
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          block(
+            sponge,
+            [d.x + Math.cos(a) * r * 1.08, d.y + Math.sin(a) * r * 1.08, d.z + body + 0.35],
+            [Math.cos(a), Math.sin(a), 0],
+            [-Math.sin(a), Math.cos(a), 0],
+            [0, 0, 1],
+            0.3,
+            0.4,
+            0.35,
+          );
+        }
+        roofs.push(d.x, d.y, d.z + body, r * 1.25);
+      },
+      tree: (d) => {
+        // a chocolate cone on a stub of a trunk
+        column(chocolate, d.x, d.y, d.z, d.z + d.height * 0.15, d.height * 0.05, d.height * 0.05, 8);
+        trees.push(d.x, d.y, d.z + d.height * 0.15, d.height * 0.85);
+      },
+      cloud: (d) => {
+        // three soft balls of cloud together
+        for (const [ox, oy, oz, r] of [
+          [0, 0, 0, 1],
+          [1.1, 0.3, -0.3, 0.75],
+          [-1.1, -0.2, -0.35, 0.8],
+        ])
+          clouds.push(
+            d.x + ox * d.height,
+            d.y + oy * d.height,
+            d.z + d.height * 0.5 + oz * d.height,
+            r * d.height * 0.6,
+          );
       },
       giantLollipop: (d) => {
         // a tall white stick, and a great swirled sweet on it facing the run
@@ -783,6 +1066,17 @@ export class Scene {
       }
       groups.push({ mesh: dome(0.85), matrices: at, count: n, materials: looks });
     }
+    add(sponge, [0.98, 0.6, 0.32], 0.7);
+    add(cakeSponge, [1, 0.88, 0.62], 0.75);
+    add(earth, [0.98, 0.4, 0.68], 0.95);
+    add(water, [0.15, 0.6, 0.98], 0.15);
+    add(foam, [0.97, 0.97, 1], 0.6);
+    if (tubes.length) groups.push(tubeGroup(tubes));
+    if (donuts.length) groups.push(...donutGroups(donuts));
+    if (mountains.length) groups.push(...mountainGroups(mountains));
+    if (roofs.length) groups.push(roofGroup(roofs));
+    if (trees.length) groups.push(treeGroup(trees));
+    if (clouds.length) groups.push(cloudGroup(clouds));
     // the lollipops' sweets, upright and facing the way given, each a swirl of its colour and white
     if (sweets.length) {
       const n = sweets.length / 6;

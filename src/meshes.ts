@@ -13,7 +13,7 @@ import { MeshBuilder, type Mesh } from 'artshape-render/mesh/types';
 type V3 = [number, number, number];
 
 /** One flat-shaded quad, wound counter-clockwise seen from the normal. */
-function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
+export function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
   const ux = p1[0] - p0[0],
     uy = p1[1] - p0[1],
     uz = p1[2] - p0[2];
@@ -486,44 +486,108 @@ export function whisk(wide = 0.1): Mesh {
 }
 
 /**
- * A post from `z0` up to `z1` at `x`, `y`, `r` round, striped as a candy cane
- * is, the stripes wound round it as they climb: the first colour's into `a`
- * and the second's into `b`, `stripes` of each. Each stripe is a strip that
- * follows the helix itself, so its edge is a smooth spiral however coarsely
- * the post is cut along its height: cut into fine rows and coloured a face at
- * a time, a tall run's posts came to nearly a million triangles.
+ * A smooth tube `1` round and `1` long, standing on z = 0 along its axis,
+ * capped at its top. Its side's normals point straight out from the axis and
+ * its cap's straight along it, so it may be stretched along its length
+ * without its light going wrong, where any other shape stretched one way
+ * lights as though it were not: a cane its whole height is one of these.
  */
-export function candyColumn(
-  a: MeshBuilder,
-  b: MeshBuilder,
-  x: number,
-  y: number,
-  z0: number,
-  z1: number,
-  r: number,
-  stripes = 2,
-) {
-  const across = 3;
-  const rows = Math.max(1, Math.ceil((z1 - z0) / 0.5));
-  // a turn every three units, gently enough to read as a cane's stripe and not a screw thread
-  const twist = (Math.PI * 2) / 3;
-  const width = Math.PI / stripes;
-  const p = (angle: number, z: number): V3 => [x + Math.cos(angle) * r, y + Math.sin(angle) * r, z];
-  for (let s = 0; s < stripes * 2; s++) {
-    const into = s % 2 === 0 ? a : b;
-    for (let i = 0; i < rows; i++) {
-      const za = z0 + ((z1 - z0) * i) / rows,
-        zb = z0 + ((z1 - z0) * (i + 1)) / rows;
-      for (let j = 0; j < across; j++) {
-        const t0 = s * width + (width * j) / across,
-          t1 = s * width + (width * (j + 1)) / across;
-        face(into, p(t0 + za * twist, za), p(t1 + za * twist, za), p(t1 + zb * twist, zb), p(t0 + zb * twist, zb));
-      }
+export function tube(sides = 20): Mesh {
+  const b = new MeshBuilder();
+  for (let j = 0; j <= sides; j++) {
+    const a = (j / sides) * Math.PI * 2;
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    b.vertex(c, s, 0, c, s, 0, j / sides, 0);
+    b.vertex(c, s, 1, c, s, 0, j / sides, 1);
+  }
+  for (let j = 0; j < sides; j++) b.quad(j * 2, j * 2 + 2, j * 2 + 3, j * 2 + 1);
+  const top = b.vertex(0, 0, 1, 0, 0, 1, 0.5, 0.5);
+  const rim = top + 1;
+  for (let j = 0; j <= sides; j++) {
+    const a = (j / sides) * Math.PI * 2;
+    b.vertex(Math.cos(a), Math.sin(a), 1, 0, 0, 1, 0, 0);
+  }
+  for (let j = 0; j < sides; j++) b.quad(top, rim + j, rim + j + 1, top);
+  return b.build();
+}
+
+/**
+ * A smooth cone standing on z = 0, `ratio` round at its foot for every one
+ * of its height `1`, its normals leaning out as its side does: a mountain, a
+ * tower's roof or a chocolate tree, scaled the same all ways to its size.
+ */
+export function smoothCone(ratio = 0.75, sides = 28): Mesh {
+  const b = new MeshBuilder();
+  const slant = Math.hypot(1, ratio);
+  for (let j = 0; j <= sides; j++) {
+    const a = (j / sides) * Math.PI * 2;
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    // out from the axis and up by as much as the side leans in
+    const nx = (c * 1) / slant,
+      ny = (s * 1) / slant,
+      nz = ratio / slant;
+    b.vertex(c * ratio, s * ratio, 0, nx, ny, nz, j / sides, 0);
+    b.vertex(0, 0, 1, nx, ny, nz, j / sides, 1);
+  }
+  for (let j = 0; j < sides; j++) b.quad(j * 2, j * 2 + 2, j * 2 + 3, j * 2 + 1);
+  return b.build();
+}
+
+/**
+ * The frosting over a mountain's top: the upper part of a cone as `smoothCone`
+ * makes it, from `from` of its height to its point, a little proud of it, its
+ * lower edge dripping down in rounded tongues.
+ */
+export function frosting(ratio = 0.75, from = 0.62, sides = 48): Mesh {
+  const b = new MeshBuilder();
+  const proud = 1.04;
+  const slant = Math.hypot(1, ratio);
+  for (let j = 0; j <= sides; j++) {
+    const a = (j / sides) * Math.PI * 2;
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    // the edge lower where a drip runs down, six of them round
+    const edge = from - 0.08 * Math.max(0, Math.cos(a * 6)) ** 2;
+    const r = ratio * (1 - edge) * proud;
+    const nx = c / slant,
+      ny = s / slant,
+      nz = ratio / slant;
+    b.vertex(c * r, s * r, edge, nx, ny, nz, j / sides, 0);
+    b.vertex(0, 0, 1.01, nx, ny, nz, j / sides, 1);
+  }
+  for (let j = 0; j < sides; j++) b.quad(j * 2, j * 2 + 2, j * 2 + 3, j * 2 + 1);
+  return b.build();
+}
+
+/** A ring `1` round its middle and `tube` thick, lying flat on z = 0 at its middle, smooth: a donut. */
+export function torus(tube: number, top = false, rings = 28, sides = 14): Mesh {
+  const b = new MeshBuilder();
+  // `top` is the icing: the upper half only, a little fuller than the dough
+  const t = top ? tube * 1.06 : tube;
+  const span = top ? Math.PI : Math.PI * 2;
+  for (let i = 0; i <= rings; i++) {
+    const u = (i / rings) * Math.PI * 2;
+    for (let j = 0; j <= sides; j++) {
+      const v = (j / sides) * span;
+      const nx = Math.cos(v) * Math.cos(u),
+        ny = Math.cos(v) * Math.sin(u),
+        nz = Math.sin(v);
+      b.vertex(
+        (1 + t * Math.cos(v)) * Math.cos(u),
+        (1 + t * Math.cos(v)) * Math.sin(u),
+        t * Math.sin(v),
+        nx,
+        ny,
+        nz,
+        i / rings,
+        j / sides,
+      );
     }
   }
-  for (let j = 0; j < stripes * 2 * across; j++) {
-    const t0 = (j / (stripes * 2 * across)) * Math.PI * 2 + z1 * twist,
-      t1 = ((j + 1) / (stripes * 2 * across)) * Math.PI * 2 + z1 * twist;
-    face(b, p(t0, z1), p(t1, z1), [x, y, z1], [x, y, z1]);
-  }
+  const row = sides + 1;
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sides; j++) b.quad(i * row + j, (i + 1) * row + j, (i + 1) * row + j + 1, i * row + j + 1);
+  return b.build();
 }

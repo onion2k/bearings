@@ -206,6 +206,8 @@ export interface GameApi {
   cameras(): { on: boolean; views: number; marbles: number[]; targets: number[][] };
   /** Where the ordinary, unsplit camera is looking: a test's way of telling a chase still moving from one frozen. */
   chase(): [number, number, number];
+  /** The colour of the sky the page draws the run against, which the run's theme sets. */
+  sky(): [number, number, number];
 }
 
 /** What the page gives the API that is not the game's: time, the camera and the renderer. */
@@ -228,6 +230,8 @@ export interface DebugHost {
   measureFrame(): Promise<number>;
   /** Where the ordinary, unsplit camera is looking. */
   chase(): [number, number, number];
+  /** The colour of the sky the page draws the run against, which the run's theme sets. */
+  sky(): [number, number, number];
   events: string[];
 }
 
@@ -448,6 +452,9 @@ export function createApi(host: DebugHost): GameApi {
         marbles: [...cameras.marble.slice(0, views)],
         targets: Array.from({ length: views }, (_, s) => [...cameras.target.slice(s * 3, s * 3 + 3)]),
       };
+    },
+    sky() {
+      return host.sky();
     },
     chase() {
       return host.chase();

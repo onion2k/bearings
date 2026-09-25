@@ -9,8 +9,13 @@ import { describe, expect, it } from 'vitest';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { PIECES } from '../src/catalog';
 import { SPRITE_STRIDE } from 'artshape-render/game/particles';
+import { PATTERN_STRIDE } from 'artshape-render/game/renderer';
 import {
+  CANE,
   DECOR_KINDS,
+  FLAT,
+  SCENERY,
+  sceneryClear,
   type DecorKind,
   type Decoration,
   LAMP,
@@ -129,11 +134,24 @@ describe('dressing a run', () => {
     }
   });
 
-  it('keeps everything inside the box the run is framed and shadowed by', () => {
+  it('keeps the backdrop beyond the run and under the line a camera looks down on it along, and the ground flat', () => {
+    let backdrop = 0;
+    for (const run of [...RUNS, ...everyTheme(4)]) {
+      const { track, items } = dressed(run);
+      for (const d of items) {
+        expect(sceneryClear(track, d), `${run.id}: a ${d.kind}`).toBe('');
+        if (SCENERY.includes(d.kind)) backdrop++;
+      }
+    }
+    expect(backdrop, 'a backdrop to hold').toBeGreaterThan(100);
+  });
+
+  it('keeps everything by the run inside the box the run is framed and shadowed by', () => {
     for (const run of [...RUNS, ...designs(8, 12), ...designs(8, 12, 'sweets')]) {
       const { track, items } = dressed(run);
       const box = boxOf(track);
-      for (const d of items)
+      // the backdrop stands beyond the box on purpose, held by its own rule below
+      for (const d of items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind)))
         for (const z of [d.z, d.z + d.height]) {
           const at = [d.x, d.y, z];
           for (let a = 0; a < 3; a++) {
@@ -352,10 +370,12 @@ describe('what a run is dressed with, drawn', () => {
     for (const run of [...RUNS, ...everyTheme(9)]) {
       const { track, items } = dressed(run);
       const inside = where(track);
-      const still = scene.decor(track, items);
+      // the backdrop is held by its own rule; the ground and a river lie under everything
+      const near = items.filter((d) => !SCENERY.includes(d.kind) && !FLAT.includes(d.kind));
+      const still = scene.decor(track, near);
       for (const [t, groups] of [
         [0, still],
-        ...[0, 1.3, 2.7].map((t) => [t, moving(scene, items, t)] as const),
+        ...[0, 1.3, 2.7].map((t) => [t, moving(scene, near, t)] as const),
       ] as const)
         for (const group of groups) {
           const { points, hits, first } = surface(group, inside);
@@ -413,6 +433,45 @@ describe('what a run is dressed with, drawn', () => {
       expect(puffs, `${theme}: smoke`).toBeGreaterThan(0);
       if (theme === 'industrial') expect(cogs * rods, 'cogs and rods').toBeGreaterThan(0);
       else expect(whisks, 'whisks').toBeGreaterThan(0);
+    }
+  });
+
+  it("draws a candy cane as one smooth tube its post's height, its stripes climbing as fast whatever its length", () => {
+    const stress = themed('sweets')(RUNS.find((r) => r.id.startsWith('stress'))!);
+    const { track, items } = dressed(stress);
+    const canes = items.filter((d) => d.kind === 'cane');
+    expect(canes.length).toBeGreaterThan(5);
+    const tubes = new Scene().decor(track, canes).find((g) => g.patterns && g.materials)!;
+    expect(tubes.count, 'one tube a cane').toBe(canes.length);
+    const climb = (4 * CANE.twist) / CANE.half;
+    canes.forEach((d, k) => {
+      const m = tubes.matrices.subarray(k * 16, k * 16 + 16);
+      expect([m[12], m[13], m[14]]).toEqual([d.x, d.y, d.z].map(Math.fround));
+      // round by the cane's own roundness across, and its whole height up
+      expect(Math.hypot(m[0], m[1], m[2])).toBeCloseTo(CANE.half, 4);
+      expect(m[10], 'straight up').toBeCloseTo(d.height, 3);
+      // the swirl's scale such that a unit up the post turns it as far whatever the post's length
+      expect(tubes.patterns![k * PATTERN_STRIDE + 1]).toBeCloseTo((climb * d.height) / 4, 3);
+    });
+  });
+
+  it("carries an arch's stripes on round it from one tube into the next", () => {
+    const run = themed('sweets')(RUNS.find((r) => r.id.startsWith('stress'))!);
+    const { track, items } = dressed(run);
+    const arch = items.find((d) => d.kind === 'arch')!;
+    expect(arch, 'an arch to look at').toBeDefined();
+    const tubes = new Scene().decor(track, [arch]).find((g) => g.patterns && g.materials)!;
+    const climb = (4 * CANE.twist) / CANE.half;
+    // where each tube's stripes end is where the next one's begin: the phase at a tube's end, its seed plus its length's
+    // worth of turn, is the next one's seed, once each is read round the circle
+    for (let k = 0; k + 1 < tubes.count!; k++) {
+      const m = tubes.matrices.subarray(k * 16, k * 16 + 16);
+      const len = Math.hypot(m[8], m[9], m[10]);
+      const next = tubes.matrices.subarray((k + 1) * 16, (k + 1) * 16 + 16);
+      const gap = Math.hypot(next[12] - m[12] - m[8], next[13] - m[13] - m[9], next[14] - m[14] - m[10]);
+      const phaseEnd = tubes.patterns![k * PATTERN_STRIDE + 2] + (climb * (len - gap)) / (Math.PI * 2);
+      const apart = Math.abs(phaseEnd - tubes.patterns![(k + 1) * PATTERN_STRIDE + 2]) % 1;
+      expect(Math.min(apart, 1 - apart), `tube ${k} into ${k + 1}`).toBeLessThan(0.01);
     }
   });
 

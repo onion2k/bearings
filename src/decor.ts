@@ -26,6 +26,7 @@ import {
   boxOf,
   spot,
 } from './track';
+import { seeded } from './random';
 
 /** Every kind of thing a run can be dressed with. */
 export type DecorKind =
@@ -44,12 +45,41 @@ export type DecorKind =
   | 'cane'
   | 'giantLollipop'
   | 'fudgePot'
-  | 'cupcake';
+  | 'cupcake'
+  | 'arch'
+  | 'donut'
+  | 'pretzel'
+  | 'cake'
+  | 'ground'
+  | 'river'
+  | 'mountain'
+  | 'tower'
+  | 'tree'
+  | 'cloud';
 
 /** What each theme dresses a run with: every kind in one theme and one only. */
 export const THEME_KINDS: Record<Theme, readonly DecorKind[]> = {
   industrial: ['lamp', 'pipes', 'cog', 'chimney', 'girder', 'tank', 'piston', 'stripes'],
-  sweets: ['lollipop', 'candyStripes', 'gumdrops', 'whisk', 'cane', 'giantLollipop', 'fudgePot', 'cupcake'],
+  sweets: [
+    'lollipop',
+    'candyStripes',
+    'gumdrops',
+    'whisk',
+    'cane',
+    'giantLollipop',
+    'fudgePot',
+    'cupcake',
+    'arch',
+    'donut',
+    'pretzel',
+    'cake',
+    'ground',
+    'river',
+    'mountain',
+    'tower',
+    'tree',
+    'cloud',
+  ],
 };
 export const DECOR_KINDS: readonly DecorKind[] = [...THEME_KINDS.industrial, ...THEME_KINDS.sweets];
 
@@ -75,6 +105,47 @@ export const MOST: Record<DecorKind, number> = {
   giantLollipop: 3,
   fudgePot: 3,
   cupcake: 3,
+  arch: 8,
+  donut: 6,
+  pretzel: 4,
+  cake: 5,
+  ground: 1,
+  river: 1,
+  mountain: 12,
+  tower: 4,
+  tree: 24,
+  cloud: 8,
+};
+
+/**
+ * What stands far off round a run and not by it: the backdrop, kept beyond
+ * the run's reach and low enough never to come between the run and a camera
+ * looking down on it (`sceneryClear`). The ground and a river lie flat on the
+ * ground under everything and are held only to lying there.
+ */
+export const SCENERY: readonly DecorKind[] = ['mountain', 'tower', 'tree', 'cloud', 'donut', 'pretzel', 'cake'];
+/** What lies flat on the ground, under the run and everything by it. */
+export const FLAT: readonly DecorKind[] = ['ground', 'river'];
+
+/**
+ * The world a run is in: the sky it is seen against, the ground it stands
+ * over, if any, and the light. For the eye alone, as the rest of a theme is;
+ * a run with no theme, or the works, is in the dark it always was.
+ */
+export interface World {
+  sky: [number, number, number];
+  /** The sky it reflects: a grey studio for the works' dark, a blue day for a candy world. */
+  env: 'studio' | 'daylight';
+  sunColour: [number, number, number];
+  exposure: number;
+  ambient: number;
+}
+export const WORLDS: Record<Theme | 'plain', World> = {
+  plain: { sky: [0.04, 0.04, 0.05], env: 'studio', sunColour: [1, 0.96, 0.9], exposure: 1.1, ambient: 0.65 },
+  industrial: { sky: [0.04, 0.04, 0.05], env: 'studio', sunColour: [1, 0.96, 0.9], exposure: 1.1, ambient: 0.65 },
+  // a clear blue sky reflected in everything, and a warm light: less of the sky's own light than the works have, since
+  // what it adds untinted is what washed every candy colour out to grey
+  sweets: { sky: [0.45, 0.72, 0.98], env: 'daylight', sunColour: [2.6, 2.5, 2.35], exposure: 1.0, ambient: 0.3 },
 };
 
 /** The things that light the run, and the colour of their light: a works' lamps warm, a sweet factory's lollipops pink. */
@@ -123,14 +194,35 @@ export const LOLLIPOP = { out: 0.32, height: 4.2, pole: 0.08, shade: 0.45, hangs
 export const GUMDROPS = { out: 0.5, up: 0.3, radius: 0.26, every: 0.7 } as const;
 /** A whisk turning on a wall: how far its wires reach, how far out and high its middle, how thick. */
 export const WHISK = { reach: 0.7, out: 0.45, up: 0.55, thick: 0.2 } as const;
-/** A candy cane's post, this far from its middle to its side. */
-export const CANE = { half: 0.22 } as const;
+/**
+ * A candy cane's post: this far from its middle to its side, drawn in pieces
+ * this long, and its stripes' `twist`, the renderer's swirl scale on a tube
+ * one round: a red and a white stripe every pi times `half` over twice it
+ * up the post, about half a unit.
+ */
+export const CANE = { half: 0.22, piece: 2, twist: 0.7 } as const;
 /** A giant lollipop: its stick, its sweet's reach, how far out from the channel's edge, and no taller than `tallest`. */
 export const GIANT = { out: 2.6, radius: 1.3, stick: 0.16, tallest: 15 } as const;
 /** A pot of fudge on the ground, bubbling steam. */
 export const POT = { out: 2.4, radius: 0.95, height: 1.5 } as const;
 /** A cupcake on the ground: its paper case's reach and height, then its frosting and a cherry. */
 export const CUPCAKE = { out: 2.4, radius: 0.85, height: 2 } as const;
+
+/** A candy-cane arch over the channel: its posts this far out from its edge and this thick, and this high before they bend over. */
+export const ARCH = { out: 0.55, thick: 0.26, rise: 2.8 } as const;
+/** A donut lying on the ground, and a pretzel: how far round, how thick. */
+export const DONUT = { radius: 1.4, tube: 0.5 } as const;
+export const PRETZEL = { radius: 1.4, tube: 0.24 } as const;
+/** A layered cake on the ground. */
+export const CAKE = { radius: 1.2, height: 1.8 } as const;
+/**
+ * How the backdrop keeps out of the way: nothing nearer the run's middle
+ * than its reach and `beyond`, and no top higher over the run's lowest point
+ * than `slope` of how far past its reach it stands. The camera that frames a
+ * run looks down on it at about 0.73; under a gentler line than that, nothing
+ * can stand between it and the run, however far back it is.
+ */
+export const BACKDROP = { beyond: 6, slope: 0.6 } as const;
 
 /** How far below the run's lowest point the ground is that chimneys, tanks and the lowest girders stand on. */
 const GROUND = 2;
@@ -525,6 +617,102 @@ class Site {
       }
     }
   }
+
+  /**
+   * Arches over the channel, every third piece where the lamps are not: a
+   * post up beside each wall and a half round over the middle between them,
+   * each tried for room a step at a time, as a lamp's arm is.
+   */
+  arches(kind: DecorKind) {
+    const { segments } = this.track;
+    for (const k of this.pieces) {
+      if (k % 3 !== 2 || this.aloft.has(k) || this.count(kind) >= MOST[kind]) continue;
+      const s = this.by.get(k)!;
+      if (!this.plainWidth(s)) continue;
+      const along = segments[s].length / 2;
+      const h = this.spot(s, along);
+      const span = h.w + ARCH.out;
+      let clear = true;
+      for (const side of [1, -1] as const) {
+        const [x, y, z] = off(h, side * span, 0);
+        if (this.inTheWay(x, y, ARCH.thick, z - 0.3, z + ARCH.rise, SKIN)) clear = false;
+      }
+      for (let t = 0; t <= Math.PI && clear; t += Math.PI / 16) {
+        const [x, y, z] = off(h, Math.cos(t) * span, ARCH.rise + Math.sin(t) * span);
+        if (this.inTheWay(x, y, ARCH.thick, z - ARCH.thick, z + ARCH.thick, SKIN)) clear = false;
+      }
+      if (!clear) continue;
+      this.put(kind, s, along, 0, 1, off(h, span, 0), ARCH.rise + span);
+      for (const side of [1, -1] as const) {
+        const [x, y, z] = off(h, side * span, 0);
+        this.stands(x, y, ARCH.thick, z, z + ARCH.rise + span);
+      }
+    }
+  }
+
+  /**
+   * The backdrop round the run: the ground under it all and a river across
+   * it, then mountains far off, castle towers, chocolate trees and clouds, all
+   * placed by a chance drawn from the run's own shape, so one run always has
+   * the same backdrop. Each is beyond the run's reach and under the line
+   * `sceneryClear` holds it to, and shrinks to fit under it where it must.
+   */
+  backdrop() {
+    const { box, ground, track } = this;
+    const cx = (box.min[0] + box.max[0]) / 2,
+      cy = (box.min[1] + box.max[1]) / 2;
+    const reach = reachOf(box);
+    const low = ground + GROUND;
+    const segment = this.pieces.length ? this.by.get(this.pieces[0])! : 0;
+    // chance from the run's shape: its size and its length, the same for the same run every time
+    const random = seeded(Math.round(track.length * 1000) + Math.round((box.max[0] - box.min[0]) * 7919));
+    const far = reach + 180;
+    const place = (kind: DecorKind, dist: number, angle: number, height: number, lift = 0) => {
+      const x = cx + Math.cos(angle) * dist,
+        y = cy + Math.sin(angle) * dist;
+      // no higher than the line a camera looking down on the run would have to look under
+      const most = low + BACKDROP.slope * (dist - reach) - (ground + lift);
+      const tall = Math.min(height, most);
+      // shrunk to fit where it must, but not to a stub: a mountain allowed less than a unit is left out, and a pretzel
+      // lying flat is never more than half of one
+      if (tall < Math.min(1, height)) return;
+      this.put(kind, segment, 0, 0, 1, [x, y, ground + lift], tall);
+    };
+    this.put('ground', segment, 0, far, 1, [cx, cy, ground], 0);
+    this.put('river', segment, 0, far, 1, [cx, cy + (random() - 0.5) * reach, ground], 0);
+    // a river runs whichever way the chance says, not the way the track does where it was put down
+    this.out[this.out.length - 1].heading = random() * Math.PI;
+    for (let k = 0; k < MOST.mountain; k++) {
+      const angle = (k / MOST.mountain) * Math.PI * 2 + random() * 0.4;
+      place('mountain', reach + 90 + random() * 70, angle, 30 + random() * 25);
+    }
+    for (let k = 0; k < MOST.tower; k++) {
+      const angle = (k / MOST.tower) * Math.PI * 2 + 0.7 + random() * 0.8;
+      place('tower', reach + 30 + random() * 25, angle, 12 + random() * 6);
+    }
+    // sweets strewn on the ground just past the run, big enough to be seen from where the whole run is framed: in
+    // proportion to its reach, as scenery is and furniture by the run is not
+    const big = Math.max(1, reach / 25);
+    for (const [kind, spread] of [
+      ['donut', 26],
+      ['pretzel', 26],
+      ['cake', 20],
+    ] as const)
+      for (let k = 0; k < MOST[kind]; k++) {
+        const turn = random() * Math.PI * 2;
+        const height = (kind === 'donut' ? DONUT.tube * 2 : kind === 'pretzel' ? PRETZEL.tube * 2 : CAKE.height) * big;
+        place(kind, reach + BACKDROP.beyond + 3 * big + random() * spread * big, random() * Math.PI * 2, height);
+        this.out[this.out.length - 1].heading = turn;
+      }
+    for (let k = 0; k < MOST.tree; k++)
+      place('tree', reach + BACKDROP.beyond + 2 + random() * 45, random() * Math.PI * 2, (3 + random() * 3) * big);
+    // clouds up in the sky far off, beyond the mountains, where the line a camera looks under is high above them
+    for (let k = 0; k < MOST.cloud; k++) {
+      const dist = reach + 220 + random() * 80;
+      const up = 45 + random() * 25;
+      place('cloud', dist, random() * Math.PI * 2, 14 + random() * 8, up);
+    }
+  }
 }
 
 type Point = [number, number, number];
@@ -584,6 +772,35 @@ function sweets(site: Site) {
     site.stand('giantLollipop', f, GIANT.radius, GIANT.out, Math.min(site.high + OVER - site.ground, GIANT.tallest));
   for (const f of [0.45, 0.7, 0.95]) site.stand('fudgePot', f, POT.radius, POT.out, POT.height, POT_STEAM);
   for (const f of [0.65, 0.9, 0.1]) site.stand('cupcake', f, CUPCAKE.radius, CUPCAKE.out, CUPCAKE.height);
+  site.arches('arch');
+  site.backdrop();
+}
+
+/** How far a run reaches from its middle across the ground: the half of its box's diagonal, walls and all. */
+export function reachOf(box: { min: number[]; max: number[] }): number {
+  return Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1]) / 2;
+}
+
+/**
+ * Why a thing of the backdrop stands in the way, or nothing where it does
+ * not: nearer the run's middle than its reach and `beyond`, or its top over
+ * the line rising `slope` from the run's lowest point past its reach, where a
+ * camera looking down on the run could see it between. Flat things lie on the
+ * ground and need only lie there.
+ */
+export function sceneryClear(track: Track, d: Decoration): string {
+  const box = boxOf(track);
+  const low = box.min[2] + HALF_WIDTH + 4;
+  const ground = low - GROUND;
+  if (FLAT.includes(d.kind)) return Math.abs(d.z - ground) < 1e-6 && d.height === 0 ? '' : `a ${d.kind} off the ground`;
+  if (!SCENERY.includes(d.kind)) return '';
+  const reach = reachOf(box);
+  const dist = Math.hypot(d.x - (box.min[0] + box.max[0]) / 2, d.y - (box.min[1] + box.max[1]) / 2);
+  if (dist < reach + BACKDROP.beyond) return `a ${d.kind} ${(dist - reach).toFixed(1)} past the run's reach`;
+  const line = low + BACKDROP.slope * (dist - reach);
+  if (d.z + d.height > line + 1e-6)
+    return `a ${d.kind} ${(d.z + d.height - line).toFixed(1)} over the line a camera looks under`;
+  return '';
 }
 
 /** How each theme dresses a run: one for every theme there is, which the compiler holds it to. */
