@@ -119,6 +119,8 @@ interface Part {
   ob: Obstacle;
 }
 
+export { boxOf } from './track';
+
 export class Scene {
   /** Where every marble is this frame, one placement each. */
   readonly marbles = new Float32Array(MARBLES * 16);
@@ -502,31 +504,6 @@ export class Scene {
       Math.min(MOVING_MOST, this.turning.length),
     ];
   }
-}
-
-/** The whole run's extent, for the sun's shadow to be fitted to and the camera to be set by. */
-export function boxOf(track: Track): { min: [number, number, number]; max: [number, number, number] } {
-  let minX = Infinity,
-    minY = Infinity,
-    minZ = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity,
-    maxZ = -Infinity;
-  for (const seg of track.segments)
-    for (let i = 0; i < seg.arc.length; i++) {
-      const o = i * 3;
-      minX = Math.min(minX, seg.points[o]);
-      maxX = Math.max(maxX, seg.points[o]);
-      minY = Math.min(minY, seg.points[o + 1]);
-      maxY = Math.max(maxY, seg.points[o + 1]);
-      minZ = Math.min(minZ, seg.points[o + 2]);
-      maxZ = Math.max(maxZ, seg.points[o + 2]);
-    }
-  const pad = HALF_WIDTH + 4;
-  return {
-    min: [minX - pad, minY - pad, minZ - pad],
-    max: [maxX + pad, maxY + pad, maxZ + pad],
-  };
 }
 
 /** What `sweep` leaves out of a lane whose walls are open along `open`: the side's wall, where open at both ends. */
