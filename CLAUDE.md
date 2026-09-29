@@ -326,16 +326,32 @@ What to copy the shape of, when building something new:
   carry on round it: each tube's seed turns the swirl by as far along the
   chain as it begins). A theme has a world too (`WORLDS`): a sweet factory's
   pale blue sky, a daylight environment for what it reflects, and toon
-  shading (`shading: 'toon'`, artshape-render 0.18's `look.shading` and
-  `post.tone = 'clamp'`): lit in three flat bands at every candy's own
-  colour and shown straight, where the physically based light took a
-  quarter of each colour, added the sky's light grey over it and ran it
-  through a filmic curve that pulled it all to mauve; and no vignette; `main.ts` applies it at every rebuild,
-  and `sky()` in the test API reads it. The works and plain keep the dark.
+  shading (`shading: 'toon'`), which since artshape-render 0.22 is a toy's
+  finish: every candy at its own colour in one smooth ramp of light, a clean
+  highlight on what is smooth and the sky's sheen at its edges, where the
+  physically based light took a quarter of each colour, added the sky's
+  light grey over it and ran it through a filmic curve that pulled it all
+  to mauve. A world asks for more of the look than that (`World.look`), and
+  a sweet factory asks for a toy's: four samples a pixel for clean edges,
+  the shade where things meet and a cool violet shade that the occlusion
+  takes too, a sky light and a pink bounce off the ground as bright
+  together as the environment's grey they replace (at a golf green's, the
+  pink ground washed out white), a rim and the form light; and the soft
+  tone (`World.tone`), which shows a bright candy with its hue where the
+  clamp turned it. No vignette. `main.ts` builds each world's look from the
+  one it booted with (`lookFor`) at every rebuild, so none of a sweet
+  factory's stays on in the works after it, and compiles the four-sample
+  builds before the first frame, since the save can boot straight into a
+  sweet factory; `sky()` and `world()` in the test API read it. The works,
+  plain and space keep the dark and their look, to the pixel.
   A world also colours the track (`World.track`, `TrackColours`: `STEEL`
   for the works and plain, `CANDY` for a sweet factory, a lilac floor
   deeper than a pastel since toon light at full colour washes a pale one to
-  white, cream walls and trim, white grids and pink pegs); the channel is
+  white, cream walls and trim, white grids and pink pegs, and glossy as hard
+  candy, its `roughness` a share of steel's, where steel's satin took the
+  toon finish's highlight only as a broad dim smear; the mountains' ice
+  cream and frosting stay matte, since at a frosting's 0.6 the finish lit a
+  white glow across every mountain's top); the channel is
   swept twice, its floor edges and the rest apart (`FLOOR_OF_PROFILE`,
   `FLOOR_OF_TROUGH`), which draws the steel track exactly as before. Each
   light has its own strength (`LIGHTS`): a lollipop's is a fifth of a works

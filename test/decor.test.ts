@@ -33,7 +33,9 @@ import {
   WORLDS,
   bulbOf,
   dress,
+  lookFor,
 } from '../src/decor';
+import { DEFAULT_LOOK } from 'artshape-render/game/renderer';
 import { sphere } from '../src/meshes';
 import { Designer, PALETTE } from '../src/designer';
 import { seeded } from '../src/random';
@@ -103,6 +105,52 @@ describe('dressing a run', () => {
     expect(WORLDS.sweets.shading).toBe('toon');
     expect(WORLDS.industrial.shading).toBe('pbr');
     expect(WORLDS.plain.shading).toBe('pbr');
+  });
+
+  it('finishes a sweet factory as a toy: clean edges, shade in its creases and a cool shade, a sky and a bounce, and a soft tone', () => {
+    const look = WORLDS.sweets.look;
+    expect(look.antialias, 'four samples a pixel').toBe('msaa');
+    expect(look.occlusion, 'the shade where things meet').toBeGreaterThan(0);
+    expect(look.shadeColour, 'a cool shade').toBeDefined();
+    expect(look.skyLight, 'light from the sky').toBeDefined();
+    expect(look.groundLight, 'and a bounce off the candy ground').toBeDefined();
+    expect(WORLDS.sweets.tone, 'bright colours shown with their hue, where the clamp turned them').toBe('soft');
+  });
+
+  it('draws the works, a plain run and a space station as they always were', () => {
+    for (const theme of ['plain', 'industrial', 'space'] as const) {
+      expect(WORLDS[theme].look, theme).toEqual({});
+      expect(WORLDS[theme].tone, theme).toBe('filmic');
+    }
+  });
+
+  it("builds each world's look from the one the page booted with, so nothing a sweet factory asks for stays on in the next", () => {
+    const booted = { ...DEFAULT_LOOK, sunDir: [0.35, -0.3, 0.89] as [number, number, number] };
+    const sweets = lookFor(booted, WORLDS.sweets);
+    expect(sweets.shading).toBe('toon');
+    expect(sweets.antialias).toBe('msaa');
+    expect(sweets.background).toEqual(WORLDS.sweets.sky);
+    for (const theme of ['plain', 'industrial', 'space'] as const) {
+      const world = lookFor(booted, WORLDS[theme]);
+      expect(world.shading, theme).toBe('pbr');
+      // every setting of the booted look it does not light by itself is the booted look's, whatever was on before it
+      for (const key of Object.keys(sweets) as (keyof typeof sweets)[]) {
+        if (['background', 'sunColour', 'exposure', 'ambient', 'shading'].includes(key)) continue;
+        expect(world[key], `${theme}'s ${key}`).toEqual(booted[key]);
+      }
+    }
+  });
+
+  it("makes a sweet factory's candy track glossier than steel, and steel's as it was", () => {
+    const run = RUNS.find((r) => r.theme === 'sweets')!;
+    const roughness = (colours?: typeof CANDY) =>
+      new Scene()
+        .static(compile(run), [], colours)
+        .slice(0, 2)
+        .map((g) => g.roughness);
+    expect(roughness(STEEL), 'walls and floor, steel').toEqual([0.65, 0.65]);
+    expect(roughness(), 'walls and floor, left out').toEqual([0.65, 0.65]);
+    for (const r of roughness(CANDY)) expect(r, 'candy, smooth enough for a highlight').toBeLessThan(0.4);
   });
 
   it("lights a lollipop lamp as a glow under its sweet, not a works lamp's floodlight on it", () => {

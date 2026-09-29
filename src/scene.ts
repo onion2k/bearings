@@ -418,7 +418,8 @@ function mountainGroups(mountains: number[]): GameGroup[] {
     looks.set([...colours[k % colours.length], 0.85], k * 4);
     // bands round it, four or so up its height, in white
     bands.set([2, 3.6, (k * 0.29) % 1, 0, 0.99, 0.98, 0.97, 0], k * PATTERN_STRIDE);
-    tops.set([...caps[k % caps.length], 0.6], k * 4);
+    // frosting is sugar, and matte: at 0.6 the toon finish lit a broad white glow across every mountain's top
+    tops.set([...caps[k % caps.length], 0.8], k * 4);
   }
   // rounded at the top, as a scoop of ice cream is, and frosted from two thirds up, a little proud of it, dripping
   const hill = hillOf(0.75);
@@ -841,30 +842,32 @@ export class Scene {
     });
     const one = new Float32Array(16);
     spin(one, 0, 0, 0, 0, 0, 0, 1, 0);
+    // every surface of the track as rough as its colours say, as a share of steel's: a candy track is glossier
+    const rough = (r: number) => r * (colours.roughness ?? 1);
     const groups: GameGroup[] = [
       {
         mesh: channel.build(),
         matrices: one,
         albedo: colours.walls,
-        roughness: 0.65,
+        roughness: rough(0.65),
         // rust runs in streaks through the walls, drawn from where on them a fragment is, as marbling
         ...(colours.streaks ? { patterns: new Float32Array([3, 1.5, 0.3, 0, ...colours.streaks, 0]) } : {}),
       },
-      { mesh: floor.build(), matrices: one, albedo: colours.floor, roughness: 0.65 },
+      { mesh: floor.build(), matrices: one, albedo: colours.floor, roughness: rough(0.65) },
       // a peg is a cone, which is what a ball there meets
       {
         mesh: cone(PEG_CONE, PEG_HEIGHT),
         matrices: pegAt,
         count: pegs.length / 3,
         albedo: colours.pegs,
-        roughness: 0.5,
+        roughness: rough(0.5),
       },
       {
         mesh: bar(POST, 0.9, GATE_HEIGHT + 0.15),
         matrices: postAt,
         count: posts.length / 3,
         albedo: colours.trim,
-        roughness: 0.5,
+        roughness: rough(0.5),
       },
       // the mounds the same grey as the floor they rise out of, so they read as the floor's own shape
       {
@@ -872,7 +875,7 @@ export class Scene {
         matrices: moundAt,
         count: mounds.length / 3,
         albedo: colours.floor,
-        roughness: 0.65,
+        roughness: rough(0.65),
       },
       // the line and the stop only where the run ends in a finish, and not at an open end of one being built
       {
@@ -880,37 +883,37 @@ export class Scene {
         matrices: lineAt,
         count: track.finished ? 1 : 0,
         albedo: [0.95, 0.72, 0.2],
-        roughness: 0.4,
+        roughness: rough(0.4),
       },
       {
         mesh: bar((HALF_WIDTH + SKIN) * 2, LANE_STOP * 2, track.segments[end].wall),
         matrices: stopAt,
         count: track.finished ? 1 : 0,
         albedo: colours.trim,
-        roughness: 0.5,
+        roughness: rough(0.5),
       },
       {
         mesh: bar((HALF_WIDTH + SKIN) * 2, OUTLET_BACK * 2, track.wall),
         matrices: backAt,
         count: backs.length,
         albedo: colours.walls,
-        roughness: 0.65,
+        roughness: rough(0.65),
       },
     ];
     // the grid the same dark as the pegs, so it reads as ironwork over the channel and not part of it
     if (grid.vertexCount > 0) {
-      groups.push({ mesh: grid.build(), matrices: one, albedo: colours.grid, roughness: 0.5 });
+      groups.push({ mesh: grid.build(), matrices: one, albedo: colours.grid, roughness: rough(0.5) });
       groups.push({
         mesh: bar((HALF_WIDTH + SKIN) * 2, BAR, BAR),
         matrices: rungAt,
         count: rungs.length / 2,
         albedo: colours.grid,
-        roughness: 0.5,
+        roughness: rough(0.5),
       });
     }
     // a run without a funnel has no bowl to draw, and an empty mesh is not worth a buffer
     if (bowls.vertexCount > 0)
-      groups.push({ mesh: bowls.build(), matrices: one, albedo: colours.floor, roughness: 0.6 });
+      groups.push({ mesh: bowls.build(), matrices: one, albedo: colours.floor, roughness: rough(0.6) });
     groups.push(...this.decor(track, dressing));
     return groups;
   }

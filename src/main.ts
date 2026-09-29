@@ -22,7 +22,7 @@ import { Progress } from './progress';
 import { seeded } from './random';
 import { Scene, boxOf } from './scene';
 import { HALF_WIDTH, type Kind, type Theme } from './track';
-import { LIGHTS, WORLDS, bulbOf } from './decor';
+import { LIGHTS, WORLDS, bulbOf, lookFor } from './decor';
 
 /** How many millimetres a world unit is: the renderer fixes a few real sizes by it. */
 const MM_PER_UNIT = 100;
@@ -108,6 +108,8 @@ async function main() {
     ambient: 0.65,
     background: [0.04, 0.04, 0.05],
   };
+  // the look every world's is built from, so nothing one world asks for is left on in the next
+  const booted = { ...renderer.look };
   // both skies a world can reflect, baked once here and switched between as a run is put on
   const envs = {
     studio: bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 }),
@@ -192,21 +194,14 @@ async function main() {
       vignette: world.env === 'daylight' ? 0 : DEFAULT_POST.vignette,
       // a hall at dusk: its lamps and windows bloom a little more than the dark ever did
       bloom: world.env === 'dusk' ? 0.55 : DEFAULT_POST.bloom,
-      tone: world.shading === 'toon' ? 'clamp' : 'filmic',
+      tone: world.tone,
     };
     if (world.env !== reflecting) {
       reflecting = world.env;
       const env = envs[world.env];
       renderer.setEnvironment(env.specular, env.brdf, env.mips);
     }
-    renderer.look = {
-      ...renderer.look,
-      background: world.sky,
-      sunColour: world.sunColour,
-      exposure: world.exposure,
-      ambient: world.ambient,
-      shading: world.shading,
-    };
+    renderer.look = lookFor(booted, world);
     const box = boxOf(game.track);
     renderer.setSunShadow(box);
     const mid: [number, number, number] = [
@@ -631,7 +626,16 @@ async function main() {
     return game.players.some((p) => p > 0) ? '' : 'tap a marble to pick it';
   }
 
-  await renderer.ready;
+  // A sweet factory's four samples a pixel, compiled before the first frame
+  // like everything else it needs: the save puts back the run last put on, so
+  // a player can boot straight into one, and a world first asking for them
+  // later would draw its first frames with jagged edges while they compiled.
+  if (Object.values(WORLDS).some((w) => w.look.antialias === 'msaa')) {
+    const put = renderer.look;
+    renderer.look = { ...put, antialias: 'msaa' };
+    await renderer.prepare();
+    renderer.look = put;
+  } else await renderer.ready;
   boot.classList.add('gone');
   board.hidden = false;
   stats.hidden = false;
@@ -783,6 +787,12 @@ async function main() {
     measureFrame,
     chase: () => [cam.target[0], cam.target[1], cam.target[2]],
     sky: () => [...renderer.look.background] as [number, number, number],
+    world: () => ({
+      shading: renderer.look.shading ?? 'pbr',
+      tone: renderer.post.tone ?? 'filmic',
+      antialias: renderer.look.antialias ?? 'none',
+      occlusion: renderer.look.occlusion,
+    }),
     project: (x, y, z) => {
       // the camera's view and projection, as the renderer draws with, to a point on the page's own canvas
       const m = cam.viewProjection;

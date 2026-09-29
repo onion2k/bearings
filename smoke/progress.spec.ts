@@ -632,14 +632,19 @@ test('a run dressed as a works while it is built, made plain and dressed again, 
 
   // the world follows the run: a sweet factory's blue sky, and the works' dark again after it
   const sky = () => page.evaluate(() => window.game!.sky());
+  const world = () => page.evaluate(() => window.game!.world());
   await page.evaluate(() => window.game!.pick(2));
   expect((await decor()).theme).toBe('sweets');
   expect((await sky())[2], 'a blue sky').toBeGreaterThan(0.9);
+  // and drawn as a toy: its finish, four samples a pixel, the shade where things meet, and the soft tone
+  expect(await world()).toEqual({ shading: 'toon', tone: 'soft', antialias: 'msaa', occlusion: 2 });
   await page.evaluate(() => window.game!.pick(0));
   // the works at dusk: a warm purple, red over blue, where the sweet factory's sky is blue over red
   const dusk = await sky();
   expect(dusk[0], 'the works at dusk').toBeGreaterThan(dusk[2]);
   expect(dusk[2], 'not a day sky').toBeLessThan(0.5);
+  // with none of the sweet factory's look left on it
+  expect(await world()).toEqual({ shading: 'pbr', tone: 'filmic', antialias: 'none', occlusion: 0 });
 
   // the runs that come with the game are dressed, and the catalog's pieces are not
   expect((await decor()).theme).toBe('industrial');

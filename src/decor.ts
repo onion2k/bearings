@@ -27,6 +27,7 @@ import {
   spot,
 } from './track';
 import { seeded } from './random';
+import type { Look } from 'artshape-render/game/renderer';
 
 /** Every kind of thing a run can be dressed with. */
 export type DecorKind =
@@ -233,6 +234,12 @@ export interface TrackColours {
   trim: [number, number, number];
   /** Streaks through the walls in a second colour, as rust runs, where the walls have them. */
   streaks?: [number, number, number];
+  /**
+   * How rough the track is, as a share of steel's. Under one is glossier: a
+   * sweet factory's candy is, and takes the toon finish's highlight along its
+   * walls and floor where steel's satin takes none. Left out, steel's.
+   */
+  roughness?: number;
 }
 
 /** Steel, as the track always was. */
@@ -277,6 +284,8 @@ export const CANDY: TrackColours = {
   grid: [0.98, 0.97, 0.96],
   pegs: [0.95, 0.4, 0.62],
   trim: [0.98, 0.92, 0.8],
+  // hard candy, glossy as a toy's plastic: at steel's satin the finish's highlight was a broad dim smear
+  roughness: 0.45,
 };
 
 export interface World {
@@ -290,6 +299,39 @@ export interface World {
   sunColour: [number, number, number];
   exposure: number;
   ambient: number;
+  /**
+   * What more of the renderer's look it asks for: a sweet factory is finished
+   * as a toy, with four samples a pixel for clean edges, the shade where
+   * things meet, a cool shade, a sky light and a bounce off the candy
+   * ground, a rim and the form light. The page builds each world's look
+   * from the one it booted with (`lookFor`), so none of it stays on in the
+   * next world.
+   */
+  look: Partial<Look>;
+  /**
+   * How the frame is shown: filmic for real surfaces, or soft for a toy's
+   * bright colours, which it shows as they are and eases toward white past a
+   * knee keeping their hue, where the clamp turned an orange yellow.
+   */
+  tone: 'filmic' | 'soft';
+}
+
+/**
+ * The renderer's look for a world: the look the page booted with, the
+ * world's sky, sun and shading over it, and whatever more it asks for. From
+ * the booted look every time, and not from the world before, so a sweet
+ * factory's antialiasing and occlusion never stay on in the works after it.
+ */
+export function lookFor(booted: Look, world: World): Look {
+  return {
+    ...booted,
+    background: world.sky,
+    sunColour: world.sunColour,
+    exposure: world.exposure,
+    ambient: world.ambient,
+    shading: world.shading,
+    ...world.look,
+  };
 }
 export const WORLDS: Record<Theme | 'plain', World> = {
   plain: {
@@ -300,6 +342,8 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     sunColour: [1, 0.96, 0.9],
     exposure: 1.1,
     ambient: 0.65,
+    look: {},
+    tone: 'filmic',
   },
   // inside a hall at dusk: the glow of the sky through its windows, a warm low light, and rust
   industrial: {
@@ -313,6 +357,8 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     sunColour: [0.36, 0.24, 0.19],
     exposure: 1.1,
     ambient: 0.16,
+    look: {},
+    tone: 'filmic',
   },
 
   // the black of space, lit coldly by a far sun and the station's own beacons
@@ -325,10 +371,13 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     sunColour: [1.8, 1.8, 1.9],
     exposure: 1.1,
     ambient: 0.35,
+    look: {},
+    tone: 'filmic',
   },
 
-  // a clear blue sky reflected in everything, drawn as a cartoon is: in flat bands at every candy's own colour, and
-  // the colours shown straight, where the physically based light and its filmic curve washed them all to grey
+  // a clear blue sky reflected in everything, drawn as a toy is: every candy at its own colour in one smooth ramp
+  // of light, glossy where it is smooth, and the colours shown straight, where the physically based light and its
+  // filmic curve washed them all to grey
   sweets: {
     track: CANDY,
     sky: [0.45, 0.72, 0.98],
@@ -337,6 +386,27 @@ export const WORLDS: Record<Theme | 'plain', World> = {
     sunColour: [2.5, 2.45, 2.35],
     exposure: 1.0,
     ambient: 1.0,
+    look: {
+      // clean edges on a rail, a grid bar and a candy cane
+      antialias: 'msaa',
+      // the shade where things meet, soft across a gap the size of a marble, and taken by the sun a little
+      occlusion: 2,
+      occlusionRadius: 2.5,
+      occlusionDirect: 0.3,
+      // the shade a cool violet of each candy's colour, not a grey of it, as the occlusion's is too
+      shadeColour: [0.55, 0.45, 0.8],
+      // the sky's light from above and a pink bounce off the candy ground from below, as bright together as the
+      // environment's grey they replace: at a golf green's, the pink ground washed out to white
+      skyLight: [0.27, 0.31, 0.4],
+      groundLight: [0.34, 0.26, 0.3],
+      // a warm edge where a thing turns from the camera, so it stands off the ground behind it
+      rim: 0.3,
+      rimColour: [1, 0.95, 0.9],
+      rimWidth: 0.18,
+      // the sun's fall kept across a mountain's round and a candy's, steeper than a matte thing's
+      form: 1.5,
+    },
+    tone: 'soft',
   },
 };
 

@@ -208,6 +208,8 @@ export interface GameApi {
   chase(): [number, number, number];
   /** The colour of the sky the page draws the run against, which the run's theme sets. */
   sky(): [number, number, number];
+  /** How the page draws the run's world: its shading, its tone, its antialiasing and how strong its occlusion is. */
+  world(): WorldLook;
   /** Where a point of the world is on the page, in CSS pixels from its top left, seen through the camera as it stands. */
   project(x: number, y: number, z: number): [number, number];
 }
@@ -234,9 +236,19 @@ export interface DebugHost {
   chase(): [number, number, number];
   /** The colour of the sky the page draws the run against, which the run's theme sets. */
   sky(): [number, number, number];
+  /** How the page draws the run's world: see `GameApi.world`. */
+  world(): WorldLook;
   /** Where a point of the world is on the page, in CSS pixels from its top left, seen through the camera as it stands. */
   project(x: number, y: number, z: number): [number, number];
   events: string[];
+}
+
+/** How a world is drawn, as far as a test can tell one from another: see `WORLDS` in decor.ts. */
+export interface WorldLook {
+  shading: 'pbr' | 'toon';
+  tone: 'filmic' | 'clamp' | 'soft';
+  antialias: 'none' | 'fxaa' | 'msaa';
+  occlusion: number;
 }
 
 const NAMES = ['waiting', 'racing', 'finished', 'stalled', 'lost'] as const;
@@ -459,6 +471,9 @@ export function createApi(host: DebugHost): GameApi {
     },
     sky() {
       return host.sky();
+    },
+    world() {
+      return host.world();
     },
     project(x, y, z) {
       return host.project(x, y, z);
